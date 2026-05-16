@@ -257,3 +257,18 @@ def test_yn_prompt_swap_places_answers_yes():
     yn = extract_yn_prompt("Do you want to swap places with the dog? [yn] (y)")
     assert yn is not None
     assert yn["answer"] == "y"
+
+
+def test_extract_adjacent_labels_monster_letters_with_class_hint():
+    """`f` adjacent should render as `f(cat/small feline)` so the model
+    doesn't hallucinate it into 'fireplace' (trace 9071d001)."""
+    from nethack_core.observations import extract_adjacent
+    tty = np.full((24, 80), ord('.'), dtype=np.uint8)
+    # Player @ at (10, 10); cat `f` adjacent west.
+    tty[10, 10] = ord('@')
+    tty[10, 9] = ord('f')
+    tty[10, 11] = ord('d')
+    out = extract_adjacent(tty)
+    assert out.get("W", "").startswith("f("), out
+    assert "cat" in out["W"]
+    assert "dog" in out.get("E", "") or "canine" in out.get("E", "")

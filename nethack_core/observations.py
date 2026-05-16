@@ -392,6 +392,27 @@ _ADJACENT_LABEL_OVERRIDE = {
     "_": "_(altar)",
     "{": "{(fountain)",
     "}": "}(moat)",
+    "\\": "\\(throne)",
+    "$": "$(gold)",
+}
+
+# Class hints for adjacent letter glyphs. NetHack uses ~50 monster classes;
+# we cover the most common spawn classes for early game so the agent stops
+# inventing names like "fireplace" for `f`. Trace 9071d001 showed the model
+# repeatedly mislabeling `f` as fireplace/fountain/floor.
+_MONSTER_CLASS_HINT = {
+    "a": "ant/insect", "b": "blob", "c": "cockatrice/canary",
+    "d": "dog/canine", "e": "floating eye/sphere", "f": "cat/small feline",
+    "g": "gnome/gremlin", "h": "dwarf/hobbit", "i": "imp",
+    "j": "jelly", "k": "kobold", "l": "leprechaun",
+    "m": "mimic", "n": "nymph", "o": "orc",
+    "p": "piercer", "q": "quadruped", "r": "rat",
+    "s": "spider/scorpion", "t": "trapper", "u": "unicorn",
+    "v": "vortex", "w": "worm", "x": "grid bug",
+    "y": "light", "z": "zruty",
+    "B": "bat", "D": "dragon", "G": "gnome lord",
+    "H": "giant", "K": "kobold lord", "S": "snake",
+    "Z": "zombie",
 }
 
 
@@ -410,7 +431,12 @@ def extract_adjacent(tty_chars) -> dict[str, str]:
         if 0 <= ny < tty_chars.shape[0] and 0 <= nx < tty_chars.shape[1]:
             ch = int(tty_chars[ny, nx])
             glyph = chr(ch) if 32 <= ch < 127 else "?"
-            out[d] = _ADJACENT_LABEL_OVERRIDE.get(glyph, glyph)
+            if glyph in _ADJACENT_LABEL_OVERRIDE:
+                out[d] = _ADJACENT_LABEL_OVERRIDE[glyph]
+            elif glyph in _MONSTER_CLASS_HINT:
+                out[d] = f"{glyph}({_MONSTER_CLASS_HINT[glyph]})"
+            else:
+                out[d] = glyph
     return out
 
 
