@@ -2,7 +2,9 @@
 
 A training-grade RL environment for NetHack, built on `heiner/nle` + MiniHack.
 
-**Live on the Prime Hub:** [`jonathanliu/nethack`](https://app.primeintellect.ai/dashboard/environments/jonathanliu/nethack)
+**Mirrors:**
+- Prime Hub: [`jonathanliu/nethack`](https://app.primeintellect.ai/dashboard/environments/jonathanliu/nethack)
+- GitHub: [`liujonathan24/NetHackHarness`](https://github.com/liujonathan24/NetHackHarness)
 
 ## Quick links
 
