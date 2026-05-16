@@ -92,6 +92,11 @@ def analyze_rollout(r: dict) -> dict:
     # User-feedback patterns: bracketed markers vs compacted-only lines
     bracket_count = 0
     compacted_only_count = 0
+    compacted_unchanged_count = 0
+    move_blocked_count = 0
+    autoexplore_loop_count = 0
+    pet_blocking_count = 0
+    visible_features_lines = 0
     for u in user_msgs:
         content = u.get("content") or ""
         if isinstance(content, list):
@@ -101,6 +106,16 @@ def analyze_rollout(r: dict) -> dict:
             bracket_count += 1
         if re.match(r"^\[turn -\d+\]\s*HP: ", first) and "=== MAP" not in content[:200]:
             compacted_only_count += 1
+        if "(unchanged)" in content[:60]:
+            compacted_unchanged_count += 1
+        if "Move blocked" in content[:300]:
+            move_blocked_count += 1
+        if "autoexplore-loop" in content[:300]:
+            autoexplore_loop_count += 1
+        if "is in the way" in content[:400] or "blocking your move" in content[:400]:
+            pet_blocking_count += 1
+        if "=== VISIBLE FEATURES ===" in content:
+            visible_features_lines += 1
 
     return {
         "tool_total": len(tool_seq),
@@ -113,6 +128,11 @@ def analyze_rollout(r: dict) -> dict:
         "glyph_hallucinations": Counter(glyph_hallucinations),
         "user_msgs_with_action_bracket": bracket_count,
         "user_msgs_compacted_only": compacted_only_count,
+        "user_msgs_compacted_unchanged_collapse": compacted_unchanged_count,
+        "move_blocked_hits": move_blocked_count,
+        "autoexplore_loop_hint_hits": autoexplore_loop_count,
+        "pet_blocking_hint_hits": pet_blocking_count,
+        "visible_features_block_appearances": visible_features_lines,
         "scout_reward": r.get("scout_reward"),
         "descend_calls": r.get("descend_calls"),
         "num_turns": r.get("num_turns"),
