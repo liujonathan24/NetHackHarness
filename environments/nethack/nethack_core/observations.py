@@ -416,25 +416,60 @@ _MONSTER_CLASS_HINT = {
 }
 
 
-def extract_adjacent(tty_chars) -> dict[str, str]:
+# NLE glyph offsets. Pets live in [GLYPH_PET_OFF, GLYPH_PET_OFF + NUMMONS).
+# Imported lazily so observations.py stays importable without nle (tests).
+_GLYPH_MON_OFF = 0
+_GLYPH_PET_OFF = 381
+_NUMMONS = 381
+
+
+def _glyph_kind(glyph_id: int) -> Optional[str]:
+    """Return 'pet' if glyph_id is a tame monster, 'hostile' if a wild
+    monster, None otherwise. Uses NLE's standard glyph layout."""
+    if _GLYPH_PET_OFF <= glyph_id < _GLYPH_PET_OFF + _NUMMONS:
+        return "pet"
+    if _GLYPH_MON_OFF <= glyph_id < _GLYPH_MON_OFF + _NUMMONS:
+        return "hostile"
+    return None
+
+
+def extract_adjacent(tty_chars, glyphs=None) -> dict[str, str]:
     """8-neighborhood of the player. Each direction maps to either the raw
     glyph character or — for highly load-bearing tiles like stairs — a
     human-readable label so the LM doesn't confuse `<` with descent. Empty
-    dict if player not found."""
+    dict if player not found.
+
+    When `glyphs` (the NLE 21x79 glyph-id array) is provided, monster
+    letters are annotated with pet/hostile status — load-bearing because
+    the 9071d001 trace showed the agent repeatedly attacking its own
+    kitten (`f` looks the same hostile or tame in the tty)."""
     pos = _player_position(tty_chars)
     if pos is None:
         return {}
     x, y = pos
+    # tty_chars dungeon area is rows 1..21; glyphs is the (21, 79) dungeon
+    # map indexed from row 0. So glyph row = tty row - 1.
     out: dict[str, str] = {}
     for d, (dx, dy) in _DIR_OFFSETS.items():
         nx, ny = x + dx, y + dy
         if 0 <= ny < tty_chars.shape[0] and 0 <= nx < tty_chars.shape[1]:
             ch = int(tty_chars[ny, nx])
             glyph = chr(ch) if 32 <= ch < 127 else "?"
+            kind: Optional[str] = None
+            if glyphs is not None and 1 <= ny <= 21:
+                gy = ny - 1
+                if 0 <= gy < glyphs.shape[0] and 0 <= nx < glyphs.shape[1]:
+                    kind = _glyph_kind(int(glyphs[gy, nx]))
             if glyph in _ADJACENT_LABEL_OVERRIDE:
                 out[d] = _ADJACENT_LABEL_OVERRIDE[glyph]
             elif glyph in _MONSTER_CLASS_HINT:
-                out[d] = f"{glyph}({_MONSTER_CLASS_HINT[glyph]})"
+                base = f"{glyph}({_MONSTER_CLASS_HINT[glyph]})"
+                if kind == "pet":
+                    out[d] = f"{base}[PET — don't attack]"
+                elif kind == "hostile":
+                    out[d] = f"{base}[hostile]"
+                else:
+                    out[d] = base
             else:
                 out[d] = glyph
     return out
@@ -569,7 +604,7 @@ def shape(obs: CoreObservation, character: dict[str, str]) -> StructuredObservat
     menu, menu_left_col = extract_menu_region(obs.tty_chars)
     inv_prompt = extract_inventory_prompt(message, inventory)
     status = parse_status(obs.blstats)
-    adjacent = extract_adjacent(obs.tty_chars)
+    adjacent = extract_adjacent(obs.tty_chars, getattr(obs, "glyphs", None))
     under = extract_under_player(obs.tty_chars, obs.chars, message)
     yn = extract_yn_prompt(message)
     return StructuredObservation(

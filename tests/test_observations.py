@@ -272,3 +272,32 @@ def test_extract_adjacent_labels_monster_letters_with_class_hint():
     assert out.get("W", "").startswith("f("), out
     assert "cat" in out["W"]
     assert "dog" in out.get("E", "") or "canine" in out.get("E", "")
+
+
+def test_extract_adjacent_marks_pet_when_glyphs_provided():
+    """When a glyph ID lands in the pet range, the adjacent annotation
+    must say PET so the agent doesn't attack its own kitten."""
+    from nethack_core.observations import extract_adjacent, _GLYPH_PET_OFF, _GLYPH_MON_OFF
+    tty = np.full((24, 80), ord('.'), dtype=np.uint8)
+    tty[10, 10] = ord('@')
+    tty[10, 9] = ord('f')   # pet kitten west
+    tty[10, 11] = ord('d')  # hostile jackal east
+    glyphs = np.zeros((21, 79), dtype=np.int16)
+    # glyphs row = tty row - 1, so tty row 10 = glyph row 9.
+    glyphs[9, 9] = _GLYPH_PET_OFF + 0      # any pet glyph id
+    glyphs[9, 11] = _GLYPH_MON_OFF + 1     # any hostile glyph id (non-zero so it's a real monster)
+    out = extract_adjacent(tty, glyphs)
+    assert "PET" in out.get("W", ""), out
+    assert "hostile" in out.get("E", ""), out
+
+
+def test_extract_adjacent_no_glyphs_falls_back_to_class_only():
+    """Backward-compatible: no glyphs arg means no pet/hostile annotation."""
+    from nethack_core.observations import extract_adjacent
+    tty = np.full((24, 80), ord('.'), dtype=np.uint8)
+    tty[10, 10] = ord('@')
+    tty[10, 9] = ord('f')
+    out = extract_adjacent(tty)
+    assert "PET" not in out.get("W", "")
+    assert "hostile" not in out.get("W", "")
+    assert "cat" in out.get("W", "")
