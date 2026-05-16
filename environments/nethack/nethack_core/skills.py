@@ -179,7 +179,25 @@ def move(env: NetHackCoreEnv, obs: StructuredObservation, direction: str) -> Ski
 def attack(env: NetHackCoreEnv, obs: StructuredObservation, direction: str) -> SkillResult:
     # In NetHack, melee = move toward the monster. Same action.
     # We separate it as a skill for legibility in traces.
-    return move(env, obs, direction=direction)
+    canon = _normalize_direction(direction)
+    if canon is None:
+        return SkillResult([], f"Invalid direction: {direction!r}.", interrupted=True)
+    # Sanity check: is there actually a letter glyph adjacent in this
+    # direction? If not, the agent is "attacking" empty space — likely a
+    # misread of the map. Warn but still pass the action through (NetHack
+    # will just walk one step, harmless).
+    adj = getattr(obs, "adjacent", None) or {}
+    tile = adj.get(canon, "")
+    target_warning = ""
+    if tile and not (len(tile) >= 1 and tile[0].isalpha() and tile[0] != "@"):
+        target_warning = (
+            f" (note: ADJACENT shows {canon}={tile!r}, no monster there — "
+            "this will just walk forward.)"
+        )
+    result = move(env, obs, direction=direction)
+    if target_warning and result.feedback:
+        result = SkillResult(actions=result.actions, feedback=result.feedback + target_warning, interrupted=result.interrupted)
+    return result
 
 
 @registry.register("descend", schema={

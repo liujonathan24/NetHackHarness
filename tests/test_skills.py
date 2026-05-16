@@ -316,3 +316,28 @@ def test_search_times_default_is_one():
                                  messages=[], menu=None, inventory_prompt=None)
     result = registry.call("search", None, obs)
     assert len(result.actions) == 1
+
+
+def test_attack_warns_when_no_target_in_direction():
+    """Calling attack on an empty tile should still execute (NetHack walks)
+    but the feedback should include a hint that there's no monster there."""
+    from nethack_core.observations import StructuredObservation
+    obs = StructuredObservation(
+        status={}, inventory=[], map_view="", character={},
+        messages=[], menu=None, inventory_prompt=None,
+        adjacent={"N": ".", "S": ".", "E": ".", "W": "."},
+    )
+    result = registry.call("attack", None, obs, direction="N")
+    assert "no monster there" in result.feedback or "will just walk" in result.feedback
+
+
+def test_attack_silent_when_target_present():
+    """When the direction has a letter glyph, no warning."""
+    from nethack_core.observations import StructuredObservation
+    obs = StructuredObservation(
+        status={}, inventory=[], map_view="", character={},
+        messages=[], menu=None, inventory_prompt=None,
+        adjacent={"N": "f(cat/small feline)", "S": ".", "E": ".", "W": "."},
+    )
+    result = registry.call("attack", None, obs, direction="N")
+    assert "no monster there" not in result.feedback
