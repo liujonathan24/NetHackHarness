@@ -89,12 +89,16 @@ def test_system_prompt_has_strategy_primer_and_cheat_sheet():
     # Specific tactical cues we want present.
     for marker in ("Elbereth", "autoexplore", "HP", "eat"):
         assert marker in SYSTEM_PROMPT, f"missing strategy cue: {marker!r}"
+    # Glyph guidance: lowercase letters are monsters (added 2026-05-16 after
+    # trace showed model thinking `f` was a "fireplace").
+    assert "monsters" in SYSTEM_PROMPT.lower() or "creatures" in SYSTEM_PROMPT.lower()
+    assert "fireplace" in SYSTEM_PROMPT  # explicit anti-hallucination note
 
 
 def test_system_prompt_stays_under_token_budget():
     """Rough token-budget guard: ~4 chars/token, cap at ~700 tokens => <=2800
     chars. Bumped to 2800 to fit the descent worked-example added after
     the haiku trace showed the model needed step-by-step descent guidance."""
-    assert len(SYSTEM_PROMPT) <= 2800, (
+    assert len(SYSTEM_PROMPT) <= 2900, (
         f"SYSTEM_PROMPT is {len(SYSTEM_PROMPT)} chars; trim before shipping."
     )

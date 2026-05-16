@@ -15,11 +15,38 @@ from nethack_core.observations import (
     extract_menu,
     extract_menu_region,
     extract_inventory_prompt,
+    extract_visible_features,
     parse_inventory,
     render_map_view,
     _strip_right_menu,
     _infer_menu_left_col,
 )
+
+
+def test_extract_visible_features_finds_stairs_and_distinguishes_up_down():
+    tty = np.full((24, 80), ord(' '), dtype=np.uint8)
+    tty[5, 10] = ord('>')
+    tty[3, 4] = ord('<')
+    tty[8, 12] = ord('_')
+    out = extract_visible_features(tty)
+    assert any("stairs DOWN at (10,5)" in s for s in out)
+    assert any("stairs UP at (4,3)" in s for s in out)
+    assert any("altar at (12,8)" in s for s in out)
+
+
+def test_extract_visible_features_caps_repeated_features():
+    tty = np.full((24, 80), ord(' '), dtype=np.uint8)
+    for i in range(5):
+        tty[3, i * 2] = ord('$')
+    out = extract_visible_features(tty)
+    gold = [s for s in out if "gold" in s][0]
+    assert "+2 more" in gold
+
+
+def test_extract_visible_features_empty_when_no_features():
+    tty = np.full((24, 80), ord('.'), dtype=np.uint8)
+    out = extract_visible_features(tty)
+    assert out == []
 
 
 def _tty_from_rows(rows: list[str], width: int = 80, height: int = 24) -> np.ndarray:

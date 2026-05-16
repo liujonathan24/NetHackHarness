@@ -414,6 +414,46 @@ def extract_adjacent(tty_chars) -> dict[str, str]:
     return out
 
 
+_FEATURE_GLYPHS = {
+    ord(">"): "stairs DOWN",
+    ord("<"): "stairs UP",
+    ord("_"): "altar",
+    ord("{"): "fountain",
+    ord("\\"): "throne",
+    ord("$"): "gold",
+}
+
+
+def extract_visible_features(tty_chars) -> list[str]:
+    """Return a list of important map features with (x, y) coordinates.
+
+    Returned format: ["stairs DOWN at (47,6)", "altar at (12,3)"]. Saves the
+    model from scanning the full ASCII tty grid to locate a `>` it can navigate
+    to. Trace 9071d001 showed Qwen3.5-9B confusing `<` for `>` and never
+    finding the actual stairs down despite 66 autoexplore calls.
+
+    Coordinates use the same y-origin as the tty (row 0 is the top message
+    line; the map starts around row 1).
+    """
+    out: list[str] = []
+    seen_by_label: dict[str, list[tuple[int, int]]] = {}
+    for y in range(1, min(22, tty_chars.shape[0])):
+        for x in range(tty_chars.shape[1]):
+            ch = int(tty_chars[y, x])
+            label = _FEATURE_GLYPHS.get(ch)
+            if label:
+                seen_by_label.setdefault(label, []).append((x, y))
+    for label in ("stairs DOWN", "stairs UP", "altar", "fountain", "throne", "gold"):
+        coords = seen_by_label.get(label, [])
+        if not coords:
+            continue
+        # Cap at 3 instances per label.
+        coord_strs = ", ".join(f"({x},{y})" for x, y in coords[:3])
+        more = "" if len(coords) <= 3 else f" +{len(coords)-3} more"
+        out.append(f"{label} at {coord_strs}{more}")
+    return out
+
+
 def extract_hostiles_in_sight(tty_chars) -> list[str]:
     """Return a deduplicated list of visible glyph chars that look like
     monsters (letter, not @). Lowercase 'd' = "dog or jackal-class"; we

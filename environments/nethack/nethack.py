@@ -87,10 +87,18 @@ You act by calling one of the available tools. Be deliberate: NetHack rewards
 careful play and punishes haste.
 
 === STRATEGY PRIMER ===
-GLYPH KEY (memorize): `>` is stairs DOWN (call `descend` to go deeper).
-`<` is stairs UP (does NOT take you to dlvl 2). `_` altar. `{` fountain.
-The `@` is YOU and visually hides the tile you're standing on; check
-the `=== UNDER PLAYER ===` line in each obs to know what's beneath you.
+GLYPH KEY (memorize):
+- Terrain: `>` stairs DOWN, `<` stairs UP (NOT a way down), `_` altar,
+  `{` fountain, `}` pool, `#` corridor, `.` floor, `|` and `-` walls,
+  `+` door (closed) or spellbook, `\\` throne, `$` gold pile,
+  `[`/`)`/`(`/`*`/`?` items (armor/weapon/tool/gem/scroll).
+- Creatures are LETTERS, not furniture. Lowercase a..z and uppercase
+  A..Z are monsters; common: `d` dog/canine, `f` cat/small feline
+  or lichen, `r` rat, `x` grid bug, `B` bat, `k` kobold, `o` orc,
+  `@` other humans (and YOU). There is no "fireplace" glyph — if
+  you see `f` adjacent, it is a creature, not furniture.
+- The `@` is YOU; it visually hides the tile you stand on. Check the
+  `=== UNDER PLAYER ===` line in each obs to know what's beneath you.
 To reach the next dungeon level you must (1) find a `>` tile, (2) walk
 ON it, (3) call `descend`. If `descend` says "you can't go down here",
 your @ is not actually on a `>` — verify via UNDER PLAYER.
@@ -116,19 +124,11 @@ NEVER call menu/inventory tools. Just issue your next normal action.
 - Search for hidden doors/passages at a dead-end: `search`
 
 === DESCENT WORKED EXAMPLE ===
-Goal: reach dlvl 2 from spawn.
-  Turn 1: call `autoexplore(max_steps=30)`.
-  Turn 2..k: keep calling `autoexplore` until ADJACENT shows `>(stairs DOWN)`
-             OR UNDER PLAYER says "stairs DOWN".
-  When `>` is adjacent: call `move(direction=<that direction>)`.
-  After moving: UNDER PLAYER should now say "stairs DOWN (>)".
-  Finally: call `descend`.
-If `descend` fails with "Can't descend — you're standing on: floor", you
-were not actually on the `>` tile. Recheck UNDER PLAYER and try again.
+Reach dlvl 2: (1) `autoexplore` until ADJACENT shows `>(stairs DOWN)`
+or UNDER PLAYER says "stairs DOWN"; (2) `move` onto the `>`; (3) `descend`.
+If `descend` fails ("not on stairs"), recheck UNDER PLAYER.
 
-Your top-level goal is pre-pinned in the JOURNAL block of every obs as
-`Objective: ...` — read it once at the start; you don't need to re-pin
-unless your strategy genuinely changes."""
+Your top-level goal is pre-pinned in JOURNAL as `Objective: ...`."""
 
 
 # ---------- observation formatting for chat ----------
@@ -325,10 +325,19 @@ def format_observation_as_chat(
     # Hostiles-in-sight: optional one-liner so the agent doesn't need to
     # scan the map to spot monsters. Skipped when no letter glyphs visible.
     if compact:
-        from nethack_core.observations import extract_hostiles_in_sight
+        from nethack_core.observations import extract_hostiles_in_sight, extract_visible_features
         # tty_chars not in StructuredObservation; pull from raw obs via state.
         if state is not None and "raw_obs" in state:
             try:
+                features = extract_visible_features(state["raw_obs"].tty_chars)
+                if features:
+                    # Pre-parsed feature list with coordinates. Saves the
+                    # model from scanning ASCII for `>`/`<`/`_`/`{`/`$`. The
+                    # 9071d001 trace had the model confusing `<` for `>` and
+                    # inventing `f = fireplace`; explicit feature naming with
+                    # coordinates lets `move_to(x,y)` immediately.
+                    lines.append(f"=== VISIBLE FEATURES === {'; '.join(features)}")
+                    lines.append("")
                 hostiles = extract_hostiles_in_sight(state["raw_obs"].tty_chars)
                 if hostiles:
                     lines.append(f"=== VISIBLE GLYPHS === {', '.join(hostiles)}")
