@@ -406,5 +406,17 @@
   {
     "title": "scroll of magic mapping",
     "body": "English &#160;&#8226;&#32; \u4e2d\u6587\uff08\u4e2d\u56fd\u5927\u9646\uff09\u200e ? Name magic mapping Appearance random Base price 100 zm Weight 5 Ink to write 4-7 Monster use Will not be used by monsters. A scroll of magic mapping is a type of magical scroll that appears in NetHack ."
+  },
+  {
+    "title": "hidden passage",
+    "body": "A hidden passage is a corridor or door that is not visible until searched. Many NetHack levels have hidden passages, especially the Gnomish Mines and dead-end corridors. To find them, stand adjacent to a suspected wall and call search repeatedly. Each search has roughly a 1/6 chance to reveal each hidden adjacent square, so 5-10 searches in one spot usually works.\n\nUse search(times=10) or search(times=20) to batch keystrokes. A hidden door shows as | or - in the wall; a hidden corridor shows as # in solid rock. Trapdoors and pit traps are also revealed by searching.\n\nTactics: when autoexplore reports no frontier and no > is visible, assume a hidden corridor or trapdoor. Walk to a dead-end and search 10-20 times. Mine Town and the Oracle level frequently have hidden passages."
+  },
+  {
+    "title": "stairs",
+    "body": "Stairs in NetHack come in two glyphs: > for stairs down and < for stairs up. To descend to the next dungeon level, stand ON a > tile and call descend. Critical: < (stairs up) do NOT take you deeper. The goal is to descend through > tiles.\n\nIf descend fails ('you cannot go down here'), you are not on a > tile. Check UNDER PLAYER in the observation \u2014 it says 'stairs DOWN' or 'stairs UP' or the tile you are actually on. The @ glyph hides the tile beneath it.\n\nTo find stairs: scan VISIBLE FEATURES (lists every stairs/altar/fountain with (x,y) coords). Call move_to(x, y) to walk to a > tile, then descend."
+  },
+  {
+    "title": "exploration",
+    "body": "Exploration rewards methodical work. The map starts unrevealed; only tiles in sight are visible. Walking through corridors reveals adjacent tiles. autoexplore walks toward the nearest frontier (a known tile adjacent to an unseen tile).\n\nRecommended workflow on a new dlvl:\n1. autoexplore repeatedly until VISIBLE FEATURES shows stairs DOWN.\n2. move_to(x, y) using the listed > coordinates.\n3. descend.\n\nIf autoexplore reports 'level appears fully explored' but no > is visible, the level has a hidden passage. Walk to a dead-end and call search(times=10). When the harness emits an [autoexplore-loop: N short trips] hint, switch to search or move_to."
   }
 ]
