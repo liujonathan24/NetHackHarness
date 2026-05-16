@@ -576,6 +576,14 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         # Capture pre-step scout set size so scout_reward can return a per-step delta
         # rather than a cumulative count. See onboarding/scout_reward.md.
         scout_before = len(state["scout_tiles_seen"])
+        # Capture pre-step player (x, y) so we can detect blocked moves.
+        pre_pos = None
+        try:
+            pre_blstats = state["raw_obs"].blstats if state.get("raw_obs") is not None else None
+            if pre_blstats is not None:
+                pre_pos = (int(pre_blstats[0]), int(pre_blstats[1]))
+        except (KeyError, IndexError, TypeError, AttributeError):
+            pre_pos = None
 
         # Skills can return either NLE action enum values (107 == N) or task
         # action-set indices (1 == N for NetHackScore). The underlying gym
@@ -715,6 +723,26 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         state["turn_count"] = state.get("turn_count", 0) + 1
         if self.belief_state_interval > 0 and state["turn_count"] > 0 and state["turn_count"] % self.belief_state_interval == 0:
             _maybe_belief_state_summary(state)
+
+        # Move-blocked detection: `move(direction=...)` always reports "Moved
+        # S." even when the action bumped a wall. The model can't tell from
+        # feedback whether the step succeeded. Compare pre/post player (x, y)
+        # from blstats; if a single-step move kept us in place, override the
+        # feedback so the model knows to pick a different direction.
+        if skill_name == "move" and len(action_indices) == 1 and pre_pos is not None and not terminated and not truncated:
+            try:
+                from nethack_core.skills import SkillResult as _SR
+                post_blstats = last_obs.blstats if hasattr(last_obs, "blstats") else last_obs.get("blstats")
+                if post_blstats is not None:
+                    post_pos = (int(post_blstats[0]), int(post_blstats[1]))
+                    if post_pos == pre_pos:
+                        result = _SR(
+                            actions=result.actions,
+                            feedback=f"Move blocked at {pre_pos}: wall or obstacle in {skill_args.get('direction', '?')}. Pick a different direction or `search` if you suspect a hidden door.",
+                            interrupted=result.interrupted,
+                        )
+            except (KeyError, IndexError, TypeError, AttributeError):
+                pass
 
         # Autoexplore-loop detection: when autoexplore returns "short" feedback
         # repeatedly (frontier shrunk to 1-2 step paths near level edges), the
