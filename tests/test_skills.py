@@ -295,3 +295,24 @@ def test_descend_proceeds_when_on_stairs_down():
     assert result.interrupted is False
     # Should send a MORE/Enter + '>' (= descend keystroke)
     assert ord(">") in result.actions
+
+
+def test_search_times_param_repeats_action():
+    """search(times=10) should expand to 10 's' keystrokes — hidden passages
+    typically take 5-10 searches to reveal."""
+    from nethack_core.observations import StructuredObservation
+    obs = StructuredObservation(status={}, inventory=[], map_view="", character={},
+                                 messages=[], menu=None, inventory_prompt=None)
+    result = registry.call("search", None, obs, times=10)
+    assert isinstance(result, SkillResult)
+    assert len(result.actions) == 10
+    assert all(a == ord('s') for a in result.actions)
+    assert "x10" in result.feedback
+
+
+def test_search_times_default_is_one():
+    from nethack_core.observations import StructuredObservation
+    obs = StructuredObservation(status={}, inventory=[], map_view="", character={},
+                                 messages=[], menu=None, inventory_prompt=None)
+    result = registry.call("search", None, obs)
+    assert len(result.actions) == 1

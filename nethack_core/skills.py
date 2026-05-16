@@ -206,11 +206,26 @@ def descend(env: NetHackCoreEnv, obs: StructuredObservation) -> SkillResult:
 
 
 @registry.register("search", schema={
-    "description": "Search adjacent tiles for hidden passages and traps.",
-    "parameters": {},
+    "description": (
+        "Search adjacent tiles for hidden passages and traps. Pass `times` "
+        "to repeat — hidden passages typically need 5-10 searches at the same "
+        "tile to reveal. Defaults to 1."
+    ),
+    "parameters": {
+        "times": {
+            "type": "integer",
+            "default": 1,
+            "description": "Number of consecutive search actions (1-20).",
+        },
+    },
 })
-def search(env: NetHackCoreEnv, obs: StructuredObservation) -> SkillResult:
-    return SkillResult([int(ord('s'))], "Searched.")
+def search(env: NetHackCoreEnv, obs: StructuredObservation, times: int = 1) -> SkillResult:
+    try:
+        n = int(times)
+    except (TypeError, ValueError):
+        n = 1
+    n = max(1, min(20, n))
+    return SkillResult([int(ord('s'))] * n, f"Searched x{n}." if n > 1 else "Searched.")
 
 
 # ---------- survival actions (eat / quaff / read / pray / engrave / kick / throw) ----------
@@ -614,8 +629,8 @@ def autoexplore(env: NetHackCoreEnv, obs: StructuredObservation, max_steps: int 
             # secret passages typically take 5-10 search calls to find.
             tip = (
                 " No `>` visible. The level likely has hidden passages or "
-                "trapdoors. Call `search` 5-10 times at adjacent walls — "
-                "especially dead-end corridors — to reveal them."
+                "trapdoors. Call `search(times=10)` at adjacent walls "
+                "(especially dead-end corridors) to reveal them in one shot."
             )
         return SkillResult(
             [],
