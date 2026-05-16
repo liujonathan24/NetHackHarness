@@ -330,6 +330,19 @@ def format_observation_as_chat(
                     hint = f"Hostile adjacent ({mon_dir}). Call `attack(direction=\"{mon_dir}\")` — your HP is healthy."
                 else:
                     hint = f"Hostile adjacent ({mon_dir}) and HP is low ({hp}/{hp_max}). Consider `engrave_elbereth` or retreat with `move`."
+    # Pet-blocking detection: when the message buffer says "X is in the way!"
+    # the move failed because the pet/peaceful occupies the tile. Trace
+    # 9071d001 had the model stuck in long pet-blocking loops. Override any
+    # weaker hint with a clear "go around" directive.
+    if structured.messages:
+        for msg in structured.messages[-4:]:
+            if "is in the way" in msg:
+                hint = (
+                    "A pet/peaceful is blocking your move. Walk a perpendicular "
+                    "direction first to let it pass, or call `move(direction=\".\")` "
+                    "to wait one turn."
+                )
+                break
     if hint:
         lines.append(f"=== HINT === {hint}")
         lines.append("")

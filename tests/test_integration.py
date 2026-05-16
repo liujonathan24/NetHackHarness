@@ -197,6 +197,36 @@ def test_format_observation_with_populated_journal_includes_block():
     assert "find the stairs" in out
 
 
+def test_pet_blocking_message_triggers_go_around_hint():
+    """Regression for 9071d001 turns 100-116: 'Your kitten is in the way!'
+    appeared repeatedly and the model couldn't escape. Now the harness
+    emits a HINT telling the agent to step perpendicular first."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class _S:
+        map_view: str = "@..."
+        messages: list = None
+        inventory: list = None
+        status: dict = None
+        character: dict = None
+        menu: object = None
+        inventory_prompt: object = None
+        adjacent: dict = None
+        under_player: object = None
+
+    s = _S(
+        messages=["Your kitten is in the way!"],
+        inventory=[],
+        status={"depth": 1, "hitpoints": 14, "max_hitpoints": 14},
+        character={},
+        adjacent={"N": "f(cat/small feline)", "S": ".", "E": "."},
+    )
+    out = format_observation_as_chat(s, Journal())
+    assert "blocking your move" in out or "is in the way" in out  # hint fired
+    assert "perpendicular" in out
+
+
 def test_pinned_objective_persists_when_journal_otherwise_unchanged():
     """Regression for trace 9071d001: with diff-only journal, the pinned
     objective got hidden behind '(unchanged since last turn)' after turn 1,
