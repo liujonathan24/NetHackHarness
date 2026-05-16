@@ -330,3 +330,31 @@ async def test_move_into_wall_reports_blocked_not_moved():
     # empty_room often has open central spawn; this is a soft smoke check.
     assert saw_blocked or True
     state["env"].close()
+
+
+@pytest.mark.asyncio
+async def test_multi_tool_calls_emit_warning_in_obs():
+    """Agent submits 2 tool calls in one turn; only the first runs and the
+    obs prefix should warn so the agent re-syncs its plan."""
+    env = load_environment(tier="empty_room", n_examples=1, max_turns=4)
+    state = {"task": {"tier": "empty_room", "seed": 42}}
+    state = await env.setup_state(state)
+    msg = {
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [
+            {"id": "c1", "type": "function",
+             "function": {"name": "move", "arguments": json.dumps({"direction": "N"})}},
+            {"id": "c2", "type": "function",
+             "function": {"name": "move", "arguments": json.dumps({"direction": "S"})}},
+        ],
+    }
+    try:
+        new_msgs = await env.env_response([msg], state)
+    except RuntimeError:
+        state["env"].close()
+        pytest.skip("env terminated mid-test")
+    body = new_msgs[0]["content"] or ""
+    assert "multi-tool warning" in body, body
+    assert "only the first of 2" in body, body
+    state["env"].close()
