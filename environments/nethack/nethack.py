@@ -514,6 +514,10 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         #   old: dict {"function": {"name": ..., "arguments": "..."}}
         #   new: ToolCall pydantic model with flat .name / .arguments
         tc = tool_calls[0]
+        # Surface that we dropped the extras so the agent knows only the
+        # first call ran — otherwise it might assume all N actions were
+        # applied and plan around a stale game state.
+        state["_dropped_extra_tool_calls"] = max(0, len(tool_calls) - 1)
         import json
         if isinstance(tc, dict):
             fn = tc.get("function", {})
@@ -797,6 +801,14 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
             prefix_parts.append(loop_hint)
         if halt_reason:
             prefix_parts.append(f"[autohalt: {halt_reason}]")
+        dropped = state.get("_dropped_extra_tool_calls", 0)
+        if dropped:
+            prefix_parts.append(
+                f"[multi-tool warning: only the first of {dropped+1} tool "
+                "calls was applied. NetHack is turn-based; emit ONE tool "
+                "call per turn.]"
+            )
+            state["_dropped_extra_tool_calls"] = 0
         if result.feedback:
             prefix_parts.append(f"[{result.feedback}]")
         if prefix_parts:
