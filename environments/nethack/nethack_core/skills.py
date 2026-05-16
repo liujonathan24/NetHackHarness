@@ -610,7 +610,14 @@ def autoexplore(env: NetHackCoreEnv, obs: StructuredObservation, max_steps: int 
         if has_stairs_down:
             tip = " Stairs `>` are visible — `move_to` them and `descend`."
         else:
-            tip = " No `>` visible. Try `search` at a dead-end wall to reveal hidden passages."
+            # Strong, specific advice: search repeatedly at walls. NetHack
+            # secret passages typically take 5-10 search calls to find.
+            tip = (
+                " No `>` visible. The level likely has hidden passages or a "
+                "trapdoor. Call `search` 5-10 times at adjacent walls "
+                "(especially dead-end corridors), or `wiki_lookup` 'search' "
+                "for tactics."
+            )
         return SkillResult(
             [],
             "Level appears fully explored from this position." + tip,
