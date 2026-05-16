@@ -131,6 +131,70 @@ def test_compaction_is_idempotent_no_chain_accumulation():
             )
 
 
+def test_consecutive_unchanged_status_runs_get_collapsed():
+    """Regression for 2026-05-16 trace 9071d001: 90 user msgs were literally
+    "[turn -X] HP: 14/14 AC: 4 Dlvl: 1 ..." with the same HP/AC/Dlvl every
+    turn — pure token noise. Subsequent duplicates should shrink."""
+    # Build 10 user turns with identical status, all old enough to compact.
+    msgs = []
+    for i in range(10):
+        msgs.append(_user(
+            f"TURN {i}\n=== MAP ===\n@\n=== STATUS ===\n"
+            f"HP: 14/14  AC: 4  Dlvl: 1  Turn: {i}  XP: 1  $: 0"
+        ))
+        msgs.append(_assistant())
+    out = _compact_chat_history(msgs, keep_full=2, drop_after=100)
+    user_msgs = [m for m in out if _msg_role(m) == "user"]
+    # 8 are compacted, 2 are full. Among the 8 compacted, all share the same
+    # HP/AC/Dlvl. First should keep status; others should become "(unchanged)".
+    compacted = [m for m in user_msgs if "=== MAP ===" not in _msg_content(m)]
+    assert len(compacted) >= 5
+    # First compacted msg should contain the full status.
+    assert "HP: 14/14" in _msg_content(compacted[0])
+    # Most of the remaining compacted msgs should collapse to "(unchanged)".
+    unchanged_count = sum(1 for m in compacted[1:] if "(unchanged)" in _msg_content(m))
+    assert unchanged_count >= 4, f"expected at least 4 unchanged shrinks, got {unchanged_count}"
+
+
+def test_status_change_breaks_unchanged_run():
+    """A turn where HP drops should NOT collapse into a (unchanged) marker."""
+    msgs = []
+    hp_seq = [14, 14, 14, 10, 14]  # HP drops at index 3
+    for i, hp in enumerate(hp_seq):
+        msgs.append(_user(
+            f"TURN {i}\n=== MAP ===\n@\n=== STATUS ===\n"
+            f"HP: {hp}/14  AC: 4  Dlvl: 1  Turn: {i}"
+        ))
+        msgs.append(_assistant())
+    # Make all 5 compactable so the dedupe path runs.
+    out = _compact_chat_history(msgs, keep_full=0, drop_after=100)
+    user_msgs = [m for m in out if _msg_role(m) == "user"]
+    # The HP-drop turn should retain HP info, not collapse.
+    contents = [_msg_content(m) for m in user_msgs]
+    has_10 = any("HP: 10/14" in c for c in contents)
+    assert has_10, f"HP-drop turn lost its HP info: {contents}"
+
+
+def test_action_feedback_survives_repeated_compaction():
+    """Regression for 2026-05-16 trace 9071d001: after the second compaction
+    pass, `[Moved S.]` / `[Picked up gold]` etc. were stripped, leaving only
+    the bare turn label. The agent then had no audit-log of past actions."""
+    full = (
+        "[Moved S.]\n\n=== JOURNAL ===\n(unchanged)\n=== MAP ===\n@\n"
+        "=== STATUS ===\nHP: 14/14  AC: 4  Dlvl: 1  Turn: 51  XP: 1  $: 0"
+    )
+    # First compaction: fresh -> compacted form.
+    s1 = _one_line_summary(full, turn_distance=7)
+    assert "[Moved S.]" in s1
+    assert "HP: 14/14" in s1
+    # Second compaction (input is already-compacted s1).
+    s2 = _one_line_summary(s1, turn_distance=8)
+    assert "[Moved S.]" in s2, f"action feedback lost on 2nd pass: {s2!r}"
+    assert "HP: 14/14" in s2
+    # No turn-label chain accumulation.
+    assert s2.count("[turn -") == 1
+
+
 def test_dict_shaped_messages_compact():
     """Backward-compat: dict-shaped messages should also compact."""
     msgs = [

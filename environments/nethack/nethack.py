@@ -13,6 +13,7 @@ Published as `primeintellect/nethack` (TBD with Alex).
 from __future__ import annotations
 
 import random
+import re
 from typing import Any, Optional
 
 import verifiers as vf
@@ -695,9 +696,30 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         if self.belief_state_interval > 0 and state["turn_count"] > 0 and state["turn_count"] % self.belief_state_interval == 0:
             _maybe_belief_state_summary(state)
 
+        # Autoexplore-loop detection: when autoexplore returns "short" feedback
+        # repeatedly (frontier shrunk to 1-2 step paths near level edges), the
+        # model often spam-calls it ignoring the tail hint. After N consecutive
+        # short trips, emit a stronger interrupt hint at the TOP of the obs.
+        # Trace 9071d001 showed 66 autoexplore calls with 7-long runs ignoring
+        # in-skill tail tips.
+        loop_hint: Optional[str] = None
+        if skill_name == "autoexplore" and result.feedback and "short" in result.feedback:
+            state["consecutive_short_autoexplore"] = state.get("consecutive_short_autoexplore", 0) + 1
+            n = state["consecutive_short_autoexplore"]
+            if n >= 3:
+                loop_hint = (
+                    f"[autoexplore-loop: {n} short trips in a row. "
+                    "Switch tactic: `search` adjacent walls, or `move_to(x,y)` "
+                    "a specific feature, or pick a direction with `move`.]"
+                )
+        else:
+            state["consecutive_short_autoexplore"] = 0
+
         # Build observation message for the model.
         obs_text = format_observation_as_chat(state["structured_obs"], state["journal"], state=state, compact=self.compact_obs, journal_max_chars=self.journal_render_max_chars)
         prefix_parts = []
+        if loop_hint:
+            prefix_parts.append(loop_hint)
         if halt_reason:
             prefix_parts.append(f"[autohalt: {halt_reason}]")
         if result.feedback:
@@ -778,6 +800,69 @@ def _compact_chat_history(messages, keep_full: int = 5, drop_after: int = 100):
             role="user",
             content=f"[elided {n_dropped} older turns; see journal for context]",
         ))
+    # Second pass: collapse consecutive compacted user messages with the same
+    # status signature. In the 9071d001 trace, 90 user msgs were literally
+    # "[turn -X] HP: 14/14 AC: 4 Dlvl: 1 ..." with the same HP/AC/Dlvl — pure
+    # token noise. We shrink runs to "[turn -Y] (status unchanged)".
+    out = _dedupe_compacted_runs(out)
+    return out
+
+
+_STATUS_SIG_RE = re.compile(r"HP:\s*(\d+/\d+)\s+AC:\s*(-?\d+)\s+Dlvl:\s*(\d+)")
+
+
+def _compacted_status_signature(content: str) -> Optional[tuple]:
+    """Return (hp_ratio, ac, dlvl, has_feedback) for a compacted user message,
+    or None if the message isn't recognized as compacted-only (i.e., still has
+    a MAP block, or is an elision marker, or has unique feedback)."""
+    if "=== MAP ===" in content or "elided" in content[:30]:
+        return None
+    if not content.lstrip().startswith("[turn -"):
+        return None
+    # Any non-trivial bracketed feedback (e.g. [Moved S.], [Attack hit]) makes
+    # this turn unique — don't collapse.
+    head = content.split("\n", 1)[0]
+    # Strip leading [turn -N]
+    rest = re.sub(r"^\[turn -\d+\]\s*", "", head)
+    fb_match = re.match(r"\[([^\[\]]{1,80})\]", rest)
+    has_feedback = bool(fb_match and "turn -" not in fb_match.group(1))
+    sig = _STATUS_SIG_RE.search(content)
+    if not sig:
+        return None
+    return (sig.group(1), sig.group(2), sig.group(3), has_feedback)
+
+
+def _dedupe_compacted_runs(messages):
+    """Collapse consecutive compacted user messages with identical
+    HP/AC/Dlvl signatures and no per-turn feedback into terse `[turn -Y]
+    (unchanged)` placeholders. Keeps the first message in each run intact
+    so the model can read the actual status; later messages just mark
+    that nothing changed.
+
+    Does not change message count or assistant messages — purely shrinks
+    redundant content.
+    """
+    out = list(messages)
+    last_sig: Optional[tuple] = None
+    for i, m in enumerate(out):
+        if _msg_role(m) != "user":
+            continue
+        content = _msg_content(m)
+        sig = _compacted_status_signature(content)
+        if sig is None:
+            last_sig = None
+            continue
+        # If feedback present, keep full and reset run.
+        _, _, _, has_feedback = sig
+        if has_feedback:
+            last_sig = sig
+            continue
+        if last_sig is not None and sig[:3] == last_sig[:3]:
+            # Same status as previous compacted msg: shrink.
+            turn_match = re.match(r"\[turn -(\d+)\]", content)
+            label = turn_match.group(0) if turn_match else "[turn -?]"
+            out[i] = _replace_content(m, f"{label} (unchanged)")
+        last_sig = sig
     return out
 
 
@@ -831,14 +916,27 @@ def _one_line_summary(content: str, turn_distance: int) -> str:
         and "MAP" not in stripped_content
     )
     if looks_compacted:
-        # Try to preserve the (still-useful) status line if it was kept earlier.
-        for line in stripped_content.split("] "):
-            if line.startswith("HP: ") or "HP:" in line:
-                # The line may end with a trailing ']' from the split — clean.
-                hp_part = line.rstrip("]").strip()
-                if hp_part.startswith("HP:"):
-                    return f"[turn -{turn_distance}] {hp_part}"
-        return f"[turn -{turn_distance}]"
+        # Already compacted: extract whatever feedback/status we saved earlier
+        # and re-emit with the fresh distance label. Without this, every
+        # subsequent compaction round drops the [Moved S.] / [Picked up]
+        # marker, erasing the agent's action audit-log.
+        feedback_part = ""
+        hp_part = ""
+        # Drop the leading "[turn -N] " then scan the remainder.
+        remainder = re.sub(r"^\[turn -\d+\]\s*", "", stripped_content)
+        # Feedback is a short bracketed token like "[Moved S.]" or "[Picked up]"
+        fb_match = re.match(r"(\[[^\[\]]{1,80}\])\s*", remainder)
+        if fb_match and "[turn -" not in fb_match.group(1):
+            feedback_part = fb_match.group(1)
+            remainder = remainder[fb_match.end():]
+        # Status line: "HP: x/y AC: z ..."
+        hp_match = re.search(r"HP:\s*\d+/\d+[^\n]*", remainder)
+        if hp_match:
+            hp_part = hp_match.group(0).strip()
+        parts = [f"[turn -{turn_distance}]"]
+        if feedback_part: parts.append(feedback_part)
+        if hp_part: parts.append(hp_part)
+        return " ".join(parts)
 
     status_line = ""
     feedback = ""

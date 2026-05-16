@@ -195,3 +195,50 @@ def test_format_observation_with_populated_journal_includes_block():
     out = format_observation_as_chat(s, j)
     assert "=== JOURNAL ===" in out
     assert "find the stairs" in out
+
+
+@pytest.mark.asyncio
+async def test_autoexplore_loop_hint_fires_after_three_short_trips():
+    """Regression for trace 9071d001: model called autoexplore 66 times with
+    7-long consecutive runs of 'short' results. After 3 in a row, the harness
+    must surface a stronger interrupt hint at the top of the observation."""
+    env = load_environment(tier="empty_room", n_examples=1, max_turns=20)
+    state = {"task": {"tier": "empty_room", "seed": 42}}
+    state = await env.setup_state(state)
+
+    # Force-set the counter to simulate prior short trips, then fire one
+    # autoexplore call that returns a short-trip feedback. empty_room is
+    # tiny so autoexplore typically reports "short" or "fully explored".
+    state["consecutive_short_autoexplore"] = 2
+    msg = _tool_call_message("autoexplore", {"max_steps": 5})
+    new_msgs = await env.env_response([msg], state)
+    content = new_msgs[0]["content"]
+
+    # Either the loop hint fired (3+ shorts) OR the run was reset because
+    # autoexplore returned "fully explored" (no "short" in feedback). Both
+    # are acceptable behaviors; what matters is that EITHER:
+    #  (a) we see the autoexplore-loop hint, OR
+    #  (b) the counter was reset by a non-short result.
+    if "short" in content:
+        assert "autoexplore-loop" in content, (
+            f"expected autoexplore-loop hint at top after 3 shorts, got:\n{content[:600]}"
+        )
+    else:
+        assert state.get("consecutive_short_autoexplore", -1) == 0
+
+    state["env"].close()
+
+
+@pytest.mark.asyncio
+async def test_autoexplore_counter_resets_on_non_autoexplore_call():
+    """A non-autoexplore tool call should reset the consecutive counter."""
+    env = load_environment(tier="empty_room", n_examples=1, max_turns=20)
+    state = {"task": {"tier": "empty_room", "seed": 42}}
+    state = await env.setup_state(state)
+    state["consecutive_short_autoexplore"] = 5
+
+    msg = _tool_call_message("move", {"direction": "E"})
+    await env.env_response([msg], state)
+    assert state["consecutive_short_autoexplore"] == 0
+
+    state["env"].close()
