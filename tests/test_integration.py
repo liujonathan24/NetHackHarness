@@ -197,6 +197,35 @@ def test_format_observation_with_populated_journal_includes_block():
     assert "find the stairs" in out
 
 
+def test_pinned_objective_persists_when_journal_otherwise_unchanged():
+    """Regression for trace 9071d001: with diff-only journal, the pinned
+    objective got hidden behind '(unchanged since last turn)' after turn 1,
+    and history compaction wiped turn 1, leaving the agent with no recorded
+    goal."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class _S:
+        map_view: str = "@..."
+        messages: list = None
+        inventory: list = None
+        status: dict = None
+        character: dict = None
+        menu: object = None
+        inventory_prompt: object = None
+
+    s = _S(messages=[], inventory=[], status={"depth": 1}, character={})
+    j = Journal()
+    j.pin_objective("reach dungeon level 2")
+    # Simulate a second turn where the journal didn't change.
+    state = {"_journal_fingerprint": (j.objective, tuple(sorted(j.notes.keys())))}
+    out = format_observation_as_chat(s, j, state=state)
+    assert "reach dungeon level 2" in out, (
+        "objective must survive the diff-only journal path"
+    )
+    assert "notes unchanged" in out  # the diff marker is still emitted for notes
+
+
 @pytest.mark.asyncio
 async def test_autoexplore_loop_hint_fires_after_three_short_trips():
     """Regression for trace 9071d001: model called autoexplore 66 times with

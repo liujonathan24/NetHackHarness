@@ -223,7 +223,15 @@ def format_observation_as_chat(
         prev_fp = state.get("_journal_fingerprint") if state is not None else None
         lines.append("=== JOURNAL ===")
         if compact and prev_fp == cur_fp:
-            lines.append("(unchanged since last turn)")
+            # Diff-only: omit notes, but ALWAYS surface the pinned objective.
+            # After history compaction strips turn 1, the agent has no way to
+            # recall its goal from context — and the 9071d001 trace showed
+            # zero `recall` calls, so the model wasn't retrieving it either.
+            if journal.objective:
+                lines.append(f"Objective: {journal.objective}")
+                lines.append("(notes unchanged since last turn)")
+            else:
+                lines.append("(unchanged since last turn)")
         else:
             lines.append(journal.render(max_chars=journal_max_chars))
         if state is not None:
