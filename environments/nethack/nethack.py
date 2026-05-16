@@ -319,6 +319,29 @@ def format_observation_as_chat(
                     hint = f"Hostile adjacent ({mon_dir}). Call `attack(direction=\"{mon_dir}\")` — your HP is healthy."
                 else:
                     hint = f"Hostile adjacent ({mon_dir}) and HP is low ({hp}/{hp_max}). Consider `engrave_elbereth` or retreat with `move`."
+            # Stairs visible (but not adjacent): proactively suggest move_to.
+            # Trace 9071d001 had stairs visible for many turns without the
+            # agent navigating to them — it kept autoexploring.
+            if hint is None and compact and state is not None and "raw_obs" in state:
+                try:
+                    from nethack_core.observations import extract_visible_features
+                    feats = extract_visible_features(state["raw_obs"].tty_chars)
+                    for f in feats:
+                        if f.startswith("stairs DOWN at "):
+                            # f looks like "stairs DOWN at (38,11)" — pull
+                            # the first coord pair.
+                            import re as _re
+                            m = _re.search(r"\((\d+),(\d+)\)", f)
+                            if m:
+                                tx, ty = m.group(1), m.group(2)
+                                hint = (
+                                    f"Stairs DOWN visible at ({tx},{ty}). "
+                                    f"Call `move_to(x={tx}, y={ty})` to walk "
+                                    "to them, then `descend`."
+                                )
+                            break
+                except Exception:
+                    pass
     # Pet-blocking detection: when the message buffer says "X is in the way!"
     # the move failed because the pet/peaceful occupies the tile. Trace
     # 9071d001 had the model stuck in long pet-blocking loops. Override any
