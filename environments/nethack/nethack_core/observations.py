@@ -482,6 +482,17 @@ _FEATURE_GLYPHS = {
     ord("{"): "fountain",
     ord("\\"): "throne",
     ord("$"): "gold",
+    ord("+"): "door (closed)",
+    ord("%"): "food/corpse",
+    ord("["): "armor",
+    ord("("): "weapon",
+    ord(")"): "tool",
+    ord("?"): "scroll",
+    ord("!"): "potion",
+    ord("/"): "wand",
+    ord("="): "ring",
+    ord('"'): "amulet",
+    ord("*"): "gem/rock",
 }
 
 
@@ -504,7 +515,14 @@ def extract_visible_features(tty_chars) -> list[str]:
             label = _FEATURE_GLYPHS.get(ch)
             if label:
                 seen_by_label.setdefault(label, []).append((x, y))
-    for label in ("stairs DOWN", "stairs UP", "altar", "fountain", "throne", "gold"):
+    # Order matters: most-critical first so a clipped output still has the
+    # essentials. Stairs/door/altar before consumables before raw items.
+    label_order = (
+        "stairs DOWN", "stairs UP", "door (closed)", "altar", "fountain",
+        "throne", "food/corpse", "potion", "scroll", "wand", "ring",
+        "amulet", "armor", "weapon", "tool", "gem/rock", "gold",
+    )
+    for label in label_order:
         coords = seen_by_label.get(label, [])
         if not coords:
             continue
