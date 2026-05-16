@@ -606,11 +606,30 @@ def _enum_actions_to_indices(env: NetHackCoreEnv, enum_actions: list[int]) -> li
 })
 def move_to(env: NetHackCoreEnv, obs: StructuredObservation, x: int, y: int) -> SkillResult:
     chars, start = _current_chars_and_player(env)
-    path = a_star(chars, start, (int(x), int(y)))
+    tx, ty = int(x), int(y)
+    path = a_star(chars, start, (tx, ty))
     if path is None:
-        return SkillResult([], f"No path from {start} to ({x},{y}).", interrupted=True)
+        # Surface why the target is unreachable: out of bounds, or what
+        # tile sits there. Bare "No path" sent the model into spin loops.
+        try:
+            h = chars.shape[0] if hasattr(chars, "shape") else len(chars)
+            w = chars.shape[1] if hasattr(chars, "shape") else len(chars[0])
+            if not (0 <= ty < h and 0 <= tx < w):
+                detail = f"target ({tx},{ty}) is out of bounds (map is 0..{w-1} x 0..{h-1})"
+            else:
+                ch = int(chars[ty][tx])
+                glyph = chr(ch) if 32 <= ch < 127 else "?"
+                if glyph in ("|", "-"):
+                    detail = f"target is a wall ({glyph})"
+                elif glyph == " ":
+                    detail = "target is unseen (no path discovered yet — explore first)"
+                else:
+                    detail = f"target tile is `{glyph}` but no walkable path connects it"
+        except Exception:
+            detail = "no walkable path"
+        return SkillResult([], f"No path from {start} to ({tx},{ty}): {detail}.", interrupted=True)
     if not path:
-        return SkillResult([], f"Already at ({x},{y}).", interrupted=False)
+        return SkillResult([], f"Already at ({tx},{ty}).", interrupted=False)
     return SkillResult(
         actions=_enum_actions_to_indices(env, path),
         feedback=f"Pathing to ({x},{y}): {len(path)} steps.",
