@@ -1,0 +1,18 @@
+2026-05-16 11:01:55 - verifiers.serve.server.env_server.ZMQEnvServer - INFO - Initializing ZMQEnvServer to serve nethack (env_args={'tier': 'corridor_explore', 'max_turns': 30, 'compact_obs': False, 'history_keep_full': 99999, 'history_drop_after': 99999}, extra_env_kwargs={'concurrency': 32}, num_workers=1)
+2026-05-16 11:01:55 - verifiers.serve.server.env_server.ZMQEnvServer - INFO - ZMQEnvServer started on tcp://127.0.0.1:64106
+2026-05-16 11:01:55 - verifiers.serve.server.env_router.EnvRouter - INFO - Started worker (id=0, name=nethack-0, address=ipc:///tmp/vf-879dc4133f96-nethack-0, pid=42362)
+2026-05-16 11:02:05 - verifiers.serve.server.env_router.EnvRouter - INFO - Active tasks: 0 (W0: ?)
+  Server | Lag: min=0ms mean=2ms median=2ms p90=2ms p99=2ms max=2ms (n=99)
+  W0     | no stats yet
+2026-05-16 11:02:15 - verifiers.serve.server.env_router.EnvRouter - INFO - Active tasks: 1 (W0: 1)
+  Server | Lag: min=0ms mean=2ms median=2ms p90=2ms p99=2ms max=2ms (n=197)
+  W0     | Lag: min=0ms mean=5ms median=2ms p90=2ms p99=26ms max=342ms (n=95)
+2026-05-16 11:02:25 - verifiers.serve.server.env_router.EnvRouter - INFO - Active tasks: 1 (W0: 1)
+  Server | Lag: min=0ms mean=2ms median=2ms p90=2ms p99=2ms max=2ms (n=297)
+  W0     | Lag: min=0ms mean=3ms median=2ms p90=2ms p99=3ms max=342ms (n=193)
+2026-05-16 11:02:35 - verifiers.serve.server.env_router.EnvRouter - INFO - Active tasks: 1 (W0: 1)
+  Server | Lag: min=0ms mean=2ms median=2ms p90=2ms p99=2ms max=2ms (n=395)
+  W0     | Lag: min=0ms mean=3ms median=2ms p90=2ms p99=2ms max=342ms (n=291)
+2026-05-16 11:02:45 - verifiers.serve.server.env_router.EnvRouter - INFO - Active tasks: 1 (W0: 1)
+  Server | Lag: min=0ms mean=2ms median=2ms p90=2ms p99=2ms max=2ms (n=494)
+  W0     | Lag: min=0ms mean=3ms median=2ms p90=2ms p99=2ms max=342ms (n=389)

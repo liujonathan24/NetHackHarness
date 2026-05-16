@@ -5,3 +5,5 @@
 2026-05-16 10:38:22 - verifiers.utils.thread_utils - INFO - Scaled default executor and 0 registered executor(s) ()
 2026-05-16 10:38:22 - verifiers.serve.server.env_worker.EnvWorker - INFO - Initialized worker nethack-0 on ipc:///tmp/vf-ab0b2199fc9a-nethack-0
 2026-05-16 10:38:22 - verifiers.serve.server.env_worker.EnvWorker - INFO - Starting worker nethack-0
+2026-05-16 11:01:36 - verifiers.utils.process_utils - INFO - Death pipe closed — parent is gone, sending SIGTERM to self
+2026-05-16 11:01:36 - verifiers.serve.server.env_worker.EnvWorker - INFO - Shut down worker nethack-0

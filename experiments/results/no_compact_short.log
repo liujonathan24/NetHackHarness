@@ -1,0 +1,32 @@
+2026-05-16 11:01:54 - verifiers.utils.eval_utils - INFO - Automatically determined concurrency=32
+2026-05-16 11:01:54 - verifiers.utils.eval_utils - INFO - Using num_workers=1 env server worker(s), per-worker concurrency: 32 (total 32)
+2026-05-16 11:01:54 - verifiers.serve.client.env_client.ZMQEnvClient - INFO - Waiting for env server nethack (tcp://127.0.0.1:64106) to become healthy (timeout=10m)
+2026-05-16 11:01:55 - verifiers.serve.server.env_server.ZMQEnvServer - INFO - Initializing ZMQEnvServer to serve nethack (env_args={'tier': 'corridor_explore', 'max_turns': 30, 'compact_obs': False, 'history_keep_full': 99999, 'history_drop_after': 99999}, extra_env_kwargs={'concurrency': 32}, num_workers=1)
+2026-05-16 11:01:55 - verifiers.serve.server.env_server.ZMQEnvServer - INFO - ZMQEnvServer started on tcp://127.0.0.1:64106
+2026-05-16 11:01:55 - verifiers.serve.server.env_router.EnvRouter - INFO - Started worker (id=0, name=nethack-0, address=ipc:///tmp/vf-879dc4133f96-nethack-0, pid=42362)
+2026-05-16 11:01:55 - verifiers.serve.client.env_client.ZMQEnvClient - INFO - Env server nethack (tcp://127.0.0.1:64106) became healthy (was startup)
+2026-05-16 11:01:55 - verifiers.serve.client.env_client.ZMQEnvClient - INFO - Env server nethack (tcp://127.0.0.1:64106) is healthy
+2026-05-16 11:01:55 - verifiers.envs.environment.NetHackVerifiersEnv - WARNING - eval_dataset is not set, falling back to train dataset
+2026-05-16 11:01:55 - verifiers.envs.environment.NetHackVerifiersEnv - INFO - Saving results to /Users/Fritz/Downloads/files/experiments/results/no_compact_short/evals/nethack--Qwen--Qwen3.5-9B/9306f9d3
+Processing 1 groups (1 total rollouts):   0%|          | 0/1 [00:00<?, ?it/s, reward=?]2026-05-16 11:01:56 - verifiers.utils.env_utils - INFO - Loading environment: nethack
+2026-05-16 11:01:56 - verifiers.utils.env_utils - INFO - Using provided args: compact_obs=False, max_turns=30, tier=corridor_explore, history_drop_after=99999, history_keep_full=99999
+2026-05-16 11:01:56 - verifiers.utils.env_utils - INFO - Using default args: n_examples=256, seed=0, journal_render_max_chars=2000, sub_lm=None, belief_state_interval=25, subgoal_proposer=None, interface='skill'
+2026-05-16 11:01:56 - verifiers.utils.env_utils - INFO - Successfully loaded environment 'nethack'
+2026-05-16 11:01:56 - verifiers.utils.thread_utils - INFO - Scaled default executor and 0 registered executor(s) ()
+2026-05-16 11:01:56 - verifiers.serve.server.env_worker.EnvWorker - INFO - Initialized worker nethack-0 on ipc:///tmp/vf-879dc4133f96-nethack-0
+2026-05-16 11:01:56 - verifiers.serve.server.env_worker.EnvWorker - INFO - Starting worker nethack-0
+2026-05-16 11:02:05 - verifiers.serve.server.env_router.EnvRouter - INFO - Active tasks: 0 (W0: ?)
+  Server | Lag: min=0ms mean=2ms median=2ms p90=2ms p99=2ms max=2ms (n=99)
+  W0     | no stats yet
+2026-05-16 11:02:15 - verifiers.serve.server.env_router.EnvRouter - INFO - Active tasks: 1 (W0: 1)
+  Server | Lag: min=0ms mean=2ms median=2ms p90=2ms p99=2ms max=2ms (n=197)
+  W0     | Lag: min=0ms mean=5ms median=2ms p90=2ms p99=26ms max=342ms (n=95)
+2026-05-16 11:02:25 - verifiers.serve.server.env_router.EnvRouter - INFO - Active tasks: 1 (W0: 1)
+  Server | Lag: min=0ms mean=2ms median=2ms p90=2ms p99=2ms max=2ms (n=297)
+  W0     | Lag: min=0ms mean=3ms median=2ms p90=2ms p99=3ms max=342ms (n=193)
+2026-05-16 11:02:35 - verifiers.serve.server.env_router.EnvRouter - INFO - Active tasks: 1 (W0: 1)
+  Server | Lag: min=0ms mean=2ms median=2ms p90=2ms p99=2ms max=2ms (n=395)
+  W0     | Lag: min=0ms mean=3ms median=2ms p90=2ms p99=2ms max=342ms (n=291)
+2026-05-16 11:02:45 - verifiers.serve.server.env_router.EnvRouter - INFO - Active tasks: 1 (W0: 1)
+  Server | Lag: min=0ms mean=2ms median=2ms p90=2ms p99=2ms max=2ms (n=494)
+  W0     | Lag: min=0ms mean=3ms median=2ms p90=2ms p99=2ms max=342ms (n=389)
