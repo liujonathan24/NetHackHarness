@@ -613,10 +613,9 @@ def autoexplore(env: NetHackCoreEnv, obs: StructuredObservation, max_steps: int 
             # Strong, specific advice: search repeatedly at walls. NetHack
             # secret passages typically take 5-10 search calls to find.
             tip = (
-                " No `>` visible. The level likely has hidden passages or a "
-                "trapdoor. Call `search` 5-10 times at adjacent walls "
-                "(especially dead-end corridors), or `wiki_lookup` 'search' "
-                "for tactics."
+                " No `>` visible. The level likely has hidden passages or "
+                "trapdoors. Call `search` 5-10 times at adjacent walls — "
+                "especially dead-end corridors — to reveal them."
             )
         return SkillResult(
             [],
