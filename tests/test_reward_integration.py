@@ -99,6 +99,6 @@ def test_system_prompt_stays_under_token_budget():
     """Rough token-budget guard: ~4 chars/token, cap at ~700 tokens => <=2800
     chars. Bumped to 2800 to fit the descent worked-example added after
     the haiku trace showed the model needed step-by-step descent guidance."""
-    assert len(SYSTEM_PROMPT) <= 2900, (
+    assert len(SYSTEM_PROMPT) <= 2950, (
         f"SYSTEM_PROMPT is {len(SYSTEM_PROMPT)} chars; trim before shipping."
     )

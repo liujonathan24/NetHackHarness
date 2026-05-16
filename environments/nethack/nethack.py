@@ -99,19 +99,20 @@ GLYPH KEY (memorize):
   you see `f` adjacent, it is a creature, not furniture.
 - The `@` is YOU; it visually hides the tile you stand on. Check the
   `=== UNDER PLAYER ===` line in each obs to know what's beneath you.
+
+The `=== VISIBLE FEATURES ===` line lists every stairs/altar/fountain/etc.
+that's actually on the visible map with (x,y) coords. If that line does
+NOT include `stairs DOWN`, no `>` is currently visible — don't pattern-
+match the ASCII grid for one; you'll hallucinate. Explore or `search`.
 To reach the next dungeon level you must (1) find a `>` tile, (2) walk
 ON it, (3) call `descend`. If `descend` says "you can't go down here",
 your @ is not actually on a `>` — verify via UNDER PLAYER.
 
-Common pitfalls: `eat`/`quaff`/`read` take an `item` arg (substring or
-letter). If no item matches, the turn is NOT consumed; read the candidate
-list and retry. Check HP before engaging — at HP < 30%, retreat or
-`search` to rest. Use `autoexplore` for traversal; `move` is tactical
-only. When cornered, `engrave_elbereth` to write 'Elbereth' — most
-monsters won't attack you on that square.
-
-Menus and item-selection prompts are auto-dismissed by the harness; you
-NEVER call menu/inventory tools. Just issue your next normal action.
+Pitfalls: `eat`/`quaff`/`read` need an `item` arg (substring or letter).
+At HP <30%, retreat or `search` to rest. Use `autoexplore` for traversal,
+`move` for tactics. Cornered → `engrave_elbereth` writes Elbereth (most
+monsters won't attack). Menus/item prompts are auto-dismissed; never
+call menu/inventory tools.
 
 === SKILLS CHEAT SHEET ===
 - Traverse a level: `autoexplore` (repeat until "fully explored")
