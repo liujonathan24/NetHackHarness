@@ -766,10 +766,21 @@ def pin_objective(env: NetHackCoreEnv, obs: StructuredObservation, text: str) ->
 })
 def wiki_lookup(env: NetHackCoreEnv, obs: StructuredObservation, entity: str) -> SkillResult:
     from .wiki import get_index
-    page = get_index().lookup(entity)
+    idx = get_index()
+    page = idx.lookup(entity)
     if page is None:
+        # Surface nearest matches via substring search so the agent can
+        # retry with a valid title instead of giving up on the tool.
+        hits = idx.search(entity, k=3)
+        if hits:
+            suggestions = ", ".join(h.title for h in hits)
+            return SkillResult(
+                actions=[],
+                feedback=f"No exact page {entity!r}. Did you mean: {suggestions}? (call wiki_lookup with one of these titles)",
+                interrupted=True,
+            )
         return SkillResult(
-            actions=[], feedback=f"No wiki page for {entity!r}.",
+            actions=[], feedback=f"No wiki page for {entity!r} and no fuzzy matches.",
             interrupted=True,
         )
     return SkillResult(
