@@ -233,12 +233,19 @@ def format_observation_as_chat(
     pos_part = ""
     if "x" in s and "y" in s:
         pos_part = f"  Pos: ({s['x']},{s['y']})"
+    # NLE hunger_state: 0=Satiated, 1=Normal, 2=Hungry, 3=Weak, 4=Fainting, 5=Starving.
+    # Only surface when non-normal so the status line stays compact.
+    _HUNGER_LABEL = {0: "Satiated", 2: "Hungry", 3: "Weak", 4: "Fainting", 5: "Starving"}
+    hunger_part = ""
+    h = s.get("hunger_state")
+    if h is not None and h in _HUNGER_LABEL:
+        hunger_part = f"  Hunger: {_HUNGER_LABEL[h]}"
     lines.append(f"HP: {s.get('hitpoints', '?')}/{s.get('max_hitpoints', '?')}  "
                  f"AC: {s.get('armor_class', '?')}  "
                  f"{dlvl_part}  "
                  f"Turn: {s.get('time', '?')}  "
                  f"XP: {s.get('experience_level', '?')}  "
-                 f"$: {s.get('gold', 0)}{pos_part}")
+                 f"$: {s.get('gold', 0)}{pos_part}{hunger_part}")
     c = structured.character
     if c:
         lines.append(f"Character: {c.get('role', '?')} ({c.get('race', '?')}, {c.get('alignment', '?')})")
@@ -287,6 +294,15 @@ def format_observation_as_chat(
                 f"and regenerate HP → `pray` if not on cooldown. Avoid melee until "
                 f"HP is back above 70%."
             )
+        else:
+            h = structured.status.get("hunger_state")
+            if h is not None and h >= 3:
+                # Weak (3) or worse — agent will start losing HP unless they eat.
+                hint = (
+                    f"Hunger is at {('Weak','Fainting','Starving')[min(h-3,2)]}. "
+                    "Call `eat(item=<food letter>)` now; if no food in inventory, "
+                    "`pray` (once) for divine aid."
+                )
     if hint is None and under and "stairs DOWN" in under:
         hint = "You are on stairs down. Call `descend` now."
     elif hint is None and under and under.startswith("on tile:"):
