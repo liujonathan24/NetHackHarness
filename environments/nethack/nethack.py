@@ -758,6 +758,31 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
             except (KeyError, IndexError, TypeError, AttributeError):
                 pass
 
+        # Attack-outcome detection: replace the generic "Moved W." feedback
+        # with hit/miss/kill info pulled from the NLE message buffer. The
+        # model doesn't otherwise know whether its swing landed.
+        if skill_name == "attack":
+            try:
+                from nethack_core.skills import SkillResult as _SR
+                msg_bytes = last_obs.message if hasattr(last_obs, "message") else last_obs.get("message")
+                if msg_bytes is not None:
+                    msg = bytes(msg_bytes).split(b"\x00", 1)[0].decode("ascii", errors="replace").strip()
+                    if msg:
+                        outcome = None
+                        msg_l = msg.lower()
+                        if "you kill" in msg_l or "is killed" in msg_l:
+                            outcome = f"Killed: {msg}"
+                        elif "you hit" in msg_l or "you destroy" in msg_l:
+                            outcome = f"Hit: {msg}"
+                        elif "you miss" in msg_l:
+                            outcome = f"Missed: {msg}"
+                        elif "nothing here" in msg_l or "no monster" in msg_l:
+                            outcome = f"No target: {msg}"
+                        if outcome:
+                            result = _SR(actions=result.actions, feedback=outcome, interrupted=result.interrupted)
+            except (KeyError, IndexError, TypeError, AttributeError):
+                pass
+
         # Autoexplore-loop detection: when autoexplore returns "short" feedback
         # repeatedly (frontier shrunk to 1-2 step paths near level edges), the
         # model often spam-calls it ignoring the tail hint. After N consecutive
