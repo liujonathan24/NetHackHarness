@@ -117,8 +117,11 @@ def test_journal_diff_only_unchanged_on_repeat():
     first = format_observation_as_chat(obs, journal=j, state=state)
     second = format_observation_as_chat(obs, journal=j, state=state)
     assert "strategy" in first
-    assert "(unchanged since last turn)" in second
+    # Notes diffed out, but the pinned objective always re-renders so the
+    # agent retains its goal post-compaction. Bug fixed 2026-05-16.
+    assert "notes unchanged" in second or "unchanged since last turn" in second
     assert "strategy" not in second
+    assert "Objective: explore" in second
 
 
 def test_journal_diff_refires_on_new_note():
@@ -189,3 +192,14 @@ def test_compact_preserves_status_and_messages():
     assert "HP: 10/10" in out
     assert "You hit the kobold" in out
     assert "kobold misses" in out
+
+
+def test_status_line_includes_player_position_when_available():
+    """move_to(x,y) is useless without knowing the agent's current (x,y).
+    Trace 9071d001 showed model picking essentially random move_to targets;
+    surfacing 'Pos: (x,y)' in STATUS lets it compute relative paths."""
+    obs = _basic_obs()
+    obs.status = dict(obs.status)
+    obs.status.update({"x": 42, "y": 11})
+    out = format_observation_as_chat(obs, journal=None, compact=True)
+    assert "Pos: (42,11)" in out

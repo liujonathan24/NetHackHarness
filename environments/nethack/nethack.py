@@ -252,12 +252,15 @@ def format_observation_as_chat(
     dlvl_part = f"Dlvl: {s.get('depth', '?')}"
     if max_dlvl is not None and max_dlvl > s.get("depth", 0):
         dlvl_part = f"Dlvl: {s.get('depth', '?')} (max reached: {max_dlvl})"
+    pos_part = ""
+    if "x" in s and "y" in s:
+        pos_part = f"  Pos: ({s['x']},{s['y']})"
     lines.append(f"HP: {s.get('hitpoints', '?')}/{s.get('max_hitpoints', '?')}  "
                  f"AC: {s.get('armor_class', '?')}  "
                  f"{dlvl_part}  "
                  f"Turn: {s.get('time', '?')}  "
                  f"XP: {s.get('experience_level', '?')}  "
-                 f"$: {s.get('gold', 0)}")
+                 f"$: {s.get('gold', 0)}{pos_part}")
     c = structured.character
     if c:
         lines.append(f"Character: {c.get('role', '?')} ({c.get('race', '?')}, {c.get('alignment', '?')})")
