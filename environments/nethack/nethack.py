@@ -90,8 +90,8 @@ careful play and punishes haste.
 GLYPH KEY (memorize):
 - Terrain: `>` stairs DOWN, `<` stairs UP (NOT a way down), `_` altar,
   `{` fountain, `}` pool, `#` corridor, `.` floor, `|` and `-` walls,
-  `+` door (closed) or spellbook, `\\` throne, `$` gold pile,
-  `[`/`)`/`(`/`*`/`?` items (armor/weapon/tool/gem/scroll).
+  `+` door (closed) or spellbook, `\\` throne, `$` gold pile, `%` food
+  or corpse, `[`/`)`/`(`/`*`/`?` items (armor/weapon/tool/gem/scroll).
 - Creatures are LETTERS, not furniture. Lowercase a..z and uppercase
   A..Z are monsters; common: `d` dog/canine, `f` cat/small feline
   or lichen, `r` rat, `x` grid bug, `B` bat, `k` kobold, `o` orc,
