@@ -351,7 +351,7 @@ def format_observation_as_chat(
                     # coordinates lets `move_to(x,y)` immediately.
                     lines.append(f"=== VISIBLE FEATURES === {'; '.join(features)}")
                     lines.append("")
-                hostiles = extract_hostiles_in_sight(state["raw_obs"].tty_chars)
+                hostiles = extract_hostiles_in_sight(state["raw_obs"].tty_chars, getattr(state["raw_obs"], "glyphs", None))
                 if hostiles:
                     lines.append(f"=== VISIBLE GLYPHS === {', '.join(hostiles)}")
                     lines.append("")

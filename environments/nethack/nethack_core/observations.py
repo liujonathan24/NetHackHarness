@@ -515,15 +515,16 @@ def extract_visible_features(tty_chars) -> list[str]:
     return out
 
 
-def extract_hostiles_in_sight(tty_chars) -> list[str]:
+def extract_hostiles_in_sight(tty_chars, glyphs=None) -> list[str]:
     """Return a deduplicated list of visible glyph chars that look like
     monsters (letter, not @). Lowercase 'd' = "dog or jackal-class"; we
     don't have monster-name resolution here — that needs the glyph table.
 
-    Returned format: ["d (×2)", "k", "@ (player)"] sorted alphabetically.
-    Cheap and lossy but lets the agent see "there's something in the room"
-    without parsing the full map."""
-    seen: dict[str, int] = {}
+    Returned format: ["d (×2)", "k (pet)"] sorted alphabetically. When the
+    NLE `glyphs` array is provided, pets are tagged so the agent doesn't
+    plan an attack on its own kitten."""
+    hostile: dict[str, int] = {}
+    pet: dict[str, int] = {}
     for y in range(1, min(22, tty_chars.shape[0])):
         for x in range(tty_chars.shape[1]):
             ch = int(tty_chars[y, x])
@@ -531,10 +532,21 @@ def extract_hostiles_in_sight(tty_chars) -> list[str]:
                 continue
             if (ch >= ord("a") and ch <= ord("z")) or (ch >= ord("A") and ch <= ord("Z")):
                 key = chr(ch)
-                seen[key] = seen.get(key, 0) + 1
-    if not seen:
-        return []
-    return [f"{k} (×{v})" if v > 1 else k for k, v in sorted(seen.items())]
+                kind: Optional[str] = None
+                if glyphs is not None and 1 <= y <= 21:
+                    gy = y - 1
+                    if 0 <= gy < glyphs.shape[0] and 0 <= x < glyphs.shape[1]:
+                        kind = _glyph_kind(int(glyphs[gy, x]))
+                if kind == "pet":
+                    pet[key] = pet.get(key, 0) + 1
+                else:
+                    hostile[key] = hostile.get(key, 0) + 1
+    out: list[str] = []
+    for k, v in sorted(hostile.items()):
+        out.append(f"{k} (×{v})" if v > 1 else k)
+    for k, v in sorted(pet.items()):
+        out.append(f"{k} (pet ×{v})" if v > 1 else f"{k} (pet)")
+    return out
 
 
 # ---------- top-level entry point ----------
