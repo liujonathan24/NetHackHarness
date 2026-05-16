@@ -330,6 +330,12 @@ def format_observation_as_chat(
             mon_dir = None
             for d, tile in adj.items():
                 if len(tile) >= 1 and tile[0].isalpha() and tile not in ("@",):
+                    # Skip pets — extract_adjacent now flags them when glyphs
+                    # are available. Recommending `attack` on a pet would
+                    # trigger the "really attack" peaceful prompt and damage
+                    # alignment if confirmed.
+                    if "PET" in tile:
+                        continue
                     mon_dir = d
                     break
             if mon_dir is not None and structured.status:
