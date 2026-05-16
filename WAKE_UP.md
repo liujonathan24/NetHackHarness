@@ -1,6 +1,53 @@
 # Read this first when you wake up — 2026-05-16
 
-## 🎯 Headline (since you went back to sleep at ~03:30 EDT)
+## 🆕 Morning session (~10:30 → 14:00 EDT): GitHub mirror + 11 harness fixes
+
+### Repo mirrored to GitHub
+The codebase is now pushed to `git@github.com:liujonathan24/NetHackHarness.git`.
+Force-pushed once to strip Claude co-author trailers — local hashes match
+remote. All subsequent commits land with you as sole author.
+
+### Trace 9071d001 analysis (Qwen3.5-9B, scout=0.122, 0 descents) drove 11 fixes:
+
+1. **Action feedback survives repeated compaction** (`_one_line_summary`). Earlier compaction passes
+   stripped `[Moved S.]` / `[Picked up]` markers on the *second* re-compact, leaving only `[turn -X] HP:...`.
+   Now we re-extract both fields and emit the audit trail indefinitely.
+2. **Identical-status compacted runs collapse** to `[turn -Y] (unchanged)`. The trace had ~90
+   user msgs literally identical bar the turn counter.
+3. **Autoexplore-loop escalation hint** after 3 consecutive `short` results — the trace had 7-long runs.
+4. **Glyph key expanded** in SYSTEM_PROMPT — terrain enumerated AND "creatures are letters,
+   not furniture; there is no 'fireplace' glyph". The trace had the model labeling `f` as
+   fireplace, fountain, and floor in different turns.
+5. **`=== VISIBLE FEATURES ===` block** pre-parses the tty for stairs/altar/fountain/throne/gold
+   with (x,y) coords. The trace had the model confusing `<` for `>` for 100 turns.
+6. **Pinned objective always rendered** even when journal otherwise unchanged. Diff-only used
+   to hide it after turn 1; after compaction wiped turn 1, the agent had no recorded goal.
+7. **Player (x,y) in STATUS** (from blstats). `move_to(x,y)` is useless without knowing where you are.
+8. **Move-blocked detection** — single-step moves now compare pre/post player position and
+   override `[Moved S.]` to `[Move blocked at (x,y): wall or obstacle in S. Pick a different
+   direction or search if you suspect a hidden door]` when the position didn't change.
+9. **Adjacent monster class labels** — `f` renders as `f(cat/small feline)`, `d` as `d(dog/canine)`,
+   ~32 common classes covered. Anti-hallucination guard at the data layer.
+10. **Stronger autoexplore-no-frontier tip** — when fully explored AND no `>` visible, hint
+    explicitly asks for 5-10 consecutive `search` calls at adjacent walls.
+11. **Pet-blocking HINT** — `"X is in the way!"` in messages triggers a `move perpendicular
+    or wait` directive. Trace had a 16-turn loop of "Your kitten is in the way!".
+
+**285 tests green.** Commits `ce0a464..87c2306` on `main`.
+
+### Outstanding: compaction baseline justification
+User direction: *"Prior to using compacting, we have to show that the non-compacted ones can
+do the task but are more expensive. Then, we try to match the non-compacted baseline with a
+compacted version. We always need this justification."*
+
+A first no-compact eval (`max_turns=100`) hung after 22 min (worker died at 10:42 EDT;
+main process kept waiting). Re-launched a short version with `max_turns=30, max_tokens=1024`
+under `experiments/results/no_compact_short/`. Scaffold doc at
+`experiments/results/compaction_baseline_vs_v0060.md` — fill once result lands.
+
+---
+
+## 🎯 Earlier headline (since you went back to sleep at ~03:30 EDT)
 
 You flagged: *"v0.0.34 Qwen trace shows 42% of turns on `menu_option` —
 can we offload menus to the harness?"*
