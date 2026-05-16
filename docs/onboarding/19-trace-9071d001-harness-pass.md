@@ -49,6 +49,21 @@ A `compact_obs=False, history_keep_full=99999` eval is in flight under
   blocks/hints. Most rollouts spend >>100 turns in compacted state so
   the savings dominate.
 
+## Tools
+
+`tools/trace_analyze.py` — static failure-mode summary for any results.jsonl.
+Usage: `python tools/trace_analyze.py path/to/results.jsonl`. Reports:
+
+- Tool call distribution and consecutive-same-tool runs ≥ 5 (catches autoexplore-spam)
+- Reasoning length percentiles (catches over-deliberation)
+- Stuck-keyword hits in reasoning ("stuck", "looping", "no path", etc.)
+- Glyph-name hallucinations ("fireplace", "fountain (f)", "floor (f)")
+- Compacted-only vs action-bracketed user-message counts (compaction coverage)
+- Counts of harness HINT firings: `Move blocked`, `autoexplore-loop`, `pet blocking`
+  hint, `VISIBLE FEATURES` block appearances, `(unchanged)` status collapses
+
+Useful as a per-trace triage and a regression diff across eval versions.
+
 ## Followups
 
 - Re-run the A/B once the no-compact baseline lands.
