@@ -653,6 +653,34 @@ def move_to(env: NetHackCoreEnv, obs: StructuredObservation, x: int, y: int) -> 
 })
 def autoexplore(env: NetHackCoreEnv, obs: StructuredObservation, max_steps: int = 30) -> SkillResult:
     chars, start = _current_chars_and_player(env)
+    # Short-circuit: if stairs DOWN are already visible and reachable, walk
+    # to them instead of any frontier. Trace 9071d001 showed the agent
+    # calling autoexplore long after `>` was visible — autoexplore picked
+    # the closest *frontier*, not the goal. Now the goal wins.
+    try:
+        h, w = (chars.shape[0], chars.shape[1]) if hasattr(chars, "shape") else (len(chars), len(chars[0]))
+        stair_coords = None
+        for sy in range(h):
+            for sx in range(w):
+                if int(chars[sy, sx]) == ord('>'):
+                    stair_coords = (sx, sy)
+                    break
+            if stair_coords:
+                break
+        if stair_coords is not None and stair_coords != start:
+            path = a_star(chars, start, stair_coords)
+            if path:
+                trimmed = path[:max_steps]
+                return SkillResult(
+                    actions=_enum_actions_to_indices(env, trimmed),
+                    feedback=(
+                        f"Stairs DOWN at {stair_coords} are visible — pathing "
+                        f"directly: {len(trimmed)} steps. Call `descend` once "
+                        "on the `>` tile."
+                    ),
+                )
+    except Exception:
+        pass
     result = nearest_frontier(chars, start)
     if result is None:
         # No frontier means we've explored everything reachable. If stairs
