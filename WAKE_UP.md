@@ -35,6 +35,20 @@ remote. All subsequent commits land with you as sole author.
 
 **285 tests green.** Commits `ce0a464..87c2306` on `main`.
 
+### Recurring goal (added 2026-05-16): periodic demo videos
+
+After each harness change set, generate a fresh demo trajectory:
+
+```bash
+python tools/record_demo.py --out docs/onboarding/demo_v$(git describe --tags 2>/dev/null || git rev-parse --short HEAD).json
+# Then open tools/replay_viewer.html?trajectory=<path>
+```
+
+The viewer is the streamable Pokemon-bench artifact. Recording one per
+release-set keeps the demo current with the latest harness fixes. Doing
+this every push gives the team a per-version visual diff of agent
+behavior on the same seed.
+
 ### Outstanding: compaction baseline justification
 User direction: *"Prior to using compacting, we have to show that the non-compacted ones can
 do the task but are more expensive. Then, we try to match the non-compacted baseline with a
