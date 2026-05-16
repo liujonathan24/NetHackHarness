@@ -1,0 +1,17 @@
+[project]
+name = "nethack-rl"
+version = "0.0.1"
+description = "Workspace root for nethack_core (layer 1) and nethack (layer 2 verifiers env)."
+requires-python = ">=3.10,<3.14"
+
+[tool.uv.workspace]
+members = ["nethack_core", "environments/nethack"]
+
+[tool.uv.sources]
+nethack-core = { workspace = true }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "slow: tests that take >5s (Hub-install reproduction, etc.)",
+]

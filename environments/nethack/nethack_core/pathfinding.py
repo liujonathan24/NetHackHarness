@@ -1,0 +1,231 @@
+"""
+nethack_core.pathfinding
+========================
+
+A* over the NetHack glyph grid + frontier-based autoexplore. Powers
+`skills.move_to` and `skills.autoexplore`.
+
+The cheap-but-correct approach:
+  * Walkable tiles: floor, corridor, doors (open), stairs, items lying around.
+  * Blocked: walls, solid rock, closed doors w/o unlocking logic, monsters.
+  * Diagonals allowed; cost = 1 (Chebyshev neighborhood).
+  * Heuristic = Chebyshev distance (admissible for 8-connected grid).
+
+We deliberately don't follow glyphbox's `nle.glyph_id_to_class` route — that
+demands a fragile NLE-version-locked glyph constant table. Using `obs.chars`
+(which is just ASCII) is portable across NLE 1.2/1.3 and easier to reason
+about. The cost: we can't distinguish "an unidentified scroll" from "an
+identified scroll" by glyph alone. For pathfinding that's fine — both are
+walkable.
+
+Coordinate convention: (x, y) where x is column (0..78), y is row (0..20).
+NetHack's blstats[0] is x and blstats[1] is y so we match that.
+"""
+
+from __future__ import annotations
+
+import heapq
+from typing import Iterator, Optional
+
+import numpy as np
+
+from nle import nethack
+
+from .env import CoreObservation
+
+
+# ---------- walkability ----------
+
+# Tiles the player can step onto without unlocking / fighting.
+_WALKABLE_CHARS: frozenset[int] = frozenset(ord(c) for c in (
+    ".",   # floor (lit / unlit / dark)
+    "#",   # corridor / sink / drawbridge
+    ">",   # staircase down
+    "<",   # staircase up
+    "_",   # altar
+    "{",   # fountain
+    "\\",  # throne
+    "'",   # open door
+    "+",   # closed door (we'll try; if locked the step is a no-op)
+    " ",   # NB: space is "rock" — we treat it conservatively as NOT walkable
+    # items lying on the floor (all walkable):
+    "(", ")", "[", "*", "$", "/", "=", "\"", "?", "!", "%",
+))
+# Subtract space from walkable: rocks are not walkable, but unseen tiles
+# also render as space, which we want to handle specially in frontier logic.
+_WALKABLE_CHARS = _WALKABLE_CHARS - frozenset({ord(" ")})
+
+
+def is_walkable(ch_byte: int) -> bool:
+    """Is this rendered character a tile the player can step onto?"""
+    return ch_byte in _WALKABLE_CHARS
+
+
+def is_unknown(ch_byte: int) -> bool:
+    """Unseen-tile sentinel (also matches solid rock, which is fine for autoexplore)."""
+    return ch_byte == ord(" ")
+
+
+# ---------- A* ----------
+
+# 8 compass directions: (dx, dy, NLE_action_enum).
+_NEIGHBOR_DIRS = [
+    (0, -1, nethack.CompassDirection.N),
+    (1, -1, nethack.CompassDirection.NE),
+    (1, 0, nethack.CompassDirection.E),
+    (1, 1, nethack.CompassDirection.SE),
+    (0, 1, nethack.CompassDirection.S),
+    (-1, 1, nethack.CompassDirection.SW),
+    (-1, 0, nethack.CompassDirection.W),
+    (-1, -1, nethack.CompassDirection.NW),
+]
+
+
+def _chebyshev(ax: int, ay: int, bx: int, by: int) -> int:
+    return max(abs(ax - bx), abs(ay - by))
+
+
+def a_star(
+    chars: np.ndarray,
+    start: tuple[int, int],
+    goal: tuple[int, int],
+    block_diagonals_through_doors: bool = True,
+) -> Optional[list[int]]:
+    """
+    Compute a path from `start` to `goal` over the visible map.
+
+    Returns a list of NLE action ids (CompassDirection enum values) or None
+    if no path exists. The start tile is not included in the action list;
+    the first action takes the player off the start tile.
+
+    `block_diagonals_through_doors` disallows diagonal moves that would clip
+    a doorway corner — NetHack disallows this in-game so the agent would
+    bounce.
+    """
+    sx, sy = start
+    gx, gy = goal
+    h, w = chars.shape
+
+    if not (0 <= gx < w and 0 <= gy < h):
+        return None
+    if start == goal:
+        return []
+    if not is_walkable(int(chars[gy, gx])):
+        return None
+
+    open_heap: list[tuple[int, int, tuple[int, int]]] = []
+    counter = 0
+    heapq.heappush(open_heap, (0, counter, start))
+    came_from: dict[tuple[int, int], tuple[tuple[int, int], int]] = {}
+    g_score: dict[tuple[int, int], int] = {start: 0}
+
+    while open_heap:
+        _, _, current = heapq.heappop(open_heap)
+        if current == goal:
+            return _reconstruct_path(came_from, current)
+        cx, cy = current
+        for dx, dy, action in _NEIGHBOR_DIRS:
+            nx, ny = cx + dx, cy + dy
+            if not (0 <= nx < w and 0 <= ny < h):
+                continue
+            nch = int(chars[ny, nx])
+            if not is_walkable(nch):
+                continue
+            if block_diagonals_through_doors and dx != 0 and dy != 0:
+                # Disallow diagonal moves that pass through/around doors.
+                if chr(int(chars[cy, nx])) in "+'" or chr(int(chars[ny, cx])) in "+'":
+                    continue
+            tentative = g_score[current] + 1
+            if tentative < g_score.get((nx, ny), 10**9):
+                g_score[(nx, ny)] = tentative
+                came_from[(nx, ny)] = (current, int(action))
+                f_score = tentative + _chebyshev(nx, ny, gx, gy)
+                counter += 1
+                heapq.heappush(open_heap, (f_score, counter, (nx, ny)))
+
+    return None
+
+
+def _reconstruct_path(
+    came_from: dict[tuple[int, int], tuple[tuple[int, int], int]],
+    end: tuple[int, int],
+) -> list[int]:
+    actions: list[int] = []
+    cur = end
+    while cur in came_from:
+        prev, action = came_from[cur]
+        actions.append(action)
+        cur = prev
+    actions.reverse()
+    return actions
+
+
+# ---------- frontier-based autoexplore ----------
+
+def find_frontiers(chars: np.ndarray) -> list[tuple[int, int]]:
+    """
+    Return all walkable tiles that are adjacent to an unknown / unseen tile.
+    These are the targets autoexplore picks from.
+    """
+    h, w = chars.shape
+    out: list[tuple[int, int]] = []
+    for y in range(h):
+        for x in range(w):
+            if not is_walkable(int(chars[y, x])):
+                continue
+            for dx, dy, _ in _NEIGHBOR_DIRS:
+                nx, ny = x + dx, y + dy
+                if not (0 <= nx < w and 0 <= ny < h):
+                    continue
+                if is_unknown(int(chars[ny, nx])):
+                    out.append((x, y))
+                    break
+    return out
+
+
+def nearest_frontier(
+    chars: np.ndarray, start: tuple[int, int]
+) -> Optional[tuple[tuple[int, int], list[int]]]:
+    """
+    Find the closest reachable frontier from `start` and return (target, path).
+    None if no frontier is reachable (level fully explored).
+
+    We BFS from start and short-circuit the moment we step onto a frontier
+    tile. Frontier-ness is checked on-the-fly (a frontier is a walkable
+    tile adjacent to an unknown tile), so we don't pre-scan the full grid.
+    This is the optimization documented in onboarding/10-profiling-hot-path.md.
+    """
+    h, w = chars.shape
+    sx, sy = start
+    if not (0 <= sx < w and 0 <= sy < h):
+        return None
+
+    # collections.deque pops left in O(1); plain list.pop(0) is O(n) and
+    # explodes for large maps. Switch.
+    from collections import deque
+    visited = {start}
+    queue: deque = deque([(start, [])])
+    while queue:
+        (cx, cy), path = queue.popleft()
+        # Frontier check on-the-fly: walkable + at least one space neighbor.
+        if (cx, cy) != start and is_walkable(int(chars[cy, cx])):
+            for ddx, ddy, _ in _NEIGHBOR_DIRS:
+                nx2, ny2 = cx + ddx, cy + ddy
+                if 0 <= nx2 < w and 0 <= ny2 < h and is_unknown(int(chars[ny2, nx2])):
+                    return (cx, cy), path
+        for dx, dy, action in _NEIGHBOR_DIRS:
+            nx, ny = cx + dx, cy + dy
+            if (nx, ny) in visited:
+                continue
+            if not (0 <= nx < w and 0 <= ny < h):
+                continue
+            if not is_walkable(int(chars[ny, nx])):
+                continue
+            visited.add((nx, ny))
+            queue.append(((nx, ny), path + [int(action)]))
+    return None
+
+
+def player_xy(obs: CoreObservation) -> tuple[int, int]:
+    """Read player coordinates from blstats (indices 0, 1)."""
+    return int(obs.blstats[0]), int(obs.blstats[1])

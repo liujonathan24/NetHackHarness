@@ -1,0 +1,15 @@
+{
+  "seed": 42,
+  "n_steps": 100,
+  "legacy": {
+    "explore_mean": 0.078,
+    "stationary_mean": 0.07800000000000003,
+    "final": 0.078
+  },
+  "fixed": {
+    "explore_mean": 0.00195,
+    "stationary_mean": 0.0,
+    "final": 0.0
+  },
+  "verdict": "FIX CONFIRMED"
+}

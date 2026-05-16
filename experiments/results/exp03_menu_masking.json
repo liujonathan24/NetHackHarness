@@ -1,0 +1,28 @@
+{
+  "seed": 42,
+  "menu_left_col": 38,
+  "menu_options_extracted": [
+    {
+      "letter": "a",
+      "description": "5 daggers (alt)\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000"
+    },
+    {
+      "letter": "b",
+      "description": "2 darts\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000"
+    },
+    {
+      "letter": "c",
+      "description": "silver bell\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000"
+    }
+  ],
+  "n_rows": 24,
+  "n_diffs": 24,
+  "legacy_max_row_width": 57,
+  "fixed_max_row_width": 12,
+  "verdict": "FIX CONFIRMED",
+  "sample_diff": {
+    "row": 0,
+    "legacy": "                                                                                ",
+    "fixed": ""
+  }
+}

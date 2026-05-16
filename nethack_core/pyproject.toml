@@ -1,0 +1,28 @@
+[project]
+name = "nethack-core"
+version = "0.0.1"
+description = "Interface-agnostic training substrate for NetHack: seeding, observations, skills, curriculum, replay. Built on heiner/nle + the samvelyan MiniHack fork."
+readme = "../README.md"
+requires-python = ">=3.10,<3.14"
+authors = [{ name = "Jonathan Lin", email = "jl0796@princeton.edu" }]
+license = { text = "Apache-2.0" }
+
+dependencies = [
+    "nle>=1.3.0",
+    "minihack @ git+https://github.com/samvelyan/minihack",
+    "gymnasium>=0.29",
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-asyncio", "ruff", "mypy", "matplotlib"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+
+[tool.hatch.metadata]
+allow-direct-references = true

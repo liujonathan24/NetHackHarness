@@ -1,0 +1,21 @@
+{
+  "seed": 42,
+  "n_turns": 60,
+  "raw_baseline": {
+    "mean_per_turn_obs_tokens": 295.0,
+    "cumulative_history_tokens": 17700
+  },
+  "obs_compaction_only": {
+    "mean_per_turn_obs_tokens": 214.2,
+    "cumulative_history_tokens": 12854,
+    "savings_pct_per_turn_obs": 27.4,
+    "savings_pct_cumulative": 27.4
+  },
+  "full_compaction": {
+    "mean_per_turn_obs_tokens": 214.2,
+    "cumulative_history_tokens": 1835,
+    "savings_pct_per_turn_obs": 27.4,
+    "savings_pct_cumulative": 89.6
+  },
+  "verdict": "SHIPS"
+}

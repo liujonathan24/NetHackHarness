@@ -1,0 +1,54 @@
+{
+  "seeds": [
+    42,
+    123,
+    7,
+    1024,
+    2026
+  ],
+  "rows": [
+    {
+      "seed": 42,
+      "legacy_role": "unknown",
+      "fixed_role": "monk",
+      "fixed_race": "unknown",
+      "fixed_alignment": "neutral",
+      "fixed_gender": "unknown"
+    },
+    {
+      "seed": 123,
+      "legacy_role": "unknown",
+      "fixed_role": "monk",
+      "fixed_race": "unknown",
+      "fixed_alignment": "neutral",
+      "fixed_gender": "unknown"
+    },
+    {
+      "seed": 7,
+      "legacy_role": "unknown",
+      "fixed_role": "monk",
+      "fixed_race": "unknown",
+      "fixed_alignment": "neutral",
+      "fixed_gender": "unknown"
+    },
+    {
+      "seed": 1024,
+      "legacy_role": "unknown",
+      "fixed_role": "monk",
+      "fixed_race": "unknown",
+      "fixed_alignment": "neutral",
+      "fixed_gender": "unknown"
+    },
+    {
+      "seed": 2026,
+      "legacy_role": "unknown",
+      "fixed_role": "monk",
+      "fixed_race": "unknown",
+      "fixed_alignment": "neutral",
+      "fixed_gender": "unknown"
+    }
+  ],
+  "fixed_known_role_count": 5,
+  "legacy_known_role_count": 0,
+  "verdict": "FIX CONFIRMED"
+}

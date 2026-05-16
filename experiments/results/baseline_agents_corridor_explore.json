@@ -1,0 +1,93 @@
+{
+  "tier": "corridor_explore",
+  "max_steps": 50,
+  "rows": [
+    {
+      "baseline": "random_walk",
+      "seed": 0,
+      "total_reward": 3.8,
+      "actions_taken": 50,
+      "terminated": false
+    },
+    {
+      "baseline": "always_search",
+      "seed": 0,
+      "total_reward": -0.5,
+      "actions_taken": 50,
+      "terminated": false
+    },
+    {
+      "baseline": "autoexplore",
+      "seed": 0,
+      "total_reward": 0.0,
+      "actions_taken": 0,
+      "terminated": false
+    },
+    {
+      "baseline": "random_walk",
+      "seed": 1,
+      "total_reward": -0.27,
+      "actions_taken": 50,
+      "terminated": false
+    },
+    {
+      "baseline": "always_search",
+      "seed": 1,
+      "total_reward": -0.5,
+      "actions_taken": 50,
+      "terminated": false
+    },
+    {
+      "baseline": "autoexplore",
+      "seed": 1,
+      "total_reward": -0.01,
+      "actions_taken": 1,
+      "terminated": false
+    },
+    {
+      "baseline": "random_walk",
+      "seed": 2,
+      "total_reward": -0.33,
+      "actions_taken": 50,
+      "terminated": false
+    },
+    {
+      "baseline": "always_search",
+      "seed": 2,
+      "total_reward": -0.5,
+      "actions_taken": 50,
+      "terminated": false
+    },
+    {
+      "baseline": "autoexplore",
+      "seed": 2,
+      "total_reward": 0.0,
+      "actions_taken": 0,
+      "terminated": false
+    }
+  ],
+  "by_baseline_stats": {
+    "random_walk": {
+      "mean": 1.067,
+      "stdev": 2.367,
+      "max": 3.8,
+      "min": -0.33,
+      "n": 3
+    },
+    "always_search": {
+      "mean": -0.5,
+      "stdev": 0.0,
+      "max": -0.5,
+      "min": -0.5,
+      "n": 3
+    },
+    "autoexplore": {
+      "mean": -0.003,
+      "stdev": 0.006,
+      "max": 0.0,
+      "min": -0.01,
+      "n": 3
+    }
+  },
+  "verdict": "BASELINE"
+}

@@ -1,0 +1,62 @@
+{
+  "n_seeds": 5,
+  "rows": [
+    {
+      "seed": 42,
+      "role": "monk",
+      "objective": "reach an altar to sacrifice for divine favor",
+      "termination_check": {
+        "kind": "tty_substring",
+        "text": "altar"
+      },
+      "fired": false,
+      "steps_taken": 0
+    },
+    {
+      "seed": 123,
+      "role": "monk",
+      "objective": "reach an altar to sacrifice for divine favor",
+      "termination_check": {
+        "kind": "tty_substring",
+        "text": "altar"
+      },
+      "fired": false,
+      "steps_taken": 20
+    },
+    {
+      "seed": 7,
+      "role": "monk",
+      "objective": "reach an altar to sacrifice for divine favor",
+      "termination_check": {
+        "kind": "tty_substring",
+        "text": "altar"
+      },
+      "fired": false,
+      "steps_taken": 0
+    },
+    {
+      "seed": 1024,
+      "role": "monk",
+      "objective": "reach an altar to sacrifice for divine favor",
+      "termination_check": {
+        "kind": "tty_substring",
+        "text": "altar"
+      },
+      "fired": false,
+      "steps_taken": 0
+    },
+    {
+      "seed": 2026,
+      "role": "monk",
+      "objective": "reach an altar to sacrifice for divine favor",
+      "termination_check": {
+        "kind": "tty_substring",
+        "text": "altar"
+      },
+      "fired": false,
+      "steps_taken": 0
+    }
+  ],
+  "achievement_rate": 0.0,
+  "verdict": "SHIPS"
+}
