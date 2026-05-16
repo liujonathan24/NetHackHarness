@@ -122,7 +122,10 @@ call menu/inventory tools.
 - Go down stairs: `descend` (must be on `>`)
 - Recall earlier findings: `recall(query=...)`; save findings with `add_note`
 - Set/read the current objective: `pin_objective`, `recall`
-- Search for hidden doors/passages at a dead-end: `search`
+- Search for hidden doors/passages at a dead-end: `search(times=10)`
+- Rest to heal HP at <70%: `search(times=20)` in a safe corner
+- Look up a monster/feature you don't recognize: `wiki_lookup(page="kobold")` or `wiki_search(query="cockatrice gaze")`
+- Engage adjacent hostile: `attack(direction=N|NE|...)` — never `attack` if ADJACENT shows `[PET — don't attack]`
 
 === DESCENT WORKED EXAMPLE ===
 Reach dlvl 2: (1) `autoexplore` until ADJACENT shows `>(stairs DOWN)`
@@ -304,7 +307,12 @@ def format_observation_as_chat(
         hp = structured.status.get("hitpoints", 0)
         hp_max = structured.status.get("max_hitpoints", 1) or 1
         if hp / hp_max < 0.3 and hp > 0:
-            hint = f"HP critical ({hp}/{hp_max}). Retreat via `move`, `engrave_elbereth`, or `pray` if not on cooldown."
+            hint = (
+                f"HP critical ({hp}/{hp_max}). Options in order: `engrave_elbereth` "
+                f"(scares most monsters) → `search(times=20)` in a safe corner to rest "
+                f"and regenerate HP → `pray` if not on cooldown. Avoid melee until "
+                f"HP is back above 70%."
+            )
     if hint is None and under and "stairs DOWN" in under:
         hint = "You are on stairs down. Call `descend` now."
     elif hint is None and under and under.startswith("on tile:"):
