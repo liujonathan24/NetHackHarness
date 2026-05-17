@@ -49,6 +49,26 @@ def test_extract_visible_features_empty_when_no_features():
     assert out == []
 
 
+def test_extract_visible_features_detects_wall_gap_open_door():
+    """A `|` sandwiched between `-` in a wall row is an open door (or gap)."""
+    tty = np.full((24, 80), ord(' '), dtype=np.uint8)
+    # Horizontal wall row: ----|----  with `|` at (8, 5).
+    for x in range(4, 13):
+        tty[5, x] = ord('-')
+    tty[5, 8] = ord('|')
+    out = extract_visible_features(tty)
+    assert any("door (open/gap) at (8,5)" in s for s in out), out
+
+
+def test_extract_visible_features_detects_dot_gap_in_horizontal_wall():
+    tty = np.full((24, 80), ord(' '), dtype=np.uint8)
+    for x in range(4, 13):
+        tty[5, x] = ord('-')
+    tty[5, 8] = ord('.')
+    out = extract_visible_features(tty)
+    assert any("door (open/gap) at (8,5)" in s for s in out), out
+
+
 def _tty_from_rows(rows: list[str], width: int = 80, height: int = 24) -> np.ndarray:
     """Build a (height, width) uint8 array from a list of ASCII rows."""
     arr = np.full((height, width), ord(" "), dtype=np.uint8)

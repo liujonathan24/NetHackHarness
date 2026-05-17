@@ -640,6 +640,19 @@ def move_to(env: NetHackCoreEnv, obs: StructuredObservation, x: int, y: int) -> 
     )
 
 
+def _stairs_up_xy(chars):
+    """Return (x, y) of the first visible `<` tile, or None."""
+    try:
+        h, w = chars.shape
+        for y in range(h):
+            for x in range(w):
+                if int(chars[y, x]) == ord('<'):
+                    return (x, y)
+    except Exception:
+        pass
+    return None
+
+
 @registry.register("autoexplore", schema={
     "description": (
         "Walk toward the nearest unexplored region of the current level. "
@@ -686,6 +699,31 @@ def autoexplore(env: NetHackCoreEnv, obs: StructuredObservation, max_steps: int 
     except Exception:
         pass
     result = nearest_frontier(chars, start)
+    # Skip-stairs-UP guard: trace 5/16 showed the frontier picker happily
+    # returning the `<` tile (it's walkable + adjacent to closed door which
+    # counts as unknown when door state is partially loaded). Walking to
+    # `<` is pointless when our objective is to descend — re-pick from
+    # find_frontiers and exclude the `<` tile. If no alternative exists,
+    # fall through to the no-frontier branch (search/kick advice).
+    if result is not None:
+        target, _path = result
+        up_xy = _stairs_up_xy(chars)
+        if up_xy is not None and target == up_xy:
+            from .pathfinding import find_frontiers, a_star
+            alts = [
+                f for f in find_frontiers(chars)
+                if int(chars[f[1], f[0]]) != ord('<') and f != start
+            ]
+            best = None
+            best_path = None
+            for cand in alts:
+                p = a_star(chars, start, cand)
+                if p and (best_path is None or len(p) < len(best_path)):
+                    best = cand
+                    best_path = p
+            if best is not None:
+                result = (best, best_path)
+            # else: keep original `<` target — better than no movement
     if result is None:
         # No frontier means we've explored everything reachable. If stairs
         # down aren't visible, the level likely has hidden passages — point
@@ -696,11 +734,25 @@ def autoexplore(env: NetHackCoreEnv, obs: StructuredObservation, max_steps: int 
         else:
             # Strong, specific advice: search repeatedly at walls. NetHack
             # secret passages typically take 5-10 search calls to find.
-            tip = (
-                " No `>` visible. The level likely has hidden passages or "
-                "trapdoors. Call `search(times=10)` at adjacent walls "
-                "(especially dead-end corridors) to reveal them in one shot."
-            )
+            # Also flag visible closed doors — likely the actual exit
+            # (and may be locked, needing kick).
+            has_door = False
+            try:
+                has_door = any(b'+' in row.tobytes() for row in chars)
+            except Exception:
+                pass
+            if has_door:
+                tip = (
+                    " No `>` visible but a closed door `+` exists on the map. "
+                    "`move_to` adjacent to it; if it won't open, "
+                    "`kick(direction=...)` 2-5 times to break the lock."
+                )
+            else:
+                tip = (
+                    " No `>` visible. The level likely has hidden passages or "
+                    "trapdoors. Call `search(times=10)` at adjacent walls "
+                    "(especially dead-end corridors) to reveal them in one shot."
+                )
         return SkillResult(
             [],
             "Level appears fully explored from this position." + tip,

@@ -509,18 +509,46 @@ def extract_visible_features(tty_chars) -> list[str]:
     """
     out: list[str] = []
     seen_by_label: dict[str, list[tuple[int, int]]] = {}
+    # Pass 1: glyph-by-glyph feature labeling.
     for y in range(1, min(22, tty_chars.shape[0])):
         for x in range(tty_chars.shape[1]):
             ch = int(tty_chars[y, x])
             label = _FEATURE_GLYPHS.get(ch)
             if label:
                 seen_by_label.setdefault(label, []).append((x, y))
+    # Pass 2: wall-gap detection. A doorway/passage in a horizontal wall row
+    # renders as either `|` (open door) or `.` (broken/door-open) sandwiched
+    # between `-` characters. Same for vertical walls (sandwiched `.` or `-`
+    # between `|`s). The agent must recognize these to leave a sealed room.
+    # NLE convention:
+    #   `-----|-----` → open door in horizontal wall
+    #   `-----.-----` → broken wall / open doorway
+    #   `|...-...|`   → open door in vertical wall (the `-`)
+    H, W = tty_chars.shape
+    OD, BR, HW, VW = ord("|"), ord("."), ord("-"), ord("|")
+    for y in range(1, min(22, H)):
+        for x in range(1, W - 1):
+            ch = int(tty_chars[y, x])
+            left = int(tty_chars[y, x - 1])
+            right = int(tty_chars[y, x + 1])
+            # Horizontal wall row with vertical-bar (open door) or dot (gap).
+            if left == HW and right == HW and ch in (OD, BR):
+                seen_by_label.setdefault("door (open/gap)", []).append((x, y))
+                continue
+    for x in range(W):
+        for y in range(2, min(21, H) - 1):
+            ch = int(tty_chars[y, x])
+            up = int(tty_chars[y - 1, x])
+            down = int(tty_chars[y + 1, x])
+            # Vertical wall column with horizontal-bar (open door) or dot.
+            if up == VW and down == VW and ch in (HW, BR):
+                seen_by_label.setdefault("door (open/gap)", []).append((x, y))
     # Order matters: most-critical first so a clipped output still has the
     # essentials. Stairs/door/altar before consumables before raw items.
     label_order = (
-        "stairs DOWN", "stairs UP", "door (closed)", "altar", "fountain",
-        "throne", "food/corpse", "potion", "scroll", "wand", "ring",
-        "amulet", "armor", "weapon", "tool", "gem/rock", "gold",
+        "stairs DOWN", "stairs UP", "door (open/gap)", "door (closed)",
+        "altar", "fountain", "throne", "food/corpse", "potion", "scroll",
+        "wand", "ring", "amulet", "armor", "weapon", "tool", "gem/rock", "gold",
     )
     for label in label_order:
         coords = seen_by_label.get(label, [])

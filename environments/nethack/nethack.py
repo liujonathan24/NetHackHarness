@@ -87,10 +87,20 @@ Terrain: `>` stairs DOWN, `<` stairs UP (NOT down), `_` altar, `{` fountain,
 `k` kobold, `o` orc, `@` humans (and YOU). No "fireplace" glyph — adjacent
 `f` is a creature. `@` hides the tile under you — read UNDER PLAYER.
 
-VISIBLE FEATURES lists every stairs/altar/fountain on the visible map
+VISIBLE FEATURES lists every stairs/altar/fountain/door on the visible map
 with (x,y). If `stairs DOWN` isn't listed, no `>` is visible — don't
 pattern-match the grid; explore or `search`. To descend: (1) find `>`,
 (2) walk ON it, (3) call `descend`. If descend fails, recheck UNDER PLAYER.
+
+DOORWAYS & WALL GAPS: a single non-wall tile inside a wall row is a
+doorway you can walk through. Examples:
+  `--.---` (horizontal wall with `.`) → walk through the `.`.
+  `|.....|` with `-` in the middle → that `-` is broken wall; walk it.
+  `-----+-----` → `+` is a closed door; step adjacent + try `move` (or
+  `kick` if locked).
+  `-----|-----` (`|` inside a horizontal wall row) → OPEN DOOR; just walk.
+When stuck in a room, scan every wall row for a tile that doesn't match
+`-` or `|`. That's your exit. Use `move_to(x,y)` if you can see the gap.
 
 Pitfalls: `eat`/`quaff`/`read` need an `item` arg. At HP <30% retreat or
 `search` to rest. `engrave_elbereth` when cornered (Elbereth scares most
@@ -371,6 +381,65 @@ def format_observation_as_chat(
                     "to wait one turn."
                 )
                 break
+    # Locked-door detection: NLE prints "This door is locked." when the
+    # agent tries to move INTO a closed-locked `+`. Find the adjacent `+`
+    # direction and tell the model to kick. Without this hint, traces show
+    # the model giving up on the door and wandering / eating randomly.
+    if structured.messages:
+        for msg in structured.messages[-4:]:
+            if "door is locked" in msg or "The door is locked." in msg:
+                door_dir = None
+                for d, tile in adj.items():
+                    if tile.startswith("+") or tile == "+":
+                        door_dir = d
+                        break
+                if door_dir is not None:
+                    hint = (
+                        f"Door to {door_dir} is LOCKED. Call `kick(direction=\"{door_dir}\")` "
+                        f"(may take 2-5 tries) to break it open, then walk through."
+                    )
+                else:
+                    hint = (
+                        "A door is locked. Step adjacent to it, then "
+                        "`kick(direction=...)` (2-5 tries) to break it open."
+                    )
+                break
+    # No-exit + visible-locked-door detection: when no stairs DOWN visible
+    # and the agent is stuck in a small starting room with only a `+` exit,
+    # surface the door coords and route to kick. This is the failure mode
+    # the no-compact trace exposed: the agent autoexplores forever inside
+    # the room because the BFS frontier resolves to `<` (stairs up).
+    if hint is None and state is not None and "raw_obs" in state:
+        try:
+            from nethack_core.observations import extract_visible_features
+            feats = extract_visible_features(state["raw_obs"].tty_chars)
+            has_down = any(f.startswith("stairs DOWN") for f in feats)
+            doors = [f for f in feats if f.startswith("door ")]
+            if not has_down and doors and structured.status:
+                # Only fire if no other route is obvious. Pick the closest
+                # door by Chebyshev distance from the player.
+                px = structured.status.get("x", 0)
+                py = structured.status.get("y", 0)
+                import re as _re
+                best = None
+                best_d = 1 << 30
+                for f in doors:
+                    m = _re.search(r"\((\d+),(\d+)\)", f)
+                    if not m:
+                        continue
+                    dx, dy = int(m.group(1)), int(m.group(2))
+                    cheb = max(abs(dx - px), abs(dy - py))
+                    if cheb < best_d:
+                        best_d = cheb
+                        best = (dx, dy)
+                if best is not None:
+                    hint = (
+                        f"No `>` visible; only exit is a door at {best}. "
+                        f"`move_to(x={best[0]}, y={best[1]})` to reach it; "
+                        f"if it says \"locked\", `kick` toward it."
+                    )
+        except Exception:
+            pass
     if hint:
         lines.append(f"=== HINT === {hint}")
         lines.append("")
