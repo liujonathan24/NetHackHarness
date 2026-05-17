@@ -106,10 +106,19 @@ Pitfalls: `eat`/`quaff`/`read` need an `item` arg. At HP <30% retreat or
 `search` to rest. `engrave_elbereth` when cornered (Elbereth scares most
 monsters). Menus auto-dismiss; never call menu/inventory tools.
 
+=== STRATEGY: USE `find_and_descend` ===
+For this task (reach dlvl 2), your DEFAULT action every turn is
+`find_and_descend(max_actions=80)`. This skill bundles ~80 NLE actions
+per call: paths to `>` if visible, else paths to the nearest door, else
+walks to a corridor dead-end and searches 25× for hidden passages.
+Re-call it every turn until `descent_reward` fires. Only switch to other
+skills if:
+- HP critical: `engrave_elbereth` or `pray`
+- Hostile adjacent and healthy HP: `attack(direction=...)`
+- HINT explicitly says otherwise
+
 === SKILLS CHEAT SHEET ===
-- **FASTEST DESCENT**: `find_and_descend` — one call: path to `>` if visible,
-  else path to nearest door, else walk to dead-end and search. Re-call until
-  reward fires. Prefer this over `autoexplore`+`move`+`descend` chains.
+- **PRIMARY**: `find_and_descend(max_actions=80)` — use every turn.
 - Traverse a level: `autoexplore`
 - Reach a known tile: `move_to(x, y)`
 - Step: `move(direction=N|NE|E|...)`
