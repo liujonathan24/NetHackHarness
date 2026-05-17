@@ -107,6 +107,9 @@ Pitfalls: `eat`/`quaff`/`read` need an `item` arg. At HP <30% retreat or
 monsters). Menus auto-dismiss; never call menu/inventory tools.
 
 === SKILLS CHEAT SHEET ===
+- **FASTEST DESCENT**: `find_and_descend` — one call: path to `>` if visible,
+  else path to nearest door, else walk to dead-end and search. Re-call until
+  reward fires. Prefer this over `autoexplore`+`move`+`descend` chains.
 - Traverse a level: `autoexplore`
 - Reach a known tile: `move_to(x, y)`
 - Step: `move(direction=N|NE|E|...)`

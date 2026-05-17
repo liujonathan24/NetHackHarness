@@ -871,6 +871,129 @@ def autoexplore(env: NetHackCoreEnv, obs: StructuredObservation, max_steps: int 
     )
 
 
+@registry.register("find_and_descend", schema={
+    "description": (
+        "MEGA-SKILL for the corridor_explore / mini_dungeon objective. "
+        "Bundles many decisions into one tool call:\n"
+        "1) If `>` is currently visible, path to it and append `>` (descend).\n"
+        "2) Else if a not-yet-walked door is reachable, path to it (kick "
+        "automatically if message says locked next turn).\n"
+        "3) Else walk to the nearest corridor dead-end and search 25 times.\n"
+        "Returns up to ~80 NLE actions in one call. Re-call until reward "
+        "for descent fires. Cheaper than micromanaging move()/move_to()."
+    ),
+    "parameters": {
+        "max_actions": {
+            "type": "integer",
+            "default": 80,
+            "description": "Cap on actions queued per call.",
+        },
+    },
+})
+def find_and_descend(env: NetHackCoreEnv, obs: StructuredObservation, max_actions: int = 80) -> SkillResult:
+    chars, start = _current_chars_and_player(env)
+    from .pathfinding import a_star, find_frontiers
+    h, w = chars.shape
+    # 1) Stairs DOWN visible? Path + descend.
+    stair = None
+    for yy in range(h):
+        for xx in range(w):
+            if int(chars[yy, xx]) == ord('>'):
+                stair = (xx, yy); break
+        if stair: break
+    if stair is not None:
+        if stair == start:
+            # Already on stairs — just descend.
+            return SkillResult(
+                [int(nethack.MiscAction.MORE), int(ord('>'))],
+                "Already on `>` — descending.",
+            )
+        p = a_star(chars, start, stair)
+        if p:
+            actions = _enum_actions_to_indices(env, p[:max_actions - 2])
+            actions += [int(nethack.MiscAction.MORE), int(ord('>'))]
+            return SkillResult(
+                actions=actions,
+                feedback=f"`>` visible at {stair}; pathing {len(p)} steps and descending.",
+            )
+    # 2) Pick a reachable door (open/gap or closed) and path there.
+    from .observations import extract_visible_features
+    try:
+        nle_env = env.underlying.unwrapped
+        keys = nle_env._observation_keys
+        tty = nle_env.last_observation[keys.index("tty_chars")] if "tty_chars" in keys else None
+    except Exception:
+        tty = None
+    door_xy = None; door_path = None
+    if tty is not None:
+        import re as _r
+        feats = extract_visible_features(tty)
+        candidates = []
+        for f in feats:
+            if f.startswith("door (open/gap)") or f.startswith("door (closed)"):
+                for mm in _r.finditer(r"\((\d+),(\d+)\)", f):
+                    candidates.append((int(mm.group(1)), int(mm.group(2))))
+        best_len = 1 << 30
+        for dxy in candidates:
+            if dxy == start: continue
+            p2 = a_star(chars, start, dxy)
+            if p2 and len(p2) < best_len:
+                best_len = len(p2); door_xy = dxy; door_path = p2
+    if door_xy is not None and door_path:
+        return SkillResult(
+            actions=_enum_actions_to_indices(env, door_path[:max_actions]),
+            feedback=f"No `>` visible; pathing to door at {door_xy} ({len(door_path)} steps).",
+        )
+    # 3) Frontier or dead-end + search burst.
+    nr = nearest_frontier(chars, start)
+    if nr is not None:
+        target, fp = nr
+        if int(chars[target[1], target[0]]) != ord('<'):
+            return SkillResult(
+                actions=_enum_actions_to_indices(env, fp[:max_actions]),
+                feedback=f"Pathing to frontier at {target} ({len(fp)} steps).",
+            )
+    # Dead-end fallback.
+    dead_ends = []
+    for yy in range(h):
+        for xx in range(w):
+            ch = int(chars[yy, xx])
+            if ch not in (ord('#'), ord('.')): continue
+            n = 0
+            for ddx, ddy in ((0,-1),(1,0),(0,1),(-1,0)):
+                nx, ny = xx+ddx, yy+ddy
+                if 0 <= nx < w and 0 <= ny < h:
+                    nc = int(chars[ny, nx])
+                    if nc in (ord('.'), ord('#'), ord('+'), ord('<'), ord('>'), ord("'")):
+                        n += 1
+            if n == 1 and (xx, yy) != start:
+                dead_ends.append((xx, yy))
+    best_de = None; best_p = None; best_score = 1 << 30
+    for de in dead_ends:
+        p = a_star(chars, start, de)
+        if not p: continue
+        is_corr = int(chars[de[1], de[0]]) == ord('#')
+        sc = len(p) + (0 if is_corr else 100)
+        if sc < best_score:
+            best_score = sc; best_de = de; best_p = p
+    from nle import nethack as _nh
+    actions_list = nle_env.actions if hasattr(nle_env, "actions") else env.underlying.unwrapped.actions
+    enum_to_idx = {int(a): i for i, a in enumerate(actions_list)}
+    s_idx = enum_to_idx.get(int(_nh.Command.SEARCH), int(ord('s')))
+    if best_de is not None and best_p is not None:
+        a = _enum_actions_to_indices(env, best_p[:max_actions - 25])
+        a += [s_idx] * 25
+        return SkillResult(
+            actions=a,
+            feedback=f"Walking to dead-end {best_de} ({len(best_p)} steps) and searching 25× for hidden passages.",
+        )
+    # No useful action; just search in place.
+    return SkillResult(
+        actions=[s_idx] * 25,
+        feedback="No frontier/door/dead-end found; searching here 25× (consider `move` to a new corridor).",
+    )
+
+
 def list_skills() -> list[str]:
     return sorted(registry._skills.keys())
 
