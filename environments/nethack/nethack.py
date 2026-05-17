@@ -106,19 +106,23 @@ Pitfalls: `eat`/`quaff`/`read` need an `item` arg. At HP <30% retreat or
 `search` to rest. `engrave_elbereth` when cornered (Elbereth scares most
 monsters). Menus auto-dismiss; never call menu/inventory tools.
 
-=== STRATEGY: USE `find_and_descend` ===
-For this task (reach dlvl 2), your DEFAULT action every turn is
-`find_and_descend(max_actions=80)`. This skill bundles ~80 NLE actions
-per call: paths to `>` if visible, else paths to the nearest door, else
-walks to a corridor dead-end and searches 25× for hidden passages.
-Re-call it every turn until `descent_reward` fires. Only switch to other
-skills if:
-- HP critical: `engrave_elbereth` or `pray`
-- Hostile adjacent and healthy HP: `attack(direction=...)`
-- HINT explicitly says otherwise
+=== STRATEGY: USE `auto_descend` ===
+For this task (reach dlvl 2), your FIRST action should be
+`auto_descend(max_inner_iters=40)`. This runs ~30-150 game turns of
+exploration + search + descend internally and only returns when:
+descent fires, HP < 40%, or compute budget hits.
+After it returns, read the feedback:
+- "DESCENDED!" → you won; the env will end shortly.
+- "HP dropped below 40%" → call `engrave_elbereth` or `pray` to recover,
+  then `auto_descend` again.
+- "max iters reached without descent" → the level needs more search;
+  call `auto_descend` again (or pivot to `find_and_descend`).
+Only switch to single-skill micromanagement if auto_descend keeps
+stalling on the same room layout for 2+ rounds.
 
 === SKILLS CHEAT SHEET ===
-- **PRIMARY**: `find_and_descend(max_actions=80)` — use every turn.
+- **PRIMARY**: `auto_descend(max_inner_iters=40)` — loops internally.
+- Alt mega-skill: `find_and_descend(max_actions=80)` — one round.
 - Traverse a level: `autoexplore`
 - Reach a known tile: `move_to(x, y)`
 - Step: `move(direction=N|NE|E|...)`

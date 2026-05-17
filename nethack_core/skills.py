@@ -973,9 +973,21 @@ def find_and_descend(env: NetHackCoreEnv, obs: StructuredObservation, max_action
         if p and len(p) > best_len:
             best_len = len(p); best_fr = fr; best_fr_path = p
     if best_fr is not None and best_fr_path:
+        # Also queue a few searches at the frontier destination — corridors
+        # often dead-end at hidden passages and we want to reveal them in
+        # one tool call instead of round-tripping for `search`.
+        actions_to_send = _enum_actions_to_indices(env, best_fr_path[:max_actions - 8])
+        try:
+            from nle import nethack as _nh
+            _acts2 = env.underlying.unwrapped.actions
+            _e2i2 = {int(a): i for i, a in enumerate(_acts2)}
+            _s_i = _e2i2.get(int(_nh.Command.SEARCH), int(ord('s')))
+            actions_to_send += [_s_i] * 8
+        except Exception:
+            pass
         return SkillResult(
-            actions=_enum_actions_to_indices(env, best_fr_path[:max_actions]),
-            feedback=f"Pathing to far frontier at {best_fr} ({len(best_fr_path)} steps).",
+            actions=actions_to_send,
+            feedback=f"Pathing to far frontier at {best_fr} ({len(best_fr_path)} steps) + 8 searches at destination.",
         )
     # Dead-end fallback.
     dead_ends = []
@@ -1016,6 +1028,80 @@ def find_and_descend(env: NetHackCoreEnv, obs: StructuredObservation, max_action
         actions=[s_idx] * 25,
         feedback="No frontier/door/dead-end found; searching here 25× (consider `move` to a new corridor).",
     )
+
+
+@registry.register("auto_descend", schema={
+    "description": (
+        "ULTRA-MEGA-SKILL. Internally loops env.step calling find_and_descend "
+        "logic repeatedly until: (a) descent fires, (b) HP drops below 40%, "
+        "(c) max_inner_iters reached. Single LM tool call = ~30-150 game turns "
+        "of progress. Use this when the objective is purely 'reach dlvl 2' "
+        "and you're at full HP. Returns a summary in feedback."
+    ),
+    "parameters": {
+        "max_inner_iters": {"type": "integer", "default": 40,
+            "description": "Max internal find_and_descend rounds; capped to ~3200 actions."},
+    },
+})
+def auto_descend(env: NetHackCoreEnv, obs: StructuredObservation, max_inner_iters: int = 40) -> SkillResult:
+    """Internally loop find_and_descend until descent or low HP."""
+    descended = False
+    iters_done = 0
+    hp_lo = False
+    died = False
+    start_dlvl = None
+    for _ in range(max_inner_iters):
+        iters_done += 1
+        # Re-read current chars/state
+        chars, start = _current_chars_and_player(env)
+        nle_env = env.underlying.unwrapped
+        blstats = nle_env.last_observation[nle_env._observation_keys.index("blstats")]
+        if start_dlvl is None: start_dlvl = int(blstats[12])
+        cur_hp = int(blstats[10]); max_hp = int(blstats[11])
+        if cur_hp <= 0:
+            died = True; break
+        if max_hp > 0 and cur_hp / max_hp < 0.4:
+            hp_lo = True; break
+        if int(blstats[12]) > start_dlvl:
+            descended = True; break
+        # Recompute find_and_descend logic inline
+        s2 = StructuredObservation(status={}, inventory=[], map_view="", character={},
+                                    messages=[], menu=None, inventory_prompt=None)
+        r = find_and_descend(env, s2, max_actions=80)
+        if not r.actions:
+            # Try one search burst then break
+            try:
+                from nle import nethack as _nh
+                acts = env.underlying.unwrapped.actions
+                e2i = {int(a): i for i, a in enumerate(acts)}
+                s_i = e2i.get(int(_nh.Command.SEARCH), 0)
+                for _ in range(20):
+                    obs_, _, t, tr, _ = env.step(s_i)
+                    if t or tr: died = True; break
+                if died: break
+            except Exception:
+                break
+            continue
+        broke = False
+        for a in r.actions:
+            try:
+                obs_, _, t, tr, _ = env.step(a)
+            except Exception:
+                died = True; broke = True; break
+            if t or tr:
+                died = True; broke = True; break
+            # check descent mid-action
+            bls = nle_env.last_observation[nle_env._observation_keys.index("blstats")]
+            if int(bls[12]) > start_dlvl:
+                descended = True; broke = True; break
+        if broke:
+            break
+    msg_parts = [f"auto_descend ran {iters_done} inner iters"]
+    if descended: msg_parts.append("DESCENDED!")
+    elif died: msg_parts.append("episode terminated")
+    elif hp_lo: msg_parts.append("HP dropped below 40% — paused for safety")
+    else: msg_parts.append("max iters reached without descent")
+    return SkillResult([], "; ".join(msg_parts), interrupted=True)
 
 
 def list_skills() -> list[str]:
