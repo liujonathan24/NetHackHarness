@@ -173,7 +173,11 @@ def move(env: NetHackCoreEnv, obs: StructuredObservation, direction: str) -> Ski
 
 
 @registry.register("attack", schema={
-    "description": "Melee attack an adjacent monster in the given direction.",
+    "description": (
+        "Melee attack an adjacent monster in the given direction. Do NOT call "
+        "if the target shows `[PET — don't attack]` in ADJACENT — attacking a "
+        "pet damages alignment. Walk around pets instead."
+    ),
     "parameters": {"direction": {"type": "string", "enum": list(_DIRECTION_TO_ACTION.keys())}},
 })
 def attack(env: NetHackCoreEnv, obs: StructuredObservation, direction: str) -> SkillResult:
