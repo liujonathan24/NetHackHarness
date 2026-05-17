@@ -698,6 +698,16 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
 
         env: NetHackCoreEnv = state["env"]
 
+        # dir8 baseline: rewrite north/northeast/.../northwest calls to
+        # move(direction=...) so the existing dispatcher handles them.
+        _DIR_BIND = {
+            "north": "N", "northeast": "NE", "east": "E", "southeast": "SE",
+            "south": "S", "southwest": "SW", "west": "W", "northwest": "NW",
+        }
+        if skill_name in _DIR_BIND:
+            skill_args = {"direction": _DIR_BIND[skill_name]}
+            skill_name = "move"
+
         # Code-mode dispatch: if the model called the `code` tool, run the
         # source against the nh namespace and convert its action queue into
         # a SkillResult shape so the rest of env_response can stay unchanged.
@@ -1507,7 +1517,7 @@ def load_environment(
     rubric = vf.Rubric(funcs=[scout_reward, descent_reward, success_reward, ascension_reward])
 
     if interface == "skill":
-        tool_callables = _build_skill_adapter_callables()
+        tool_callables = _build_skill_adapter_callables(skill_set=kwargs.pop("skill_set", "full"))
     elif interface == "code":
         tool_callables = [_code_tool_adapter()]
     else:
@@ -1546,7 +1556,7 @@ def _code_tool_adapter():
     return code
 
 
-def _build_skill_adapter_callables() -> list:
+def _build_skill_adapter_callables(skill_set: str = "full") -> list:
     """
     Build one callable per registered skill with the right __name__, doc, and
     annotations so verifiers' tool-schema introspection works.
@@ -1562,6 +1572,60 @@ def _build_skill_adapter_callables() -> list:
     # `item` arg and bundle the selection in-skill. Exposing these as agent
     # tools caused Qwen3.5-9B to spend 42% of turns on spurious menu calls.
     _HARNESS_OWNED = {"inventory_item", "menu_option"}
+
+    # skill_set: 'full' (default), 'move' (only move + survival), 'dir8'
+    # (8 single-direction tools + survival, no `move` aggregator), or a
+    # comma-separated whitelist e.g. 'move,descend,search'. The ladder
+    # exists to measure how much "free reasoning" each helper-skill
+    # offloads from the agent. dir8 is the most-faithful NLE baseline.
+    if skill_set == "dir8":
+        # Single-direction tools (N/NE/.../NW) + descend + search +
+        # pickup + attack + survival. NO move/move_to/autoexplore/
+        # find_and_descend/kick aggregators. Strips all "free" pathfinding.
+        keep = {"descend", "search", "pickup", "attack",
+                "engrave_elbereth", "pray", "eat", "quaff", "read",
+                "add_note", "recall", "pin_objective",
+                "wiki_lookup", "wiki_search"}
+        out = []
+        # Generate 8 direction skill-adapters by binding `move(direction=...)`
+        # to a fixed direction. Naming: `north`, `northeast`, etc.
+        _DIR_NAMES = [("north","N"),("northeast","NE"),("east","E"),
+                      ("southeast","SE"),("south","S"),("southwest","SW"),
+                      ("west","W"),("northwest","NW")]
+        for tname, dir_canon in _DIR_NAMES:
+            out.append(_make_fixed_direction_adapter(tname, dir_canon))
+        for name, schema in skill_registry.all_schemas().items():
+            if name in _HARNESS_OWNED: continue
+            if name not in keep: continue
+            params = schema.get("parameters", {}) or {}
+            out.append(_make_skill_adapter(name, schema.get("description", ""), params))
+        return out
+    elif skill_set == "move":
+        # `move(direction=...)` + survival, but NO move_to, NO autoexplore,
+        # NO find_and_descend. Single-step movement only, agent reasons
+        # about which direction. Slightly above dir8 since the LM picks
+        # a direction string instead of a fixed tool.
+        keep = {"move", "descend", "search", "pickup", "attack",
+                "engrave_elbereth", "pray", "eat", "quaff", "read",
+                "add_note", "recall", "pin_objective",
+                "wiki_lookup", "wiki_search"}
+        out = []
+        for name, schema in skill_registry.all_schemas().items():
+            if name in _HARNESS_OWNED: continue
+            if name not in keep: continue
+            params = schema.get("parameters", {}) or {}
+            out.append(_make_skill_adapter(name, schema.get("description", ""), params))
+        return out
+    elif "," in skill_set:
+        keep = {s.strip() for s in skill_set.split(",")}
+        out = []
+        for name, schema in skill_registry.all_schemas().items():
+            if name in _HARNESS_OWNED: continue
+            if name not in keep: continue
+            params = schema.get("parameters", {}) or {}
+            out.append(_make_skill_adapter(name, schema.get("description", ""), params))
+        return out
+    # default 'full'
     out = []
     for name, schema in skill_registry.all_schemas().items():
         if name in _HARNESS_OWNED:
@@ -1569,6 +1633,21 @@ def _build_skill_adapter_callables() -> list:
         params = schema.get("parameters", {}) or {}
         out.append(_make_skill_adapter(name, schema.get("description", ""), params))
     return out
+
+
+def _make_fixed_direction_adapter(tool_name: str, direction: str):
+    """Bind `move(direction=...)` to a specific direction → 1-arg tool.
+
+    Returns a callable named `tool_name` (north/northeast/.../northwest) with
+    no parameters; calling it dispatches `move(direction=direction)` through
+    the registry. Used by `skill_set='dir8'` baseline.
+    """
+    def _fn():
+        """One step in this direction (NLE primitive)."""
+        return None
+    _fn.__name__ = tool_name
+    _fn.__doc__ = f"Take one NLE step {direction}. No A*, no aggregation — single primitive action."
+    return _fn
 
 
 _TYPE_MAP = {
