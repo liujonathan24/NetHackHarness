@@ -224,7 +224,19 @@ def descend(env: NetHackCoreEnv, obs: StructuredObservation) -> SkillResult:
             f"Can't descend — you're standing on: {under}. Find a '>' tile and step ON it first.",
             interrupted=True,
         )
-    return SkillResult([int(nethack.MiscAction.MORE), int(ord('>'))], "Attempted to descend.")
+    # Convert enum values to action INDICES — env.step takes indices not
+    # raw NLE enum keycodes. Without this fix, descend sends [13, 62] which
+    # env.step interprets as indices 13 and 62; index 62 is OOB and crashes
+    # (or silently no-ops). This bug ate every "successful" descent attempt
+    # for who-knows-how-long.
+    if env is None:
+        # Test path: no real env; fall back to enum values (tests don't step).
+        return SkillResult([int(nethack.MiscAction.MORE), int(ord('>'))], "Attempted to descend.")
+    actions = env.underlying.unwrapped.actions
+    enum_to_idx = {int(a): i for i, a in enumerate(actions)}
+    more_idx = enum_to_idx.get(int(nethack.MiscAction.MORE), 0)
+    down_idx = enum_to_idx.get(int(nethack.MiscDirection.DOWN), enum_to_idx.get(int(ord('>')), 0))
+    return SkillResult([more_idx, down_idx], "Attempted to descend.")
 
 
 @registry.register("search", schema={
@@ -901,17 +913,18 @@ def find_and_descend(env: NetHackCoreEnv, obs: StructuredObservation, max_action
             if int(chars[yy, xx]) == ord('>'):
                 stair = (xx, yy); break
         if stair: break
+    # Compute descend action indices (env.step takes indices not enum values).
+    _acts = env.underlying.unwrapped.actions
+    _e2i = {int(a): i for i, a in enumerate(_acts)}
+    _more_i = _e2i.get(int(nethack.MiscAction.MORE), 0)
+    _down_i = _e2i.get(int(nethack.MiscDirection.DOWN), _e2i.get(int(ord('>')), 0))
     if stair is not None:
         if stair == start:
-            # Already on stairs — just descend.
-            return SkillResult(
-                [int(nethack.MiscAction.MORE), int(ord('>'))],
-                "Already on `>` — descending.",
-            )
+            return SkillResult([_more_i, _down_i], "Already on `>` — descending.")
         p = a_star(chars, start, stair)
         if p:
             actions = _enum_actions_to_indices(env, p[:max_actions - 2])
-            actions += [int(nethack.MiscAction.MORE), int(ord('>'))]
+            actions += [_more_i, _down_i]
             return SkillResult(
                 actions=actions,
                 feedback=f"`>` visible at {stair}; pathing {len(p)} steps and descending.",
@@ -944,15 +957,26 @@ def find_and_descend(env: NetHackCoreEnv, obs: StructuredObservation, max_action
             actions=_enum_actions_to_indices(env, door_path[:max_actions]),
             feedback=f"No `>` visible; pathing to door at {door_xy} ({len(door_path)} steps).",
         )
-    # 3) Frontier or dead-end + search burst.
-    nr = nearest_frontier(chars, start)
-    if nr is not None:
-        target, fp = nr
-        if int(chars[target[1], target[0]]) != ord('<'):
-            return SkillResult(
-                actions=_enum_actions_to_indices(env, fp[:max_actions]),
-                feedback=f"Pathing to frontier at {target} ({len(fp)} steps).",
-            )
+    # 3) Frontier — but prefer the FARTHEST reachable frontier so we
+    # actually make progress per skill call. nearest_frontier returns the
+    # immediate next walkable+unknown-adjacent tile, which is usually 1
+    # step away on a corridor → the LM has to round-trip on every step.
+    # Scan all frontiers and pick the longest-A* one (excluding <).
+    fs = find_frontiers(chars)
+    best_fr = None; best_fr_path = None; best_len = -1
+    for fr in fs:
+        if int(chars[fr[1], fr[0]]) == ord('<'):
+            continue
+        if fr == start:
+            continue
+        p = a_star(chars, start, fr)
+        if p and len(p) > best_len:
+            best_len = len(p); best_fr = fr; best_fr_path = p
+    if best_fr is not None and best_fr_path:
+        return SkillResult(
+            actions=_enum_actions_to_indices(env, best_fr_path[:max_actions]),
+            feedback=f"Pathing to far frontier at {best_fr} ({len(best_fr_path)} steps).",
+        )
     # Dead-end fallback.
     dead_ends = []
     for yy in range(h):
