@@ -726,38 +726,88 @@ def autoexplore(env: NetHackCoreEnv, obs: StructuredObservation, max_steps: int 
             # else: keep original `<` target — better than no movement
     if result is None:
         # No frontier means we've explored everything reachable. If stairs
-        # down aren't visible, the level likely has hidden passages — point
-        # the model at `search` rather than letting it loop on autoexplore.
+        # down aren't visible, the level likely has hidden passages — auto-
+        # walk to a dead-end corridor tile and queue a search burst there.
+        # This is the human heuristic: when stuck, search at corridor ends.
         has_stairs_down = any(b'>' in row.tobytes() for row in chars) if hasattr(chars, "__iter__") else False
         if has_stairs_down:
             tip = " Stairs `>` are visible — `move_to` them and `descend`."
+            return SkillResult([], "Level appears fully explored from this position." + tip, interrupted=True)
+        # Dead-end search: find walkable tiles (preferably corridor `#`) with
+        # only one walkable cardinal neighbor. Path to the closest one and
+        # queue 20 `search` actions there. NetHack `s` is action enum index
+        # for search; appending many of them lets us search in one tool call.
+        from .pathfinding import a_star
+        try:
+            h, w = chars.shape
+            dead_ends = []
+            for yy in range(h):
+                for xx in range(w):
+                    ch = int(chars[yy, xx])
+                    if ch not in (ord('#'), ord('.')):
+                        continue
+                    n = 0
+                    for ddx, ddy in ((0,-1),(1,0),(0,1),(-1,0)):
+                        nx, ny = xx+ddx, yy+ddy
+                        if 0 <= nx < w and 0 <= ny < h:
+                            nc = int(chars[ny, nx])
+                            if nc in (ord('.'), ord('#'), ord('+'),
+                                     ord('<'), ord('>'), ord("'")):
+                                n += 1
+                    if n == 1 and (xx, yy) != start:
+                        dead_ends.append((xx, yy))
+            # Score: prefer corridor tiles over room floors (room dead-ends
+            # are usually corners with nothing behind them).
+            best = None
+            best_path = None
+            best_score = 1 << 30
+            for de in dead_ends:
+                p = a_star(chars, start, de)
+                if not p:
+                    continue
+                is_corr = int(chars[de[1], de[0]]) == ord('#')
+                score = len(p) + (0 if is_corr else 100)
+                if score < best_score:
+                    best_score = score
+                    best = de
+                    best_path = p
+            if best is not None and best_path:
+                # Pull a portable search-action enum from the env's last
+                # observation; fall back to literal ord('s') (which works
+                # via vi-key dispatch on most NLE action sets).
+                from nle import nethack as _nh
+                actions = env.underlying.unwrapped.actions
+                enum_to_idx = {int(a): i for i, a in enumerate(actions)}
+                search_action_idx = enum_to_idx.get(int(_nh.Command.SEARCH), int(ord('s')))
+                path_idx = _enum_actions_to_indices(env, best_path[:max_steps])
+                return SkillResult(
+                    actions=path_idx + [search_action_idx] * 20,
+                    feedback=(
+                        f"No frontiers reachable; walking to dead-end "
+                        f"{best} ({len(best_path)} steps) and searching 20× "
+                        "for hidden passages."
+                    ),
+                )
+        except Exception:
+            pass
+        # If we couldn't even find a dead-end, fall back to a strong tip.
+        has_door = False
+        try:
+            has_door = any(b'+' in row.tobytes() for row in chars)
+        except Exception:
+            pass
+        if has_door:
+            tip = (
+                " No `>` visible but a closed door `+` exists on the map. "
+                "`move_to` adjacent to it; if it won't open, "
+                "`kick(direction=...)` 2-5 times to break the lock."
+            )
         else:
-            # Strong, specific advice: search repeatedly at walls. NetHack
-            # secret passages typically take 5-10 search calls to find.
-            # Also flag visible closed doors — likely the actual exit
-            # (and may be locked, needing kick).
-            has_door = False
-            try:
-                has_door = any(b'+' in row.tobytes() for row in chars)
-            except Exception:
-                pass
-            if has_door:
-                tip = (
-                    " No `>` visible but a closed door `+` exists on the map. "
-                    "`move_to` adjacent to it; if it won't open, "
-                    "`kick(direction=...)` 2-5 times to break the lock."
-                )
-            else:
-                tip = (
-                    " No `>` visible. The level likely has hidden passages or "
-                    "trapdoors. Call `search(times=10)` at adjacent walls "
-                    "(especially dead-end corridors) to reveal them in one shot."
-                )
-        return SkillResult(
-            [],
-            "Level appears fully explored from this position." + tip,
-            interrupted=True,
-        )
+            tip = (
+                " No `>` or dead-ends found. Call `search(times=20)` here "
+                "and walk to wall corners to keep searching."
+            )
+        return SkillResult([], "Level appears fully explored." + tip, interrupted=True)
     target, path = result
     path = path[:max_steps]
     if not path:
@@ -775,6 +825,45 @@ def autoexplore(env: NetHackCoreEnv, obs: StructuredObservation, max_steps: int 
         if has_stairs_down:
             suffix = " (short — `>` visible; consider `move_to` and `descend`)"
         else:
+            # Short-frontier rerouting: if there's a known door/passage we
+            # haven't been through, prefer pathing to it over the tiny
+            # frontier. Picks the closest such door by A* path length.
+            from .pathfinding import a_star as _astar2
+            from .observations import extract_visible_features
+            try:
+                nle_env = env.underlying.unwrapped
+                keys = nle_env._observation_keys
+                last_obs_buf = nle_env.last_observation
+                tty = last_obs_buf[keys.index("tty_chars")] if "tty_chars" in keys else None
+            except Exception:
+                tty = None
+            if tty is not None:
+                feats = extract_visible_features(tty)
+                doors = []
+                import re as _r
+                for f in feats:
+                    if f.startswith("door (open/gap)") or f.startswith("door (closed)"):
+                        for mm in _r.finditer(r"\((\d+),(\d+)\)", f):
+                            doors.append((int(mm.group(1)), int(mm.group(2))))
+                best_door = None
+                best_door_path = None
+                for dxy in doors:
+                    if dxy == start:
+                        continue
+                    p2 = _astar2(chars, start, dxy)
+                    if p2 and len(p2) > 1 and (best_door_path is None or len(p2) < len(best_door_path)):
+                        best_door = dxy
+                        best_door_path = p2
+                if best_door is not None and best_door_path is not None:
+                    trimmed2 = best_door_path[:max_steps]
+                    return SkillResult(
+                        actions=_enum_actions_to_indices(env, trimmed2),
+                        feedback=(
+                            f"Autoexplore: frontier exhausted nearby; pathing "
+                            f"to door at {best_door} ({len(trimmed2)} steps). "
+                            f"If door is locked there, kick to break it."
+                        ),
+                    )
             suffix = " (short — try `search` at a wall or `move_to` a known feature)"
     return SkillResult(
         actions=_enum_actions_to_indices(env, path),
