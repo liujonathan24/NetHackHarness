@@ -293,6 +293,21 @@ def format_observation_as_chat(
     # is adjacent and HP is healthy, suggest attack. Strictly directive;
     # the model still has to call the tool.
     hint = None
+    # Stairs-memory override: if the player is currently standing on a tile
+    # we've previously observed as `>`, suggest descend. Fires above all
+    # other hints (including HP-critical retreat) because (a) descending is
+    # cheap, (b) the alternative is the oscillation loop.
+    if state is not None and "_seen_stairs_down" in state and structured.status:
+        try:
+            px = int(structured.status.get("x", -1))
+            py = int(structured.status.get("y", -1))
+            if (px, py) in state["_seen_stairs_down"]:
+                hint = (
+                    f"You are standing on stairs DOWN at ({px},{py}) — call "
+                    f"`descend` now. The `>` glyph is hidden under your `@`."
+                )
+        except Exception:
+            pass
     # HP-critical override — fires regardless of stairs / monsters.
     if structured.status:
         hp = structured.status.get("hitpoints", 0)
@@ -348,7 +363,7 @@ def format_observation_as_chat(
             # Stairs visible (but not adjacent): proactively suggest move_to.
             # Trace 9071d001 had stairs visible for many turns without the
             # agent navigating to them — it kept autoexploring.
-            if hint is None and compact and state is not None and "raw_obs" in state:
+            if hint is None and state is not None and "raw_obs" in state:
                 try:
                     from nethack_core.observations import extract_visible_features
                     feats = extract_visible_features(state["raw_obs"].tty_chars)
@@ -368,11 +383,13 @@ def format_observation_as_chat(
                             break
                 except Exception:
                     pass
+    # Don't let secondary overrides clobber the standing-on-stairs hint.
+    _on_stairs_override = bool(hint and "standing on stairs DOWN" in hint)
     # Pet-blocking detection: when the message buffer says "X is in the way!"
     # the move failed because the pet/peaceful occupies the tile. Trace
     # 9071d001 had the model stuck in long pet-blocking loops. Override any
     # weaker hint with a clear "go around" directive.
-    if structured.messages:
+    if structured.messages and not _on_stairs_override:
         for msg in structured.messages[-4:]:
             if "is in the way" in msg:
                 hint = (
@@ -385,7 +402,7 @@ def format_observation_as_chat(
     # agent tries to move INTO a closed-locked `+`. Find the adjacent `+`
     # direction and tell the model to kick. Without this hint, traces show
     # the model giving up on the door and wandering / eating randomly.
-    if structured.messages:
+    if structured.messages and not _on_stairs_override:
         for msg in structured.messages[-4:]:
             if "door is locked" in msg or "The door is locked." in msg:
                 door_dir = None
@@ -409,7 +426,7 @@ def format_observation_as_chat(
     # surface the door coords and route to kick. This is the failure mode
     # the no-compact trace exposed: the agent autoexplores forever inside
     # the room because the BFS frontier resolves to `<` (stairs up).
-    if hint is None and state is not None and "raw_obs" in state:
+    if hint is None and not _on_stairs_override and state is not None and "raw_obs" in state:
         try:
             from nethack_core.observations import extract_visible_features
             feats = extract_visible_features(state["raw_obs"].tty_chars)
@@ -443,28 +460,35 @@ def format_observation_as_chat(
     if hint:
         lines.append(f"=== HINT === {hint}")
         lines.append("")
-    # Hostiles-in-sight: optional one-liner so the agent doesn't need to
-    # scan the map to spot monsters. Skipped when no letter glyphs visible.
-    if compact:
-        from nethack_core.observations import extract_hostiles_in_sight, extract_visible_features
-        # tty_chars not in StructuredObservation; pull from raw obs via state.
-        if state is not None and "raw_obs" in state:
-            try:
-                features = extract_visible_features(state["raw_obs"].tty_chars)
-                if features:
-                    # Pre-parsed feature list with coordinates. Saves the
-                    # model from scanning ASCII for `>`/`<`/`_`/`{`/`$`. The
-                    # 9071d001 trace had the model confusing `<` for `>` and
-                    # inventing `f = fireplace`; explicit feature naming with
-                    # coordinates lets `move_to(x,y)` immediately.
-                    lines.append(f"=== VISIBLE FEATURES === {'; '.join(features)}")
-                    lines.append("")
-                hostiles = extract_hostiles_in_sight(state["raw_obs"].tty_chars, getattr(state["raw_obs"], "glyphs", None))
-                if hostiles:
-                    lines.append(f"=== VISIBLE GLYPHS === {', '.join(hostiles)}")
-                    lines.append("")
-            except Exception:
-                pass
+    # Hostiles-in-sight + VISIBLE FEATURES: render in BOTH compact and
+    # non-compact modes. Trace 5/16 (no-compact, 3 seeds, Qwen3.5-9B) showed
+    # the agent NEVER calling `descend` because the pre-parsed feature block
+    # was gated to compact mode only. Non-compact agents have to scan the
+    # ASCII grid themselves and routinely confuse `<` for `>` on dense maps.
+    from nethack_core.observations import extract_hostiles_in_sight, extract_visible_features
+    if state is not None and "raw_obs" in state:
+        try:
+            features = extract_visible_features(state["raw_obs"].tty_chars)
+            # Memoize stairs DOWN coords across turns so a subsequent step
+            # ONTO the stairs (which hides `>` under `@`) still recognizes
+            # the descend opportunity.
+            if "_seen_stairs_down" in state:
+                import re as _rex
+                for f in features:
+                    if f.startswith("stairs DOWN at "):
+                        for mc in _rex.finditer(r"\((\d+),(\d+)\)", f):
+                            state["_seen_stairs_down"].add(
+                                (int(mc.group(1)), int(mc.group(2)))
+                            )
+            if features:
+                lines.append(f"=== VISIBLE FEATURES === {'; '.join(features)}")
+                lines.append("")
+            hostiles = extract_hostiles_in_sight(state["raw_obs"].tty_chars, getattr(state["raw_obs"], "glyphs", None))
+            if hostiles:
+                lines.append(f"=== VISIBLE GLYPHS === {', '.join(hostiles)}")
+                lines.append("")
+        except Exception:
+            pass
     if structured.messages:
         lines.append("=== MESSAGES ===")
         msgs = _run_length_encode_messages(structured.messages) if compact else list(structured.messages)
@@ -566,6 +590,11 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         state["descent_count"] = 0
         state["raw_obs"] = obs
         state["structured_obs"] = shape_observation(obs, character)
+        # Track every (x, y) at which `>` was seen on the visible map. Needed
+        # because once the player steps ONTO `>`, the @ overlay hides it and
+        # extract_visible_features stops finding the tile — without memory,
+        # the agent oscillates on/off the stairs without realizing to descend.
+        state["_seen_stairs_down"] = set()
         state["last_reward"] = 0.0
         state["terminated"] = False
         state["journal"] = Journal()
