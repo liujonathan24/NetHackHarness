@@ -1,0 +1,447 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>nethack-rl eval dashboard</title>
+<style>
+  :root {
+    --bg: #0a0a0a; --panel: #141414; --panel2: #1a1a1a; --border: #2a2a2a;
+    --fg: #e6e6e6; --muted: #8a8a8a; --accent: #6cf; --good: #4ade80;
+    --warn: #facc15; --bad: #f87171; --user: #93c5fd; --assist: #d8b4fe;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font-family: ui-sans-serif, system-ui, sans-serif; font-size: 13px;
+  }
+  header {
+    padding: 10px 18px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+    background: var(--panel);
+  }
+  header h1 { margin: 0; font-size: 15px; color: var(--accent); }
+  header .meta { color: var(--muted); font-size: 12px; }
+  header .meta strong { color: var(--fg); }
+  header .pill { padding: 2px 8px; background: var(--panel2); border: 1px solid var(--border); border-radius: 12px; font-size: 11px; }
+  header .pill.win { background: #052e16; border-color: var(--good); color: var(--good); }
+  header .pill.die { background: #3f1212; border-color: var(--bad); color: var(--bad); }
+  input, select, button {
+    background: var(--panel2); color: var(--fg); border: 1px solid var(--border);
+    padding: 4px 8px; border-radius: 4px; font-family: inherit; font-size: 12px;
+  }
+  button { cursor: pointer; }
+  button:hover { background: var(--border); }
+
+  main {
+    display: grid; grid-template-columns: 1fr 540px;
+    gap: 12px; padding: 12px 18px;
+    height: calc(100vh - 110px);
+  }
+  .panel {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 6px; padding: 12px;
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  .panel h2 {
+    margin: 0 0 8px; font-size: 12px; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 1px; font-weight: 600;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+
+  /* Map tiled view */
+  #map-wrap { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  #map-tiles {
+    flex: 1; overflow: auto; background: #050505;
+    border: 1px solid var(--border); border-radius: 4px;
+    font-family: 'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji', monospace;
+    line-height: 1;
+  }
+  .row { white-space: pre; display: block; }
+  .tile { display: inline-block; width: 1.1em; text-align: center; }
+  .tile-floor { color: #2d2d2d; }
+  .tile-corr { color: #4a4a4a; }
+  .tile-wall { color: #5a4030; }
+  .tile-player { color: #fbbf24; font-weight: bold; }
+  .tile-stairs-down { color: #22d3ee; }
+  .tile-stairs-up { color: #94a3b8; }
+  .tile-door { color: #f97316; }
+  .tile-hostile { color: #f87171; font-weight: bold; }
+  .tile-pet { color: #4ade80; font-weight: bold; }
+  .tile-item { color: #c084fc; }
+  .tile-gold { color: #fde047; }
+
+  #status-bar {
+    margin-top: 8px; padding: 8px 10px; background: var(--panel2);
+    border: 1px solid var(--border); border-radius: 4px;
+    font-family: ui-monospace, monospace; font-size: 11px;
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
+  }
+  #status-bar .stat { color: var(--muted); }
+  #status-bar .stat strong { color: var(--fg); }
+  .hp-good { color: var(--good) !important; }
+  .hp-mid { color: var(--warn) !important; }
+  .hp-low { color: var(--bad) !important; }
+
+  /* Right pane: conversation */
+  #convo { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 4px; }
+  .msg { padding: 8px 10px; border-radius: 6px; font-size: 12px; line-height: 1.45; }
+  .msg .role { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; opacity: 0.7; margin-bottom: 4px; }
+  .msg.system { background: #1a1a2a; border: 1px solid #2a2a44; color: var(--muted); font-size: 11px; }
+  .msg.user, .msg.tool { background: #0c1a2a; border: 1px solid #1e3a5f; color: var(--user); }
+  .msg.assistant { background: #1f0c2a; border: 1px solid #4a1e5f; color: var(--assist); }
+  .msg pre { margin: 4px 0 0; white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 11px; line-height: 1.3; }
+  .msg .tool-call { background: #0a0a0a; border: 1px solid var(--border); border-radius: 4px; padding: 6px 8px; margin-top: 6px; font-family: ui-monospace, monospace; font-size: 11px; color: var(--good); }
+  .msg .reasoning { color: #999; font-style: italic; margin-top: 6px; font-size: 11px; }
+
+  /* Timeline */
+  #timeline {
+    grid-column: 1 / -1; padding: 8px 12px; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 6px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  #scrubber { flex: 1; }
+  #turn-label { font-family: ui-monospace, monospace; color: var(--muted); min-width: 110px; font-size: 12px; }
+  .ctrl-btn { padding: 4px 10px; }
+  footer { padding: 6px 18px; color: var(--muted); font-size: 11px; border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+<header>
+  <h1>nethack-rl · eval dashboard</h1>
+  <input type="file" id="file" accept=".jsonl,.json">
+  <select id="roll-picker"><option>— load a file —</option></select>
+  <span class="meta" id="meta"></span>
+  <span class="pill" id="reward-pill">reward: —</span>
+  <span class="pill" id="status-pill">—</span>
+</header>
+
+<main>
+  <section class="panel">
+    <h2><span>Game view</span><span id="map-coords" style="text-transform:none;letter-spacing:0;font-size:11px;color:var(--muted)"></span></h2>
+    <div id="map-wrap">
+      <div id="map-tiles">Pick a rollout to view.</div>
+      <div id="status-bar">
+        <span class="stat">HP <strong id="s-hp">—</strong></span>
+        <span class="stat">AC <strong id="s-ac">—</strong></span>
+        <span class="stat">Dlvl <strong id="s-dlvl">—</strong></span>
+        <span class="stat">Turn <strong id="s-turn">—</strong></span>
+        <span class="stat">Pos <strong id="s-pos">—</strong></span>
+        <span class="stat">XP <strong id="s-xp">—</strong></span>
+        <span class="stat">$ <strong id="s-gold">—</strong></span>
+        <span class="stat">— <strong id="s-feat">—</strong></span>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2><span>LLM trace</span><span id="turn-status" style="text-transform:none;letter-spacing:0;font-size:11px;color:var(--muted)"></span></h2>
+    <div id="convo"></div>
+  </section>
+
+  <section id="timeline">
+    <button class="ctrl-btn" id="prev">←</button>
+    <button class="ctrl-btn" id="play">▶</button>
+    <button class="ctrl-btn" id="next">→</button>
+    <input type="range" id="scrubber" min="0" max="0" value="0">
+    <span id="turn-label">turn 0 / 0</span>
+  </section>
+</main>
+<footer>
+  Tip: run <code>vf-eval ... --save-results</code> and load the resulting
+  <code>results.jsonl</code> here. Each user/tool message in the trace is one game-turn.
+</footer>
+
+<script>
+// ---- glyph → tile mapping --------------------------------------------------
+// Maps NetHack ASCII glyphs to visual emoji-style tiles. Player/monsters/items
+// get emoji; terrain stays as colored ASCII to keep the grid readable.
+const GLYPH = {
+  '@': {e: '🧙', cls: 'tile-player'},
+  '>': {e: '⬇️', cls: 'tile-stairs-down'},
+  '<': {e: '⬆️', cls: 'tile-stairs-up'},
+  '.': {e: '·', cls: 'tile-floor'},
+  '#': {e: '░', cls: 'tile-corr'},
+  '-': {e: '─', cls: 'tile-wall'},
+  '|': {e: '│', cls: 'tile-wall'},
+  '+': {e: '🚪', cls: 'tile-door'},
+  "'": {e: '🚪', cls: 'tile-door'},
+  '_': {e: '⛩', cls: 'tile-item'},
+  '{': {e: '⛲', cls: 'tile-item'},
+  '\\': {e: '🪑', cls: 'tile-item'},
+  '}': {e: '🌊', cls: 'tile-item'},
+  '$': {e: '💰', cls: 'tile-gold'},
+  '%': {e: '🍖', cls: 'tile-item'},
+  '[': {e: '🛡', cls: 'tile-item'},
+  ')': {e: '⚔', cls: 'tile-item'},
+  '(': {e: '🔧', cls: 'tile-item'},
+  '?': {e: '📜', cls: 'tile-item'},
+  '!': {e: '🧪', cls: 'tile-item'},
+  '/': {e: '🪄', cls: 'tile-item'},
+  '=': {e: '💍', cls: 'tile-item'},
+  '"': {e: '📿', cls: 'tile-item'},
+  '*': {e: '💎', cls: 'tile-item'},
+  ' ': {e: ' ', cls: ''},
+};
+// monsters: most letters render as their letter colored hostile (red) or pet (green).
+// Some get emoji.
+const MONSTER = {
+  'd': '🐕', 'f': '🐈', 'r': '🐀', 'x': '🐛', 'B': '🦇',
+  'F': '🍄', 'a': '🐜', 'b': '🦡', 'c': '🐔', 'e': '👁',
+  'g': '👺', 'h': '🦡', 'i': '👻', 'j': '🪼', 'k': '👹',
+  'l': '🐆', 'm': '🪵', 'n': '🧜', 'o': '👹', 'p': '🦗',
+  'q': '🦘', 's': '🕷', 't': '🐢', 'u': '🦄', 'v': '🌀',
+  'w': '🐍', 'y': '🐍', 'z': '🪲',
+  'D': '🐉', 'G': '🧟', 'H': '🧌', 'K': '🐎',
+  'L': '🧟', 'M': '🧟', 'N': '🧜', 'O': '🧌', 'P': '👾',
+  'Q': '👹', 'R': '🦖', 'S': '🐍', 'T': '🧌', 'U': '🐂',
+  'V': '🧛', 'W': '👻', 'X': '👾', 'Y': '🦍', 'Z': '🧟',
+  'A': '👼', 'C': '🧌', 'E': '🌪', 'I': '❓', 'J': '🪼',
+};
+
+function renderTile(ch) {
+  if (GLYPH[ch]) return `<span class="tile ${GLYPH[ch].cls}">${GLYPH[ch].e}</span>`;
+  // monster letter
+  if (/[a-zA-Z]/.test(ch)) {
+    const e = MONSTER[ch] || ch;
+    return `<span class="tile tile-hostile" title="${ch}">${e}</span>`;
+  }
+  return `<span class="tile">${ch}</span>`;
+}
+
+function renderMap(rawMap) {
+  // rawMap is the multi-line NLE map string; render each line as a row.
+  const lines = rawMap.split('\n');
+  const out = [];
+  for (const line of lines) {
+    if (line.trim() === '') continue;
+    const row = Array.from(line).map(renderTile).join('');
+    out.push(`<div class="row">${row}</div>`);
+  }
+  return out.join('');
+}
+
+// ---- parsing vf-eval results.jsonl ----------------------------------------
+// Each rollout = {prompt, completion, reward, metrics, ...}.
+// We build a list of "turns" from the completion: each user/tool message
+// becomes one turn; the immediately-preceding assistant message is the
+// action that led to it.
+function buildTurns(rollout) {
+  const turns = [];
+  const msgs = rollout.completion || [];
+  let pendingAssistant = null;
+  // Include the initial prompt's first user message as turn 0.
+  const promptMsgs = rollout.prompt || [];
+  for (const m of promptMsgs) {
+    if (m.role === 'system') continue;
+    if (m.role === 'user') {
+      turns.push({ obs: m.content || '', action: null, reasoning: '', toolCalls: [] });
+    }
+  }
+  for (const m of msgs) {
+    if (m.role === 'assistant') {
+      pendingAssistant = m;
+    } else if (m.role === 'user' || m.role === 'tool') {
+      const t = { obs: m.content || '', action: null, reasoning: '', toolCalls: [] };
+      if (pendingAssistant) {
+        t.reasoning = pendingAssistant.reasoning_content || '';
+        const tcs = pendingAssistant.tool_calls || [];
+        for (const tc of tcs) {
+          let name = null, args = null;
+          if (typeof tc === 'string') {
+            try { const o = JSON.parse(tc); name = o.name; args = o.arguments; } catch (_) {}
+          } else if (tc && tc.function) {
+            name = tc.function.name; args = tc.function.arguments;
+          } else if (tc && tc.name) {
+            name = tc.name; args = tc.arguments;
+          }
+          if (name) t.toolCalls.push({ name, args: args || '' });
+        }
+      }
+      turns.push(t);
+      pendingAssistant = null;
+    }
+  }
+  return turns;
+}
+
+// Parse a user observation into { map, status, hint, sections{...}, preamble }
+function parseObs(text) {
+  const out = { preamble: '', sections: {} };
+  const re = /^=== ([A-Z][A-Z 0-9/]*?(?:\([^)]*\))?) ===(.*)$/;
+  const lines = text.split('\n');
+  let cur = '_preamble';
+  out.sections._preamble = '';
+  for (const line of lines) {
+    const m = line.match(re);
+    if (m) {
+      cur = m[1].trim();
+      out.sections[cur] = m[2].trim() ? m[2].trim() + '\n' : '';
+    } else {
+      out.sections[cur] = (out.sections[cur] || '') + line + '\n';
+    }
+  }
+  for (const k in out.sections) out.sections[k] = out.sections[k].trim();
+  return out;
+}
+
+function parseStatusLine(text) {
+  // "HP: 14/14  AC: 4  Dlvl: 1  Turn: 41  XP: 1  $: 1  Pos: (57,15)"
+  const out = {};
+  const pairs = text.split(/\s{2,}/);
+  for (const p of pairs) {
+    const m = p.match(/^([A-Za-z$ ]+):\s+(.+)$/);
+    if (m) out[m[1].trim()] = m[2].trim();
+  }
+  return out;
+}
+
+// ---- UI state -------------------------------------------------------------
+let ROLLOUTS = [];
+let TURNS = [];
+let IDX = 0;
+let PLAYING = null;
+
+function setTurn(i) {
+  if (!TURNS.length) return;
+  IDX = Math.max(0, Math.min(TURNS.length - 1, i));
+  const t = TURNS[IDX];
+  document.getElementById('scrubber').value = IDX;
+  document.getElementById('turn-label').textContent = `turn ${IDX} / ${TURNS.length - 1}`;
+  // render map
+  const parsed = parseObs(t.obs);
+  const mapBody = parsed.sections['MAP'] || '';
+  document.getElementById('map-tiles').innerHTML = renderMap(mapBody);
+  // status
+  const status = parseStatusLine(parsed.sections['STATUS'] || '');
+  const set = (id, v) => { document.getElementById(id).textContent = v || '—'; };
+  set('s-hp', status['HP'] || '—');
+  set('s-ac', status['AC'] || '—');
+  set('s-dlvl', status['Dlvl'] || '—');
+  set('s-turn', status['Turn'] || '—');
+  set('s-pos', status['Pos'] || '—');
+  set('s-xp', status['XP'] || '—');
+  set('s-gold', status['$'] || '—');
+  set('s-feat', (parsed.sections['VISIBLE FEATURES'] || '').slice(0, 60));
+  // hp color
+  const hpStr = status['HP'] || '';
+  const hpM = hpStr.match(/(\d+)\/(\d+)/);
+  if (hpM) {
+    const ratio = parseInt(hpM[1]) / parseInt(hpM[2]);
+    const el = document.getElementById('s-hp');
+    el.classList.remove('hp-good', 'hp-mid', 'hp-low');
+    if (ratio > 0.7) el.classList.add('hp-good');
+    else if (ratio > 0.3) el.classList.add('hp-mid');
+    else el.classList.add('hp-low');
+  }
+  // map coords
+  document.getElementById('map-coords').textContent = `${IDX === 0 ? 'start' : 'after turn ' + IDX}`;
+
+  // conversation: render the system prompt summary + assistant action that
+  // led here + the obs sections. We show the latest 1 assistant→obs pair.
+  const convo = document.getElementById('convo');
+  convo.innerHTML = '';
+  // assistant action that produced THIS obs
+  if (t.toolCalls.length || t.reasoning) {
+    const a = document.createElement('div');
+    a.className = 'msg assistant';
+    let html = '<div class="role">assistant action</div>';
+    for (const tc of t.toolCalls) {
+      html += `<div class="tool-call">${tc.name}(${tc.args})</div>`;
+    }
+    if (t.reasoning) {
+      html += `<div class="reasoning">reasoning: ${t.reasoning.slice(0, 500).replace(/\n/g, ' ')}${t.reasoning.length > 500 ? '…' : ''}</div>`;
+    }
+    a.innerHTML = html;
+    convo.appendChild(a);
+  }
+  // obs (broken into named sections)
+  const u = document.createElement('div');
+  u.className = 'msg user';
+  let uhtml = '<div class="role">observation (turn ' + IDX + ')</div>';
+  const order = ['_preamble', 'HINT', 'VISIBLE FEATURES', 'VISIBLE GLYPHS', 'ADJACENT', 'STATUS', 'MESSAGES', 'JOURNAL', 'INVENTORY', 'UNDER PLAYER'];
+  for (const k of order) {
+    if (parsed.sections[k] && parsed.sections[k].length) {
+      uhtml += `<pre><b style="color:var(--accent)">${k === '_preamble' ? 'FEEDBACK' : k}</b>\n${parsed.sections[k].slice(0, 800)}</pre>`;
+    }
+  }
+  u.innerHTML = uhtml;
+  convo.appendChild(u);
+  document.getElementById('turn-status').textContent = t.toolCalls.length
+    ? `→ ${t.toolCalls.map(x => x.name).join(', ')}`
+    : 'no tool call';
+}
+
+function loadRollouts(data) {
+  ROLLOUTS = data;
+  const sel = document.getElementById('roll-picker');
+  sel.innerHTML = '';
+  data.forEach((r, i) => {
+    const m = r.metrics || {};
+    const star = (m.success_reward > 0 ? ' ⭐' : (m.descend_calls > 0 ? ' 💀' : ''));
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = `Rollout ${i} · reward ${(r.reward || 0).toFixed(3)}${star}`;
+    sel.appendChild(opt);
+  });
+  sel.onchange = () => loadRollout(parseInt(sel.value));
+  loadRollout(0);
+}
+
+function loadRollout(i) {
+  const r = ROLLOUTS[i];
+  TURNS = buildTurns(r);
+  document.getElementById('scrubber').max = Math.max(0, TURNS.length - 1);
+  // meta + pill
+  const m = r.metrics || {};
+  const meta = document.getElementById('meta');
+  const reward = (r.reward || 0).toFixed(3);
+  meta.innerHTML = `<strong>${TURNS.length}</strong> turns · scout <strong>${(m.scout_reward || 0).toFixed(3)}</strong> · descent <strong>${m.descent_reward || 0}</strong> · success <strong>${m.success_reward || 0}</strong>`;
+  document.getElementById('reward-pill').textContent = `reward: ${reward}`;
+  const pill = document.getElementById('status-pill');
+  if (m.success_reward > 0) { pill.textContent = 'DESCENDED ⭐'; pill.className = 'pill win'; }
+  else if (m.descend_calls > 0) { pill.textContent = `attempted descend ×${m.descend_calls}`; pill.className = 'pill'; }
+  else { pill.textContent = 'no descent'; pill.className = 'pill'; }
+  setTurn(0);
+}
+
+// ---- file loading ---------------------------------------------------------
+document.getElementById('file').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const text = await file.text();
+  let data = [];
+  // .jsonl: one rollout per line
+  if (file.name.endsWith('.jsonl') || text.split('\n').length > 1) {
+    for (const line of text.split('\n')) {
+      const s = line.trim();
+      if (s) {
+        try { data.push(JSON.parse(s)); } catch (_) {}
+      }
+    }
+  } else {
+    const parsed = JSON.parse(text);
+    data = Array.isArray(parsed) ? parsed : [parsed];
+  }
+  if (!data.length) { alert('No rollouts found in file.'); return; }
+  loadRollouts(data);
+});
+document.getElementById('scrubber').addEventListener('input', (e) => setTurn(parseInt(e.target.value)));
+document.getElementById('prev').onclick = () => setTurn(IDX - 1);
+document.getElementById('next').onclick = () => setTurn(IDX + 1);
+document.getElementById('play').onclick = (e) => {
+  if (PLAYING) { clearInterval(PLAYING); PLAYING = null; e.target.textContent = '▶'; return; }
+  e.target.textContent = '⏸';
+  PLAYING = setInterval(() => {
+    if (IDX >= TURNS.length - 1) { clearInterval(PLAYING); PLAYING = null; e.target.textContent = '▶'; return; }
+    setTurn(IDX + 1);
+  }, 600);
+};
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowLeft') setTurn(IDX - 1);
+  else if (e.key === 'ArrowRight') setTurn(IDX + 1);
+  else if (e.key === ' ') document.getElementById('play').click();
+});
+</script>
+</body>
+</html>
