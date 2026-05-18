@@ -1453,23 +1453,32 @@ def _detect_terminal_outcome(obs, state: dict) -> None:
 
 # ---------- load_environment ----------
 
-def _build_task_dataset(tier: Optional[TierName], n_examples: int, seed_base: int) -> Dataset:
-    """Each row is one starting condition."""
+def _build_task_dataset(tier: Optional[TierName], n_examples: int, seed_base: int, explicit_seeds: Optional[list] = None) -> Dataset:
+    """Each row is one starting condition.
+
+    If `explicit_seeds` is provided (list of ints), each row uses one of
+    those NLE seeds (cycling through), and n_examples is overridden by the
+    list length. Use this to pin known-easy seeds for evaluation.
+    """
     rng = random.Random(seed_base)
     if tier is None:
         tiers = list_tiers()
     else:
         tiers = [tier]
     rows = []
+    if explicit_seeds is not None:
+        n_examples = len(explicit_seeds)
     for i in range(n_examples):
         t = rng.choice(tiers)
         spec = get_tier(t)
+        seed_val = (int(explicit_seeds[i]) if explicit_seeds is not None
+                    else rng.randint(0, 2**31 - 1))
         rows.append({
             "prompt": [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": f"Task: {spec.description}\nSuccess: {spec.success_criterion}\n\nBegin."},
             ],
-            "task": {"tier": t, "seed": rng.randint(0, 2**31 - 1)},
+            "task": {"tier": t, "seed": seed_val},
             "info": {"tier": t, "spec_description": spec.description},
         })
     return Dataset.from_list(rows)
@@ -1513,7 +1522,8 @@ def load_environment(
         journal_render_max_chars: soft cap on per-turn journal block size; older
             non-belief-state notes get elided when over the cap.
     """
-    dataset = _build_task_dataset(tier, n_examples, seed)
+    explicit_seeds = kwargs.pop("explicit_seeds", None)
+    dataset = _build_task_dataset(tier, n_examples, seed, explicit_seeds=explicit_seeds)
     rubric = vf.Rubric(funcs=[scout_reward, descent_reward, success_reward, ascension_reward])
 
     if interface == "skill":
