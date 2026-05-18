@@ -160,16 +160,55 @@ def _normalize_direction(d: str) -> Optional[str]:
 
 
 @registry.register("move", schema={
-    "description": "Take one step in a compass direction. Use this for fine movement; for traversal, prefer move_to.",
+    "description": (
+        "Move in a compass direction. By default runs in that direction until an "
+        "obstacle is encountered (walls, monsters, corridor branches) — like "
+        "NetHack's shift+direction 'run' command. This matches what experienced "
+        "human players do for traversal. Pass run=False for a single step."
+    ),
     "parameters": {
         "direction": {"type": "string", "enum": list(_DIRECTION_TO_ACTION.keys()), "description": "Compass direction (N/NE/E/SE/S/SW/W/NW) or '.' to wait. Aliases like 'north'/'up' are also accepted."},
+        "run": {"type": "boolean", "default": True, "description": "If True (default), queue up to 25 steps in this direction; NLE will stop at first obstacle. If False, single step."},
     },
 })
-def move(env: NetHackCoreEnv, obs: StructuredObservation, direction: str) -> SkillResult:
+def move(env: NetHackCoreEnv, obs: StructuredObservation, direction: str, run: bool = True) -> SkillResult:
     canon = _normalize_direction(direction)
     if canon is None:
         return SkillResult([], f"Invalid direction: {direction!r}. Use N/NE/E/SE/S/SW/W/NW (or 'wait').", interrupted=True)
-    return SkillResult([int(_DIRECTION_TO_ACTION[canon])], f"Moved {canon}.")
+    step = int(_DIRECTION_TO_ACTION[canon])
+    if not run or canon == ".":
+        return SkillResult([step], f"Moved {canon}.")
+    # Compute path via a_star to a tile far in this direction — gives us
+    # an obstacle-aware "run" that auto-stops at walls and corridor turns.
+    try:
+        chars, start = _current_chars_and_player(env)
+        h, w = chars.shape
+        dx_map = {"N":(0,-1),"NE":(1,-1),"E":(1,0),"SE":(1,1),
+                  "S":(0,1),"SW":(-1,1),"W":(-1,0),"NW":(-1,-1)}
+        dx, dy = dx_map[canon]
+        # Step forward until obstacle or edge.
+        cx, cy = start
+        path = []
+        for _ in range(25):
+            nx, ny = cx + dx, cy + dy
+            if not (0 <= nx < w and 0 <= ny < h): break
+            tile = int(chars[ny, nx])
+            from .pathfinding import is_walkable
+            if not is_walkable(tile): break
+            path.append(step)
+            cx, cy = nx, ny
+            # Stop at items / interesting tiles so we don't run past them.
+            if tile in (ord('>'), ord('<'), ord('_'), ord('{'), ord('+'),
+                        ord('%'), ord('$'), ord('('), ord(')'), ord('['),
+                        ord('*'), ord('?'), ord('!'), ord('/'), ord('='),
+                        ord('"')):
+                break
+        if not path:
+            # First step blocked — return single step so feedback reports it.
+            return SkillResult([step], f"Moved {canon} (blocked at first step).")
+        return SkillResult(path, f"Ran {canon} for {len(path)} steps.")
+    except Exception:
+        return SkillResult([step], f"Moved {canon} (run setup failed).")
 
 
 @registry.register("attack", schema={
