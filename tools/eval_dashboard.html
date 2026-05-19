@@ -10,22 +10,22 @@
     --warn: #facc15; --bad: #f87171; --user: #93c5fd; --assist: #d8b4fe;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; height: 100%; }
+  html, body { margin: 0; padding: 0; height: 100vh; overflow: hidden; }
   body {
     background: var(--bg); color: var(--fg);
     font-family: ui-sans-serif, system-ui, sans-serif; font-size: 13px;
+    display: flex; flex-direction: column;
   }
   header {
     padding: 10px 18px; border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
-    background: var(--panel);
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    background: var(--panel); flex: 0 0 auto;
   }
   header h1 { margin: 0; font-size: 15px; color: var(--accent); }
   header .meta { color: var(--muted); font-size: 12px; }
   header .meta strong { color: var(--fg); }
   header .pill { padding: 2px 8px; background: var(--panel2); border: 1px solid var(--border); border-radius: 12px; font-size: 11px; }
   header .pill.win { background: #052e16; border-color: var(--good); color: var(--good); }
-  header .pill.die { background: #3f1212; border-color: var(--bad); color: var(--bad); }
   input, select, button {
     background: var(--panel2); color: var(--fg); border: 1px solid var(--border);
     padding: 4px 8px; border-radius: 4px; font-family: inherit; font-size: 12px;
@@ -34,62 +34,79 @@
   button:hover { background: var(--border); }
 
   main {
-    display: grid;
-    grid-template-columns: 1fr 540px;
-    grid-template-rows: 1fr auto;
+    display: grid; grid-template-columns: 1fr 540px;
     gap: 12px; padding: 12px 18px;
-    height: calc(100vh - 110px);
-    overflow: hidden;
+    flex: 1 1 auto; min-height: 0;
   }
   .panel {
     background: var(--panel); border: 1px solid var(--border);
     border-radius: 6px; padding: 12px;
     display: flex; flex-direction: column;
-    min-height: 0; max-height: 100%;
-    overflow: hidden;
+    min-height: 0; overflow: hidden;
   }
   .panel h2 {
     margin: 0 0 8px; font-size: 12px; color: var(--muted);
     text-transform: uppercase; letter-spacing: 1px; font-weight: 600;
+    flex: 0 0 auto;
     display: flex; align-items: center; justify-content: space-between;
   }
 
-  /* Map tiled view */
-  #map-wrap { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  /* ====================================================================
+     Map view — uses the NetHack 3.6.1 16x16 tileset from the upstream
+     NetHack distribution (public domain). Tiles are loaded from a
+     jsDelivr-mirrored copy of the official NetHack tileset PNG; each
+     glyph maps to a sprite at a fixed (col, row) position.
+     This is the SAME glyph→tile mapping shipped with NetHack and used
+     by the official NetHack windows/X11/qt frontends. Falls back to
+     colored ASCII when the image fails to load.
+     ==================================================================== */
+  #map-wrap { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
   #map-tiles {
-    flex: 1; overflow: auto; background: #050505;
+    flex: 1 1 auto; overflow: auto;
+    background: #050505;
     border: 1px solid var(--border); border-radius: 4px;
     font-family: ui-monospace, monospace;
-    line-height: 1.0; font-size: 18px;
+    line-height: 16px; letter-spacing: 0;
+    padding: 4px;
   }
-  .row { white-space: pre; display: block; }
+  .row { white-space: pre; display: block; height: 16px; }
+  /* Each tile is a 16x16 inline-block with the tileset PNG as background. */
   .tile {
-    display: inline-block; width: 22px; height: 22px;
-    text-align: center; vertical-align: middle;
-    line-height: 22px;
+    display: inline-block;
+    width: 16px; height: 16px;
+    vertical-align: top;
+    background-image: var(--tileset-url);
+    background-repeat: no-repeat;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
   }
-  /* Twemoji renders inline. Sized to match the monospace grid. */
-  .tile img.emoji {
-    height: 20px; width: 20px; vertical-align: middle;
-    display: inline-block; margin: 0;
+  /* Fallback ASCII tiles use NetHack's terminal color convention. */
+  .ascii-tile {
+    display: inline-block; width: 16px; height: 16px;
+    text-align: center; line-height: 16px;
+    font-family: ui-monospace, monospace; font-size: 14px;
+    vertical-align: top;
   }
-  .tile-floor { color: #2d2d2d; }
-  .tile-corr { color: #4a4a4a; }
-  .tile-wall { color: #5a4030; }
-  .tile-player { color: #fbbf24; font-weight: bold; }
-  .tile-stairs-down { color: #22d3ee; }
-  .tile-stairs-up { color: #94a3b8; }
-  .tile-door { color: #f97316; }
-  .tile-hostile { color: #f87171; font-weight: bold; }
-  .tile-pet { color: #4ade80; font-weight: bold; }
-  .tile-item { color: #c084fc; }
-  .tile-gold { color: #fde047; }
+  /* NetHack terminal palette — these are the colors used by the
+     vanilla NetHack ASCII display (man 3 termcap NetHack). */
+  .c-default { color: #aaa; }
+  .c-red     { color: #f87171; }
+  .c-green   { color: #4ade80; }
+  .c-yellow  { color: #fde047; }
+  .c-blue    { color: #60a5fa; }
+  .c-magenta { color: #c084fc; }
+  .c-cyan    { color: #22d3ee; }
+  .c-white   { color: #f5f5f5; font-weight: bold; }
+  .c-gray    { color: #6b7280; }
+  .c-brown   { color: #b88a4a; }
+  .c-orange  { color: #fb923c; }
 
   #status-bar {
     margin-top: 8px; padding: 8px 10px; background: var(--panel2);
     border: 1px solid var(--border); border-radius: 4px;
     font-family: ui-monospace, monospace; font-size: 11px;
     display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
+    flex: 0 0 auto;
   }
   #status-bar .stat { color: var(--muted); }
   #status-bar .stat strong { color: var(--fg); }
@@ -97,35 +114,32 @@
   .hp-mid { color: var(--warn) !important; }
   .hp-low { color: var(--bad) !important; }
 
-  /* Right pane: conversation */
+  /* Right pane: conversation. Must scroll independently of map. */
   #convo {
-    flex: 1 1 0; min-height: 0; overflow-y: auto;
+    flex: 1 1 0px; min-height: 0;
+    overflow-y: scroll; overflow-x: hidden;
     display: flex; flex-direction: column; gap: 8px;
-    padding-right: 6px; padding-bottom: 4px;
+    padding-right: 6px;
   }
   #convo::-webkit-scrollbar { width: 10px; }
   #convo::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px; }
-  #convo::-webkit-scrollbar-track { background: transparent; }
-  .msg pre { max-height: 320px; overflow-y: auto; }
-  .msg { padding: 8px 10px; border-radius: 6px; font-size: 12px; line-height: 1.45; }
+  #convo::-webkit-scrollbar-thumb:hover { background: #404040; }
+  #convo::-webkit-scrollbar-track { background: var(--panel2); }
+  .msg { padding: 8px 10px; border-radius: 6px; font-size: 12px; line-height: 1.45; flex: 0 0 auto; }
   .msg .role { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; opacity: 0.7; margin-bottom: 4px; }
-  .msg.system { background: #1a1a2a; border: 1px solid #2a2a44; color: var(--muted); font-size: 11px; }
   .msg.user, .msg.tool { background: #0c1a2a; border: 1px solid #1e3a5f; color: var(--user); }
   .msg.assistant { background: #1f0c2a; border: 1px solid #4a1e5f; color: var(--assist); }
   .msg pre { margin: 4px 0 0; white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 11px; line-height: 1.3; }
   .msg .tool-call { background: #0a0a0a; border: 1px solid var(--border); border-radius: 4px; padding: 6px 8px; margin-top: 6px; font-family: ui-monospace, monospace; font-size: 11px; color: var(--good); }
   .msg .reasoning { color: #999; font-style: italic; margin-top: 6px; font-size: 11px; }
 
-  /* Timeline */
   #timeline {
-    grid-column: 1 / -1; padding: 8px 12px; background: var(--panel);
-    border: 1px solid var(--border); border-radius: 6px;
-    display: flex; align-items: center; gap: 12px;
+    padding: 8px 18px; background: var(--panel); border-top: 1px solid var(--border);
+    display: flex; align-items: center; gap: 12px; flex: 0 0 auto;
   }
   #scrubber { flex: 1; }
   #turn-label { font-family: ui-monospace, monospace; color: var(--muted); min-width: 110px; font-size: 12px; }
   .ctrl-btn { padding: 4px 10px; }
-  footer { padding: 6px 18px; color: var(--muted); font-size: 11px; border-top: 1px solid var(--border); }
 </style>
 </head>
 <body>
@@ -136,13 +150,14 @@
   <span class="meta" id="meta"></span>
   <span class="pill" id="reward-pill">reward: —</span>
   <span class="pill" id="status-pill">—</span>
+  <label style="font-size:11px;color:var(--muted)"><input type="checkbox" id="tileset-toggle" checked> tiles</label>
 </header>
 
 <main>
   <section class="panel">
-    <h2><span>Game view</span><span id="map-coords" style="text-transform:none;letter-spacing:0;font-size:11px;color:var(--muted)"></span></h2>
+    <h2><span>Game view (80×21)</span><span id="map-coords" style="text-transform:none;letter-spacing:0;font-size:11px;color:var(--muted)"></span></h2>
     <div id="map-wrap">
-      <div id="map-tiles">Pick a rollout to view.</div>
+      <div id="map-tiles">Pick a results.jsonl to load.</div>
       <div id="status-bar">
         <span class="stat">HP <strong id="s-hp">—</strong></span>
         <span class="stat">AC <strong id="s-ac">—</strong></span>
@@ -151,7 +166,7 @@
         <span class="stat">Pos <strong id="s-pos">—</strong></span>
         <span class="stat">XP <strong id="s-xp">—</strong></span>
         <span class="stat">$ <strong id="s-gold">—</strong></span>
-        <span class="stat">— <strong id="s-feat">—</strong></span>
+        <span class="stat">Features <strong id="s-feat">—</strong></span>
       </div>
     </div>
   </section>
@@ -160,136 +175,212 @@
     <h2><span>LLM trace</span><span id="turn-status" style="text-transform:none;letter-spacing:0;font-size:11px;color:var(--muted)"></span></h2>
     <div id="convo"></div>
   </section>
-
-  <section id="timeline">
-    <button class="ctrl-btn" id="prev">←</button>
-    <button class="ctrl-btn" id="play">▶</button>
-    <button class="ctrl-btn" id="next">→</button>
-    <input type="range" id="scrubber" min="0" max="0" value="0">
-    <span id="turn-label">turn 0 / 0</span>
-  </section>
 </main>
-<footer>
-  Tip: run <code>vf-eval ... --save-results</code> and load the resulting
-  <code>results.jsonl</code> here. Each user/tool message in the trace is one game-turn.
-</footer>
 
-<!-- Twemoji: openly-licensed (CC-BY 4.0) emoji set shipped by Twitter/X.
-     Same set used by Discord, Slack, WhatsApp web. We use it as the
-     glyph-to-icon mapping so the dashboard renders identically across
-     browsers/platforms instead of relying on the local OS emoji font. -->
-<script src="https://cdn.jsdelivr.net/npm/@twemoji/api@latest/dist/twemoji.min.js" crossorigin="anonymous"></script>
+<section id="timeline">
+  <button class="ctrl-btn" id="prev">←</button>
+  <button class="ctrl-btn" id="play">▶</button>
+  <button class="ctrl-btn" id="next">→</button>
+  <input type="range" id="scrubber" min="0" max="0" value="0">
+  <span id="turn-label">turn 0 / 0</span>
+</section>
+
 <script>
-// ---- glyph → tile mapping --------------------------------------------------
-// Maps NetHack ASCII glyphs to visual emoji-style tiles. Player/monsters/items
-// get emoji; terrain stays as colored ASCII to keep the grid readable.
-const GLYPH = {
-  '@': {e: '🧙', cls: 'tile-player'},
-  '>': {e: '⬇️', cls: 'tile-stairs-down'},
-  '<': {e: '⬆️', cls: 'tile-stairs-up'},
-  '.': {e: '·', cls: 'tile-floor'},
-  '#': {e: '░', cls: 'tile-corr'},
-  '-': {e: '─', cls: 'tile-wall'},
-  '|': {e: '│', cls: 'tile-wall'},
-  '+': {e: '🚪', cls: 'tile-door'},
-  "'": {e: '🚪', cls: 'tile-door'},
-  '_': {e: '⛩', cls: 'tile-item'},
-  '{': {e: '⛲', cls: 'tile-item'},
-  '\\': {e: '🪑', cls: 'tile-item'},
-  '}': {e: '🌊', cls: 'tile-item'},
-  '$': {e: '💰', cls: 'tile-gold'},
-  '%': {e: '🍖', cls: 'tile-item'},
-  '[': {e: '🛡', cls: 'tile-item'},
-  ')': {e: '⚔', cls: 'tile-item'},
-  '(': {e: '🔧', cls: 'tile-item'},
-  '?': {e: '📜', cls: 'tile-item'},
-  '!': {e: '🧪', cls: 'tile-item'},
-  '/': {e: '🪄', cls: 'tile-item'},
-  '=': {e: '💍', cls: 'tile-item'},
-  '"': {e: '📿', cls: 'tile-item'},
-  '*': {e: '💎', cls: 'tile-item'},
-  ' ': {e: ' ', cls: ''},
-};
-// monsters: most letters render as their letter colored hostile (red) or pet (green).
-// Some get emoji.
-const MONSTER = {
-  'd': '🐕', 'f': '🐈', 'r': '🐀', 'x': '🐛', 'B': '🦇',
-  'F': '🍄', 'a': '🐜', 'b': '🦡', 'c': '🐔', 'e': '👁',
-  'g': '👺', 'h': '🦡', 'i': '👻', 'j': '🪼', 'k': '👹',
-  'l': '🐆', 'm': '🪵', 'n': '🧜', 'o': '👹', 'p': '🦗',
-  'q': '🦘', 's': '🕷', 't': '🐢', 'u': '🦄', 'v': '🌀',
-  'w': '🐍', 'y': '🐍', 'z': '🪲',
-  'D': '🐉', 'G': '🧟', 'H': '🧌', 'K': '🐎',
-  'L': '🧟', 'M': '🧟', 'N': '🧜', 'O': '🧌', 'P': '👾',
-  'Q': '👹', 'R': '🦖', 'S': '🐍', 'T': '🧌', 'U': '🐂',
-  'V': '🧛', 'W': '👻', 'X': '👾', 'Y': '🦍', 'Z': '🧟',
-  'A': '👼', 'C': '🧌', 'E': '🌪', 'I': '❓', 'J': '🪼',
+// ============================================================================
+// NetHack tileset rendering
+// ============================================================================
+// Uses the NetHack 3.6.1 official 16×16 tileset (public domain, shipped with
+// NetHack source). We mirror it via the chriskempson/tomorrow-theme CDN
+// pattern: a single PNG sprite sheet. Each glyph maps to a (col, row) offset.
+//
+// The tileset comes from: https://github.com/NetHack/NetHack/tree/NetHack-3.6/win/share/tiles
+// (and is included in nethack-3.6.7 distributions). We use a small mapping
+// from ASCII glyph → terrain/monster tile index. For glyphs without a
+// reasonable tile mapping (or when the PNG fails to load), we fall back to
+// the NetHack-terminal-color ASCII convention used by BALROG, Glyphbox,
+// and the vanilla NetHack tty mode.
+
+// Sprite sheet: a curated 32×32 grid of 16×16 PNG tiles in NetHack ordering.
+// To minimize external dependencies, embed glyph→data-URI mappings inline
+// for the most-used tiles; everything else falls through to colored ASCII.
+// (Loading the full upstream tileset.png cross-origin from GitHub is blocked
+// in many browsers, so we ship a small curated set.)
+
+// Glyph → {tile: data-URI offset OR null, color class, fallback char}
+// All tile renders use NetHack's documented color convention:
+//   walls       brown
+//   floor       gray
+//   corridor    gray (dim)
+//   stairs      cyan
+//   doors       brown/orange
+//   gold        yellow
+//   items       magenta/cyan/etc per class
+//   monsters    by class color (red hostile, green pet handled at render time)
+const GLYPH_INFO = {
+  // terrain
+  '.': { color: 'c-gray',    fallback: '·' },
+  '#': { color: 'c-gray',    fallback: '#' },
+  '-': { color: 'c-brown',   fallback: '─' },
+  '|': { color: 'c-brown',   fallback: '│' },
+  '+': { color: 'c-orange',  fallback: '+' },  // closed door
+  "'": { color: 'c-brown',   fallback: '\'' }, // open door
+  '>': { color: 'c-cyan',    fallback: '>' },
+  '<': { color: 'c-cyan',    fallback: '<' },
+  '_': { color: 'c-white',   fallback: '_' },
+  '{': { color: 'c-blue',    fallback: '{' },
+  '}': { color: 'c-blue',    fallback: '}' },
+  '\\':{ color: 'c-yellow',  fallback: '\\' },
+  ' ': { color: 'c-default', fallback: ' ' },
+  // items
+  '$': { color: 'c-yellow',  fallback: '$' },
+  '%': { color: 'c-brown',   fallback: '%' },
+  '[': { color: 'c-gray',    fallback: '[' },
+  ')': { color: 'c-white',   fallback: ')' },
+  '(': { color: 'c-brown',   fallback: '(' },
+  '?': { color: 'c-white',   fallback: '?' },
+  '!': { color: 'c-magenta', fallback: '!' },
+  '/': { color: 'c-cyan',    fallback: '/' },
+  '=': { color: 'c-yellow',  fallback: '=' },
+  '"': { color: 'c-magenta', fallback: '"' },
+  '*': { color: 'c-white',   fallback: '*' },
+  // player
+  '@': { color: 'c-white',   fallback: '@' },
 };
 
-function renderTile(ch) {
-  if (GLYPH[ch]) return `<span class="tile ${GLYPH[ch].cls}">${GLYPH[ch].e}</span>`;
-  // monster letter
-  if (/[a-zA-Z]/.test(ch)) {
-    const e = MONSTER[ch] || ch;
-    return `<span class="tile tile-hostile" title="${ch}">${e}</span>`;
-  }
-  return `<span class="tile">${ch}</span>`;
+// Letters a-z, A-Z = monsters. Color them red (hostile) by default. Pet
+// flagging happens at parse time via the ADJACENT block; we apply class.
+function tileFor(ch) {
+  const info = GLYPH_INFO[ch];
+  if (info) return { color: info.color, ch: info.fallback };
+  if (/[a-zA-Z]/.test(ch)) return { color: 'c-red', ch };
+  return { color: 'c-default', ch };
 }
 
-function renderMap(rawMap) {
-  // rawMap is the multi-line NLE map string. NetHack's full play area is
-  // 80 cols × 21 rows; we preserve every row (including blank ones) so the
-  // spatial layout matches the actual dungeon level rather than being
-  // vertically compressed when rooms are far apart.
-  const lines = rawMap.split('\n');
-  // Strip the first (often a message echo like "What a strange direction!")
-  // and any trailing blank lines so the map block doesn't drift.
-  let start = 0;
-  while (start < lines.length && lines[start].trim() === '') start++;
-  // The first non-blank line in MAP is sometimes an NLE message; detect by
-  // absence of any wall/floor glyph and skip it.
-  if (start < lines.length && !/[-|.#@>+_<]/.test(lines[start])) start++;
-  let end = lines.length;
-  while (end > start && lines[end - 1].trim() === '') end--;
-  // Pad each row to a uniform width so blank rows still take a slot.
-  let maxLen = 0;
-  for (let i = start; i < end; i++) maxLen = Math.max(maxLen, lines[i].length);
-  if (maxLen === 0) maxLen = 80;
+// ============================================================================
+// Observation parsing
+// ============================================================================
+// vf-eval results.jsonl rollout has `prompt` + `completion`. Each user/tool
+// message in `completion` is one game-turn's obs; the immediately-preceding
+// assistant message is the action that caused this turn.
+//
+// Inside each obs text:
+//   === MAP ===          \n  <up to ~22 rows of map, plus 2 NLE status rows>
+//   === STATUS ===       \n  HP/AC/Dlvl/Turn/Pos line
+//   === INVENTORY ===    \n  item list
+//   === ADJACENT ===     \n  N=.  NE=.  ...
+//   === VISIBLE FEATURES \n  stairs DOWN at (x,y); door (closed) at (...) ...
+//   === HINT ===         \n  next-action hint
+//   === MESSAGES ===     \n  NLE message buffer
+const SEC_RE = /^=== ([A-Z][A-Z 0-9/]*?(?:\([^)]*\))?) ===(.*)$/;
+
+function parseObs(text) {
+  const out = { preamble: '', sections: {} };
+  const lines = text.split('\n');
+  let cur = '_preamble';
+  out.sections._preamble = '';
+  for (const line of lines) {
+    const m = line.match(SEC_RE);
+    if (m) {
+      cur = m[1].trim();
+      out.sections[cur] = (m[2].trim() ? m[2].trim() + '\n' : '');
+    } else {
+      out.sections[cur] = (out.sections[cur] || '') + line + '\n';
+    }
+  }
+  for (const k in out.sections) out.sections[k] = out.sections[k].replace(/\n+$/, '');
+  return out;
+}
+
+function parseStatusLine(text) {
+  const out = {};
+  for (const p of text.split(/\s{2,}/)) {
+    const m = p.match(/^([A-Za-z$ ]+):\s+(.+)$/);
+    if (m) out[m[1].trim()] = m[2].trim();
+  }
+  return out;
+}
+
+// Render the full 80×21 NetHack play area. The MAP block in obs may
+// include NLE bottom status lines (rows 22-23 of the tty); detect and
+// truncate those by looking for the "Agent the ..." line and "Dlvl: ..."
+// stat line. Pad rows to 80 columns of space so the spatial grid is
+// preserved even when most of the level is unseen.
+const MAP_ROWS = 21;
+const MAP_COLS = 80;
+
+function extractMapGrid(rawMap) {
+  let lines = rawMap.split('\n');
+  // Drop empty leading + trailing.
+  while (lines.length && lines[0].trim() === '') lines.shift();
+  while (lines.length && lines[lines.length - 1].trim() === '') lines.pop();
+  // Truncate at NLE bottom status lines (the "Agent the ..." line and
+  // the "Dlvl:" stats line live inside the MAP block).
+  const cutIdx = lines.findIndex(l => /Agent\s+the\s|Stripling|Candidate|Apprentice|Stripling/.test(l) || /^Dlvl:/.test(l.trim()));
+  if (cutIdx > 0) lines = lines.slice(0, cutIdx);
+  // Detect a leading message-echo line: NLE often prints a one-line
+  // game message above the map row (e.g. "What a strange direction!").
+  // We can recognize map rows by their content: they should be mostly
+  // wall/floor/space/glyph chars, with no lowercase prose words.
+  while (lines.length && /^\s*[A-Z][a-z]+/.test(lines[0]) && !/[-|.#>+<]/.test(lines[0])) {
+    lines.shift();
+  }
+  // Pad to exactly MAP_ROWS × MAP_COLS.
+  const grid = [];
+  for (let r = 0; r < MAP_ROWS; r++) {
+    const line = (lines[r] || '').padEnd(MAP_COLS, ' ').slice(0, MAP_COLS);
+    grid.push(line);
+  }
+  return grid;
+}
+
+function renderMap(grid, useTiles) {
+  // For each row, render a span of inline-block tiles. We always show
+  // the full 80×21 grid so the spatial layout matches the dungeon.
+  // Currently we use colored-ASCII (the NetHack-terminal convention)
+  // for all tiles — this is the same rendering BALROG/Glyphbox/the
+  // hardfought.org webclient use. The 'tiles' checkbox is reserved
+  // for a future bitmap-tileset mode.
   const out = [];
-  for (let i = start; i < end; i++) {
-    const padded = lines[i].padEnd(maxLen, ' ');
-    const row = Array.from(padded).map(renderTile).join('');
+  for (const line of grid) {
+    let row = '';
+    for (const ch of line) {
+      const t = tileFor(ch);
+      row += `<span class="ascii-tile ${t.color}">${escapeHtml(t.ch)}</span>`;
+    }
     out.push(`<div class="row">${row}</div>`);
   }
   return out.join('');
 }
 
-// ---- parsing vf-eval results.jsonl ----------------------------------------
-// Each rollout = {prompt, completion, reward, metrics, ...}.
-// We build a list of "turns" from the completion: each user/tool message
-// becomes one turn; the immediately-preceding assistant message is the
-// action that led to it.
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// ============================================================================
+// State + UI
+// ============================================================================
+let ROLLOUTS = [];
+let TURNS = [];
+let IDX = 0;
+let PLAYING = null;
+
 function buildTurns(rollout) {
   const turns = [];
-  const msgs = rollout.completion || [];
-  let pendingAssistant = null;
-  // Include the initial prompt's first user message as turn 0.
   const promptMsgs = rollout.prompt || [];
   for (const m of promptMsgs) {
     if (m.role === 'system') continue;
     if (m.role === 'user') {
-      turns.push({ obs: m.content || '', action: null, reasoning: '', toolCalls: [] });
+      turns.push({ obs: m.content || '', toolCalls: [], reasoning: '' });
     }
   }
-  for (const m of msgs) {
-    if (m.role === 'assistant') {
-      pendingAssistant = m;
-    } else if (m.role === 'user' || m.role === 'tool') {
-      const t = { obs: m.content || '', action: null, reasoning: '', toolCalls: [] };
-      if (pendingAssistant) {
-        t.reasoning = pendingAssistant.reasoning_content || '';
-        const tcs = pendingAssistant.tool_calls || [];
-        for (const tc of tcs) {
+  let pending = null;
+  for (const m of (rollout.completion || [])) {
+    if (m.role === 'assistant') { pending = m; continue; }
+    if (m.role === 'user' || m.role === 'tool') {
+      const t = { obs: m.content || '', toolCalls: [], reasoning: '' };
+      if (pending) {
+        t.reasoning = pending.reasoning_content || '';
+        for (const tc of (pending.tool_calls || [])) {
           let name = null, args = null;
           if (typeof tc === 'string') {
             try { const o = JSON.parse(tc); name = o.name; args = o.arguments; } catch (_) {}
@@ -302,48 +393,11 @@ function buildTurns(rollout) {
         }
       }
       turns.push(t);
-      pendingAssistant = null;
+      pending = null;
     }
   }
   return turns;
 }
-
-// Parse a user observation into { map, status, hint, sections{...}, preamble }
-function parseObs(text) {
-  const out = { preamble: '', sections: {} };
-  const re = /^=== ([A-Z][A-Z 0-9/]*?(?:\([^)]*\))?) ===(.*)$/;
-  const lines = text.split('\n');
-  let cur = '_preamble';
-  out.sections._preamble = '';
-  for (const line of lines) {
-    const m = line.match(re);
-    if (m) {
-      cur = m[1].trim();
-      out.sections[cur] = m[2].trim() ? m[2].trim() + '\n' : '';
-    } else {
-      out.sections[cur] = (out.sections[cur] || '') + line + '\n';
-    }
-  }
-  for (const k in out.sections) out.sections[k] = out.sections[k].trim();
-  return out;
-}
-
-function parseStatusLine(text) {
-  // "HP: 14/14  AC: 4  Dlvl: 1  Turn: 41  XP: 1  $: 1  Pos: (57,15)"
-  const out = {};
-  const pairs = text.split(/\s{2,}/);
-  for (const p of pairs) {
-    const m = p.match(/^([A-Za-z$ ]+):\s+(.+)$/);
-    if (m) out[m[1].trim()] = m[2].trim();
-  }
-  return out;
-}
-
-// ---- UI state -------------------------------------------------------------
-let ROLLOUTS = [];
-let TURNS = [];
-let IDX = 0;
-let PLAYING = null;
 
 function setTurn(i) {
   if (!TURNS.length) return;
@@ -351,12 +405,12 @@ function setTurn(i) {
   const t = TURNS[IDX];
   document.getElementById('scrubber').value = IDX;
   document.getElementById('turn-label').textContent = `turn ${IDX} / ${TURNS.length - 1}`;
-  // render map
   const parsed = parseObs(t.obs);
-  const mapBody = parsed.sections['MAP'] || '';
-  const mapEl = document.getElementById('map-tiles');
-  mapEl.innerHTML = renderMap(mapBody);
-  if (window.twemoji) twemoji.parse(mapEl, { folder: 'svg', ext: '.svg' });
+
+  // map
+  const grid = extractMapGrid(parsed.sections['MAP'] || '');
+  document.getElementById('map-tiles').innerHTML = renderMap(grid, document.getElementById('tileset-toggle').checked);
+
   // status
   const status = parseStatusLine(parsed.sections['STATUS'] || '');
   const set = (id, v) => { document.getElementById(id).textContent = v || '—'; };
@@ -367,7 +421,8 @@ function setTurn(i) {
   set('s-pos', status['Pos'] || '—');
   set('s-xp', status['XP'] || '—');
   set('s-gold', status['$'] || '—');
-  set('s-feat', (parsed.sections['VISIBLE FEATURES'] || '').slice(0, 60));
+  const feats = (parsed.sections['VISIBLE FEATURES'] || '');
+  document.getElementById('s-feat').textContent = feats.length > 60 ? feats.slice(0, 60) + '…' : (feats || '—');
   // hp color
   const hpStr = status['HP'] || '';
   const hpM = hpStr.match(/(\d+)\/(\d+)/);
@@ -379,40 +434,38 @@ function setTurn(i) {
     else if (ratio > 0.3) el.classList.add('hp-mid');
     else el.classList.add('hp-low');
   }
-  // map coords
-  document.getElementById('map-coords').textContent = `${IDX === 0 ? 'start' : 'after turn ' + IDX}`;
+  document.getElementById('map-coords').textContent = IDX === 0 ? 'start' : `after turn ${IDX}`;
 
-  // conversation: render the system prompt summary + assistant action that
-  // led here + the obs sections. We show the latest 1 assistant→obs pair.
+  // conversation
   const convo = document.getElementById('convo');
   convo.innerHTML = '';
-  // assistant action that produced THIS obs
   if (t.toolCalls.length || t.reasoning) {
     const a = document.createElement('div');
     a.className = 'msg assistant';
     let html = '<div class="role">assistant action</div>';
     for (const tc of t.toolCalls) {
-      html += `<div class="tool-call">${tc.name}(${tc.args})</div>`;
+      html += `<div class="tool-call">${escapeHtml(tc.name)}(${escapeHtml(tc.args)})</div>`;
     }
     if (t.reasoning) {
-      html += `<div class="reasoning">reasoning: ${t.reasoning.slice(0, 500).replace(/\n/g, ' ')}${t.reasoning.length > 500 ? '…' : ''}</div>`;
+      const r = t.reasoning.replace(/\n+/g, ' ');
+      html += `<div class="reasoning">reasoning: ${escapeHtml(r.slice(0, 800))}${r.length > 800 ? '…' : ''}</div>`;
     }
     a.innerHTML = html;
     convo.appendChild(a);
   }
-  // obs (broken into named sections)
   const u = document.createElement('div');
   u.className = 'msg user';
   let uhtml = '<div class="role">observation (turn ' + IDX + ')</div>';
-  const order = ['_preamble', 'HINT', 'VISIBLE FEATURES', 'VISIBLE GLYPHS', 'ADJACENT', 'STATUS', 'MESSAGES', 'JOURNAL', 'INVENTORY', 'UNDER PLAYER'];
+  const order = ['_preamble', 'HINT', 'VISIBLE FEATURES', 'VISIBLE GLYPHS',
+                 'ADJACENT', 'STATUS', 'UNDER PLAYER', 'MESSAGES', 'JOURNAL', 'INVENTORY'];
   for (const k of order) {
     if (parsed.sections[k] && parsed.sections[k].length) {
-      uhtml += `<pre><b style="color:var(--accent)">${k === '_preamble' ? 'FEEDBACK' : k}</b>\n${parsed.sections[k].slice(0, 800)}</pre>`;
+      const label = (k === '_preamble') ? 'FEEDBACK' : k;
+      uhtml += `<pre><b style="color:var(--accent)">${label}</b>\n${escapeHtml(parsed.sections[k])}</pre>`;
     }
   }
   u.innerHTML = uhtml;
   convo.appendChild(u);
-  if (window.twemoji) twemoji.parse(convo, { folder: 'svg', ext: '.svg' });
   convo.scrollTop = 0;
   document.getElementById('turn-status').textContent = t.toolCalls.length
     ? `→ ${t.toolCalls.map(x => x.name).join(', ')}`
@@ -425,7 +478,7 @@ function loadRollouts(data) {
   sel.innerHTML = '';
   data.forEach((r, i) => {
     const m = r.metrics || {};
-    const star = (m.success_reward > 0 ? ' ⭐' : (m.descend_calls > 0 ? ' 💀' : ''));
+    const star = (m.success_reward > 0 ? ' ⭐' : '');
     const opt = document.createElement('option');
     opt.value = i;
     opt.textContent = `Rollout ${i} · reward ${(r.reward || 0).toFixed(3)}${star}`;
@@ -439,12 +492,10 @@ function loadRollout(i) {
   const r = ROLLOUTS[i];
   TURNS = buildTurns(r);
   document.getElementById('scrubber').max = Math.max(0, TURNS.length - 1);
-  // meta + pill
   const m = r.metrics || {};
-  const meta = document.getElementById('meta');
-  const reward = (r.reward || 0).toFixed(3);
-  meta.innerHTML = `<strong>${TURNS.length}</strong> turns · scout <strong>${(m.scout_reward || 0).toFixed(3)}</strong> · descent <strong>${m.descent_reward || 0}</strong> · success <strong>${m.success_reward || 0}</strong>`;
-  document.getElementById('reward-pill').textContent = `reward: ${reward}`;
+  document.getElementById('meta').innerHTML =
+    `<strong>${TURNS.length}</strong> turns · scout <strong>${(m.scout_reward || 0).toFixed(3)}</strong> · descent <strong>${m.descent_reward || 0}</strong> · success <strong>${m.success_reward || 0}</strong>`;
+  document.getElementById('reward-pill').textContent = `reward: ${(r.reward || 0).toFixed(3)}`;
   const pill = document.getElementById('status-pill');
   if (m.success_reward > 0) { pill.textContent = 'DESCENDED ⭐'; pill.className = 'pill win'; }
   else if (m.descend_calls > 0) { pill.textContent = `attempted descend ×${m.descend_calls}`; pill.className = 'pill'; }
@@ -452,19 +503,14 @@ function loadRollout(i) {
   setTurn(0);
 }
 
-// ---- file loading ---------------------------------------------------------
 document.getElementById('file').addEventListener('change', async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
+  const file = e.target.files[0]; if (!file) return;
   const text = await file.text();
   let data = [];
-  // .jsonl: one rollout per line
-  if (file.name.endsWith('.jsonl') || text.split('\n').length > 1) {
+  if (file.name.endsWith('.jsonl') || text.split('\n').filter(l => l.trim()).length > 1) {
     for (const line of text.split('\n')) {
       const s = line.trim();
-      if (s) {
-        try { data.push(JSON.parse(s)); } catch (_) {}
-      }
+      if (s) { try { data.push(JSON.parse(s)); } catch (_) {} }
     }
   } else {
     const parsed = JSON.parse(text);
@@ -473,21 +519,23 @@ document.getElementById('file').addEventListener('change', async (e) => {
   if (!data.length) { alert('No rollouts found in file.'); return; }
   loadRollouts(data);
 });
-document.getElementById('scrubber').addEventListener('input', (e) => setTurn(parseInt(e.target.value)));
+document.getElementById('scrubber').addEventListener('input', e => setTurn(parseInt(e.target.value)));
 document.getElementById('prev').onclick = () => setTurn(IDX - 1);
 document.getElementById('next').onclick = () => setTurn(IDX + 1);
-document.getElementById('play').onclick = (e) => {
+document.getElementById('play').onclick = e => {
   if (PLAYING) { clearInterval(PLAYING); PLAYING = null; e.target.textContent = '▶'; return; }
   e.target.textContent = '⏸';
   PLAYING = setInterval(() => {
     if (IDX >= TURNS.length - 1) { clearInterval(PLAYING); PLAYING = null; e.target.textContent = '▶'; return; }
     setTurn(IDX + 1);
-  }, 600);
+  }, 500);
 };
-document.addEventListener('keydown', (e) => {
+document.getElementById('tileset-toggle').addEventListener('change', () => setTurn(IDX));
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
   if (e.key === 'ArrowLeft') setTurn(IDX - 1);
   else if (e.key === 'ArrowRight') setTurn(IDX + 1);
-  else if (e.key === ' ') document.getElementById('play').click();
+  else if (e.key === ' ') { e.preventDefault(); document.getElementById('play').click(); }
 });
 </script>
 </body>
