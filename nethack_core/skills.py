@@ -176,6 +176,40 @@ def move(env: NetHackCoreEnv, obs: StructuredObservation, direction: str, run: b
     if canon is None:
         return SkillResult([], f"Invalid direction: {direction!r}. Use N/NE/E/SE/S/SW/W/NW (or 'wait').", interrupted=True)
     step = int(_DIRECTION_TO_ACTION[canon])
+    # SHORT-CIRCUIT: if `>` is visible and reachable, divert this move() to
+    # a path-to-stairs + descend. This rescues rollouts where the LM saw
+    # stairs in VISIBLE FEATURES but tried to micromanage with single
+    # move() calls instead of calling find_and_descend/autoexplore.
+    try:
+        chars2, start2 = _current_chars_and_player(env)
+        h2, w2 = chars2.shape
+        stair2 = None
+        for yy in range(h2):
+            for xx in range(w2):
+                if int(chars2[yy, xx]) == ord('>'):
+                    stair2 = (xx, yy); break
+            if stair2: break
+        if stair2 is not None and stair2 != start2:
+            p2 = a_star(chars2, start2, stair2)
+            if p2 and len(p2) <= 60:
+                acts = _enum_actions_to_indices(env, p2)
+                try:
+                    actions_list = env.underlying.unwrapped.actions
+                    enum_to_idx = {int(a): i for i, a in enumerate(actions_list)}
+                    more_idx = enum_to_idx.get(int(nethack.MiscAction.MORE), 0)
+                    down_idx = enum_to_idx.get(int(nethack.MiscDirection.DOWN), 0)
+                    acts = acts + [more_idx, down_idx]
+                except Exception:
+                    pass
+                return SkillResult(
+                    actions=acts,
+                    feedback=(
+                        f"move({canon}) — diverted: `>` visible at {stair2}, "
+                        f"pathing {len(p2)} steps and descending."
+                    ),
+                )
+    except Exception:
+        pass
     if not run or canon == ".":
         return SkillResult([step], f"Moved {canon}.")
     # Compute path via a_star to a tile far in this direction — gives us
@@ -662,6 +696,39 @@ def _enum_actions_to_indices(env: NetHackCoreEnv, enum_actions: list[int]) -> li
 def move_to(env: NetHackCoreEnv, obs: StructuredObservation, x: int, y: int) -> SkillResult:
     chars, start = _current_chars_and_player(env)
     tx, ty = int(x), int(y)
+    # SHORT-CIRCUIT: if the player ASKED for `>` (target tile is stairs DOWN)
+    # OR `>` is currently visible and reachable, path to `>` and append
+    # descend in one tool call. Same rescue logic as move().
+    try:
+        h2, w2 = chars.shape
+        stair2 = None
+        # honor explicit request first
+        if 0 <= ty < h2 and 0 <= tx < w2 and int(chars[ty, tx]) == ord('>'):
+            stair2 = (tx, ty)
+        else:
+            for yy in range(h2):
+                for xx in range(w2):
+                    if int(chars[yy, xx]) == ord('>'):
+                        stair2 = (xx, yy); break
+                if stair2: break
+        if stair2 is not None and stair2 != start:
+            p2 = a_star(chars, start, stair2)
+            if p2:
+                acts = _enum_actions_to_indices(env, p2)
+                try:
+                    actions_list = env.underlying.unwrapped.actions
+                    enum_to_idx = {int(a): i for i, a in enumerate(actions_list)}
+                    more_idx = enum_to_idx.get(int(nethack.MiscAction.MORE), 0)
+                    down_idx = enum_to_idx.get(int(nethack.MiscDirection.DOWN), 0)
+                    acts = acts + [more_idx, down_idx]
+                except Exception:
+                    pass
+                return SkillResult(
+                    actions=acts,
+                    feedback=f"move_to({tx},{ty}) — diverted to `>` at {stair2}, pathing {len(p2)} steps and descending.",
+                )
+    except Exception:
+        pass
     path = a_star(chars, start, (tx, ty))
     if path is None:
         # Surface why the target is unreachable: out of bounds, or what
