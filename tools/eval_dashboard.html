@@ -34,14 +34,19 @@
   button:hover { background: var(--border); }
 
   main {
-    display: grid; grid-template-columns: 1fr 540px;
+    display: grid;
+    grid-template-columns: 1fr 540px;
+    grid-template-rows: 1fr auto;
     gap: 12px; padding: 12px 18px;
     height: calc(100vh - 110px);
+    overflow: hidden;
   }
   .panel {
     background: var(--panel); border: 1px solid var(--border);
     border-radius: 6px; padding: 12px;
-    display: flex; flex-direction: column; min-height: 0;
+    display: flex; flex-direction: column;
+    min-height: 0; max-height: 100%;
+    overflow: hidden;
   }
   .panel h2 {
     margin: 0 0 8px; font-size: 12px; color: var(--muted);
@@ -54,11 +59,20 @@
   #map-tiles {
     flex: 1; overflow: auto; background: #050505;
     border: 1px solid var(--border); border-radius: 4px;
-    font-family: 'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji', monospace;
-    line-height: 1;
+    font-family: ui-monospace, monospace;
+    line-height: 1.0; font-size: 18px;
   }
   .row { white-space: pre; display: block; }
-  .tile { display: inline-block; width: 1.1em; text-align: center; }
+  .tile {
+    display: inline-block; width: 22px; height: 22px;
+    text-align: center; vertical-align: middle;
+    line-height: 22px;
+  }
+  /* Twemoji renders inline. Sized to match the monospace grid. */
+  .tile img.emoji {
+    height: 20px; width: 20px; vertical-align: middle;
+    display: inline-block; margin: 0;
+  }
   .tile-floor { color: #2d2d2d; }
   .tile-corr { color: #4a4a4a; }
   .tile-wall { color: #5a4030; }
@@ -84,7 +98,15 @@
   .hp-low { color: var(--bad) !important; }
 
   /* Right pane: conversation */
-  #convo { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 4px; }
+  #convo {
+    flex: 1 1 0; min-height: 0; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 8px;
+    padding-right: 6px; padding-bottom: 4px;
+  }
+  #convo::-webkit-scrollbar { width: 10px; }
+  #convo::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px; }
+  #convo::-webkit-scrollbar-track { background: transparent; }
+  .msg pre { max-height: 320px; overflow-y: auto; }
   .msg { padding: 8px 10px; border-radius: 6px; font-size: 12px; line-height: 1.45; }
   .msg .role { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; opacity: 0.7; margin-bottom: 4px; }
   .msg.system { background: #1a1a2a; border: 1px solid #2a2a44; color: var(--muted); font-size: 11px; }
@@ -152,6 +174,11 @@
   <code>results.jsonl</code> here. Each user/tool message in the trace is one game-turn.
 </footer>
 
+<!-- Twemoji: openly-licensed (CC-BY 4.0) emoji set shipped by Twitter/X.
+     Same set used by Discord, Slack, WhatsApp web. We use it as the
+     glyph-to-icon mapping so the dashboard renders identically across
+     browsers/platforms instead of relying on the local OS emoji font. -->
+<script src="https://cdn.jsdelivr.net/npm/@twemoji/api@latest/dist/twemoji.min.js" crossorigin="anonymous"></script>
 <script>
 // ---- glyph → tile mapping --------------------------------------------------
 // Maps NetHack ASCII glyphs to visual emoji-style tiles. Player/monsters/items
@@ -210,12 +237,28 @@ function renderTile(ch) {
 }
 
 function renderMap(rawMap) {
-  // rawMap is the multi-line NLE map string; render each line as a row.
+  // rawMap is the multi-line NLE map string. NetHack's full play area is
+  // 80 cols × 21 rows; we preserve every row (including blank ones) so the
+  // spatial layout matches the actual dungeon level rather than being
+  // vertically compressed when rooms are far apart.
   const lines = rawMap.split('\n');
+  // Strip the first (often a message echo like "What a strange direction!")
+  // and any trailing blank lines so the map block doesn't drift.
+  let start = 0;
+  while (start < lines.length && lines[start].trim() === '') start++;
+  // The first non-blank line in MAP is sometimes an NLE message; detect by
+  // absence of any wall/floor glyph and skip it.
+  if (start < lines.length && !/[-|.#@>+_<]/.test(lines[start])) start++;
+  let end = lines.length;
+  while (end > start && lines[end - 1].trim() === '') end--;
+  // Pad each row to a uniform width so blank rows still take a slot.
+  let maxLen = 0;
+  for (let i = start; i < end; i++) maxLen = Math.max(maxLen, lines[i].length);
+  if (maxLen === 0) maxLen = 80;
   const out = [];
-  for (const line of lines) {
-    if (line.trim() === '') continue;
-    const row = Array.from(line).map(renderTile).join('');
+  for (let i = start; i < end; i++) {
+    const padded = lines[i].padEnd(maxLen, ' ');
+    const row = Array.from(padded).map(renderTile).join('');
     out.push(`<div class="row">${row}</div>`);
   }
   return out.join('');
@@ -311,7 +354,9 @@ function setTurn(i) {
   // render map
   const parsed = parseObs(t.obs);
   const mapBody = parsed.sections['MAP'] || '';
-  document.getElementById('map-tiles').innerHTML = renderMap(mapBody);
+  const mapEl = document.getElementById('map-tiles');
+  mapEl.innerHTML = renderMap(mapBody);
+  if (window.twemoji) twemoji.parse(mapEl, { folder: 'svg', ext: '.svg' });
   // status
   const status = parseStatusLine(parsed.sections['STATUS'] || '');
   const set = (id, v) => { document.getElementById(id).textContent = v || '—'; };
@@ -367,6 +412,8 @@ function setTurn(i) {
   }
   u.innerHTML = uhtml;
   convo.appendChild(u);
+  if (window.twemoji) twemoji.parse(convo, { folder: 'svg', ext: '.svg' });
+  convo.scrollTop = 0;
   document.getElementById('turn-status').textContent = t.toolCalls.length
     ? `→ ${t.toolCalls.map(x => x.name).join(', ')}`
     : 'no tool call';
