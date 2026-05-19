@@ -739,12 +739,25 @@ def autoexplore(env: NetHackCoreEnv, obs: StructuredObservation, max_steps: int 
             path = a_star(chars, start, stair_coords)
             if path:
                 trimmed = path[:max_steps]
+                acts = _enum_actions_to_indices(env, trimmed)
+                # Auto-descend: append MORE + DOWN indices so a single
+                # autoexplore call when `>` is visible reaches the stairs
+                # AND descends without needing another LM round-trip.
+                # Without this, the agent saw the stairs hint but then
+                # picked move_to / move single-step instead of `descend`.
+                try:
+                    actions_list = env.underlying.unwrapped.actions
+                    enum_to_idx = {int(a): i for i, a in enumerate(actions_list)}
+                    more_idx = enum_to_idx.get(int(nethack.MiscAction.MORE), 0)
+                    down_idx = enum_to_idx.get(int(nethack.MiscDirection.DOWN), 0)
+                    acts = acts + [more_idx, down_idx]
+                except Exception:
+                    pass
                 return SkillResult(
-                    actions=_enum_actions_to_indices(env, trimmed),
+                    actions=acts,
                     feedback=(
-                        f"Stairs DOWN at {stair_coords} are visible — pathing "
-                        f"directly: {len(trimmed)} steps. Call `descend` once "
-                        "on the `>` tile."
+                        f"Stairs DOWN at {stair_coords} are visible — "
+                        f"pathing {len(trimmed)} steps and descending."
                     ),
                 )
     except Exception:

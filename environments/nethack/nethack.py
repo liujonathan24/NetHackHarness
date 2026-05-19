@@ -106,23 +106,11 @@ Pitfalls: `eat`/`quaff`/`read` need an `item` arg. At HP <30% retreat or
 `search` to rest. `engrave_elbereth` when cornered (Elbereth scares most
 monsters). Menus auto-dismiss; never call menu/inventory tools.
 
-=== STRATEGY: TWO-STAGE DESCEND ===
-Stage 1 (explore, while `stairs DOWN` not in VISIBLE FEATURES):
-  Call `autoexplore(max_steps=30)` repeatedly. Each call A*-paths to the
-  farthest unexplored frontier and walks there. Re-call until VISIBLE
-  FEATURES lists `stairs DOWN at (x,y)`. Optionally `move(direction=N|E|...)`
-  in between — `move` now defaults to "run" (auto-extends until obstacle),
-  matching NetHack's shift+direction.
-
-Stage 2 (when `stairs DOWN at (x,y)` appears in VISIBLE FEATURES):
-  Call `find_and_descend(max_actions=80)`. It paths to `>` and descends
-  in one tool call. If you're already on the `>` glyph (the HINT will
-  say so), call `descend` directly.
-
-Overrides:
-- HP critical: `engrave_elbereth` or `pray`
-- Hostile adjacent and healthy HP: `attack(direction=...)`
-- Locked door HINT: `kick(direction=...)` 2-5 times
+=== STRATEGY: DESCEND ASAP ===
+Default action: `autoexplore(max_steps=30)`. When `stairs DOWN` becomes
+visible, autoexplore auto-paths to them AND descends in one call.
+If HP critical: `engrave_elbereth` or `pray`. Hostile adjacent + healthy
+HP: `attack(direction=...)`. Locked door HINT: `kick(direction=...)`.
 
 === SKILLS CHEAT SHEET ===
 - **PRIMARY**: `find_and_descend(max_actions=80)` — use every turn.
