@@ -58,6 +58,33 @@ because hosted eval pins the latest published version, not local code.
 - Variant R: the belief-state interval (25) was tuned for B1; may need to be retuned when chat history is hard-dropped.
 - Variant P: the subagent flagged that the refine_interval=20 cadence is a guess; sweep 10/20/50 once primary results land.
 
-**Status:** infra complete; experiments not yet launched.
+**Status:** infra complete; matrix launched 2026-05-20; analysis at
+`experiments/results/wave1_summary.md`.
+
+### Wave-1 headline (5-seed preliminary, Qwen3.5-9B)
+
+| variant | mean avg_score | n | one-liner |
+|---|---|---|---|
+| N (NetPlay skill-only) | **1.137** | 4 | High mean but bimodal — 2 outlier seeds drive it. Needs n=20 to confirm. |
+| R (summarize-and-reset) | 0.111 | 4 | Capability parity with B1; cheaper history footprint. Ship-if-it-ties. |
+| P (Continual Harness directive) | 0.103 | 3 | Indistinguishable from B1. Try max_turns=500 next. |
+| B0 (no compaction) | 0.102 | 3 | Ties B1 — compaction is a token lever, not a capability lever. |
+| G (Glyphbox + code-mode) | 0.095 | 1 | Underdetermined; 4 stuck >2h. Perf bug. |
+| B1 (current default) | 0.082 | 4 | Baseline. |
+| B (BALROG no-ASCII) | **0.056** | 5 | Dead. Stripping ASCII grid breaks the agent. d=−0.92 vs B1. |
+
+Plots: `wave1_box.png`, `wave1_box_logy.png`, `wave1_cohens_d.png`.
+
+**Verdict:** the ASCII grid is load-bearing (B kills capability). N is
+the only variant with a positive directional signal, but high variance.
+Compaction's role is cost, not capability, at 200 turns.
+
+**Followups:**
+- Wider sweep on N (n=20) to nail its floor.
+- Fix Anthropic-key wiring on Prime hosted runner — Haiku stage 12/12 FAILED.
+- Profile `nethack_core.code_mode.run_user_code` — G rollouts taking >2h.
+- Re-run P at max_turns=500 to test whether the refinement directive
+  needs longer horizon to amortize.
+- Wave-2 combo candidate: N+R (skill-only + history-reset).
 
 ---

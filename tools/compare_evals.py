@@ -176,6 +176,10 @@ def _aggregate_hosted(tag_prefix: str) -> dict:
     # Restrict to canonical wave-1 variants so continual-validate runs and
     # other ad-hoc names don't pollute the table.
     _KNOWN = {"B0", "B1", "G", "B", "N", "R", "P"}
+    # Restrict to the current keeper seed range (matches launcher default).
+    # Older 20-seed sweeps that got cancelled may have stray COMPLETED rows
+    # for seeds 27-41; filter them out.
+    _KEEP_SEEDS = set(range(22, 27))
     pat = re.compile(rf"^{re.escape(tag_prefix)}-([^-]+)-(.+)-seed(\d+)$")
     for e in evals:
         name = e.get("name") or ""
@@ -184,6 +188,11 @@ def _aggregate_hosted(tag_prefix: str) -> dict:
             continue
         variant, model_slug, seed = m.group(1), m.group(2), int(m.group(3))
         if variant not in _KNOWN:
+            continue
+        if seed not in _KEEP_SEEDS:
+            continue
+        # Skip cancelled rows — they get counted as pending below otherwise.
+        if e.get("status") == "CANCELLED":
             continue
         status = e.get("status") or ""
         if status != "COMPLETED":
@@ -304,7 +313,8 @@ def _emit_wave1_markdown(summary: dict, out_path: Path, baseline: str = "B1") ->
             if base_tpt:
                 token_ratio = agg["mean_tokens_per_turn"] / base_tpt
             rows.append((variant, agg, t, token_ratio))
-        rows.sort(key=lambda r: r[1]["mean_max_dlvl"], reverse=True)
+        # Sort by avg_score (more granular than max_dlvl floor of 1).
+        rows.sort(key=lambda r: r[1].get("mean_avg_score", 0) or 0, reverse=True)
         lines.append("| variant | n (pending) | mean max-Dlvl | SEM | mean avg_score | Δ score vs B1 | t | tok/turn |")
         lines.append("|---|---|---|---|---|---|---|---|")
         base_score = summary.get((baseline, model), {}).get("mean_avg_score", 0) or 0
