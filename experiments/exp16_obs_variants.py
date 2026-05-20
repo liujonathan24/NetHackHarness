@@ -193,17 +193,26 @@ def build_prime_eval_cmd(
     # `prime eval run` accepts --env-args as a JSON blob.
     env_args_json = json.dumps(env_args, separators=(",", ":"))
     tag = run_tag(variant.name, model, seed)
+    out_dir = artifact_dir(variant.name, model, seed)
 
     cmd = [
         "prime", "eval", "run", "nethack",
         "--model", model,
         "--env-args", env_args_json,
-        "--rollouts-per-example", "1",
+        "-n", "1",
+        "-r", "1",
         "--max-concurrent", "1",
-        "--tag", tag,
     ]
     if hosted:
-        cmd.append("--hosted")
+        # Hosted eval CLI rejects --output-dir/--save-results/--abbreviated-summary;
+        # artifacts land on Prime infra and the aggregator pulls them by --eval-name.
+        cmd += ["--hosted", "--eval-name", tag.replace("/", "-")]
+    else:
+        cmd += [
+            "--save-results",
+            "--output-dir", str(out_dir),
+            "--abbreviated-summary",
+        ]
     return cmd
 
 
