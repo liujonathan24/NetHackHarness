@@ -42,7 +42,8 @@ from typing import Optional
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RESULTS_DIR = REPO_ROOT / "experiments" / "results" / "wave1"
 
-DEFAULT_SEEDS = list(range(22, 42))  # 20 seeds: 22..41 inclusive
+DEFAULT_SEEDS = list(range(22, 27))  # 5 seeds: 22..26 inclusive (primary stage)
+SECONDARY_SEEDS = list(range(22, 25))  # 3 seeds: 22..24 (haiku promotion stage)
 DEFAULT_MAX_TURNS = 200
 PRIMARY_MODEL = "Qwen/Qwen3.5-9B"
 SECONDARY_MODEL = "claude-haiku-4-5"
@@ -143,7 +144,19 @@ VARIANTS: dict[str, Variant] = {
         },
         notes="Claude/Gemini Plays Pokemon. Survey rec #3 extended.",
     ),
-    # "P" is registered by the subagent if/when it lands.
+    "P": Variant(
+        name="P",
+        description="Continual Harness (arXiv:2605.09998): mid-rollout self-refinement",
+        env_args={
+            "variant": "P",
+            "refine_interval": 20,
+            "compact_obs": True,
+            "history_keep_full": 5,
+            "history_drop_after": 100,
+            "belief_state_interval": 25,
+        },
+        notes="Karten et al., 2026. Periodic self-refinement turn directives.",
+    ),
 }
 
 

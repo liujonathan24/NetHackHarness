@@ -708,3 +708,170 @@ View results:
 https://app.primeintellect.ai/dashboard/evaluations/gdnv6kd3evvwsqtb0g2gd16r
 View logs: prime eval logs gdnv6kd3evvwsqtb0g2gd16r -f
 [launch] G Qwen/Qwen3.5-9B seed=41
+Local environment code differs from the latest published version of 
+jonathanliu/nethack.
+Hosted evaluations always use the latest published version of 
+jonathanliu/nethack.
+Using hosted environment jonathanliu/nethack@latest
+✓ Hosted evaluation started
+Environment: jonathanliu/nethack
+Evaluation ID: fkwgzl11g0e1xib3yekagt2x
+View results: 
+https://app.primeintellect.ai/dashboard/evaluations/fkwgzl11g0e1xib3yekagt2x
+View logs: prime eval logs fkwgzl11g0e1xib3yekagt2x -f
+[launch] B Qwen/Qwen3.5-9B seed=22
+Local environment code differs from the latest published version of 
+jonathanliu/nethack.
+Hosted evaluations always use the latest published version of 
+jonathanliu/nethack.
+Using hosted environment jonathanliu/nethack@latest
+✓ Hosted evaluation started
+Environment: jonathanliu/nethack
+Evaluation ID: aw1gp30wwqggz4d1lmfyli7s
+View results: 
+https://app.primeintellect.ai/dashboard/evaluations/aw1gp30wwqggz4d1lmfyli7s
+View logs: prime eval logs aw1gp30wwqggz4d1lmfyli7s -f
+[launch] B Qwen/Qwen3.5-9B seed=23
+Local environment code differs from the latest published version of 
+jonathanliu/nethack.
+Hosted evaluations always use the latest published version of 
+jonathanliu/nethack.
+Using hosted environment jonathanliu/nethack@latest
+✓ Hosted evaluation started
+Environment: jonathanliu/nethack
+Evaluation ID: pto3414nxvuvhn776im5ri0m
+View results: 
+https://app.primeintellect.ai/dashboard/evaluations/pto3414nxvuvhn776im5ri0m
+View logs: prime eval logs pto3414nxvuvhn776im5ri0m -f
+[launch] B Qwen/Qwen3.5-9B seed=24
+Local environment code differs from the latest published version of 
+jonathanliu/nethack.
+Hosted evaluations always use the latest published version of 
+jonathanliu/nethack.
+Using hosted environment jonathanliu/nethack@latest
+✓ Hosted evaluation started
+Environment: jonathanliu/nethack
+Evaluation ID: u8uyp7oyn71rbdr9o0dhrqyx
+View results: 
+https://app.primeintellect.ai/dashboard/evaluations/u8uyp7oyn71rbdr9o0dhrqyx
+View logs: prime eval logs u8uyp7oyn71rbdr9o0dhrqyx -f
+[launch] B Qwen/Qwen3.5-9B seed=25
+Local environment code differs from the latest published version of 
+jonathanliu/nethack.
+Hosted evaluations always use the latest published version of 
+jonathanliu/nethack.
+Using hosted environment jonathanliu/nethack@latest
+✓ Hosted evaluation started
+Environment: jonathanliu/nethack
+Evaluation ID: dur3vsllrmt5zz6l4p61d1u1
+View results: 
+https://app.primeintellect.ai/dashboard/evaluations/dur3vsllrmt5zz6l4p61d1u1
+View logs: prime eval logs dur3vsllrmt5zz6l4p61d1u1 -f
+[launch] B Qwen/Qwen3.5-9B seed=26
+Local environment code differs from the latest published version of 
+jonathanliu/nethack.
+Hosted evaluations always use the latest published version of 
+jonathanliu/nethack.
+Using hosted environment jonathanliu/nethack@latest
+✓ Hosted evaluation started
+Environment: jonathanliu/nethack
+Evaluation ID: lq5tawkoday7rttzr3qo46hs
+View results: 
+https://app.primeintellect.ai/dashboard/evaluations/lq5tawkoday7rttzr3qo46hs
+View logs: prime eval logs lq5tawkoday7rttzr3qo46hs -f
+[launch] B Qwen/Qwen3.5-9B seed=27
+Local environment code differs from the latest published version of 
+jonathanliu/nethack.
+Hosted evaluations always use the latest published version of 
+jonathanliu/nethack.
+Using hosted environment jonathanliu/nethack@latest
+✓ Hosted evaluation started
+Environment: jonathanliu/nethack
+Evaluation ID: vgi2biklsnb1e0vo8tvuxf4h
+View results: 
+https://app.primeintellect.ai/dashboard/evaluations/vgi2biklsnb1e0vo8tvuxf4h
+View logs: prime eval logs vgi2biklsnb1e0vo8tvuxf4h -f
+[launch] B Qwen/Qwen3.5-9B seed=28
+Local environment code differs from the latest published version of 
+jonathanliu/nethack.
+Hosted evaluations always use the latest published version of 
+jonathanliu/nethack.
+Using hosted environment jonathanliu/nethack@latest
+✓ Hosted evaluation started
+Environment: jonathanliu/nethack
+Evaluation ID: gmf001rimlfqpcg7gx55wtp1
+View results: 
+https://app.primeintellect.ai/dashboard/evaluations/gmf001rimlfqpcg7gx55wtp1
+View logs: prime eval logs gmf001rimlfqpcg7gx55wtp1 -f
+[launch] B Qwen/Qwen3.5-9B seed=29
+Local environment code differs from the latest published version of 
+jonathanliu/nethack.
+Hosted evaluations always use the latest published version of 
+jonathanliu/nethack.
+Using hosted environment jonathanliu/nethack@latest
+✓ Hosted evaluation started
+Environment: jonathanliu/nethack
+Evaluation ID: sz436me07v49l73gxbn3ke95
+View results: 
+https://app.primeintellect.ai/dashboard/evaluations/sz436me07v49l73gxbn3ke95
+View logs: prime eval logs sz436me07v49l73gxbn3ke95 -f
+[launch] B Qwen/Qwen3.5-9B seed=30
+Local environment code differs from the latest published version of 
+jonathanliu/nethack.
+Hosted evaluations always use the latest published version of 
+jonathanliu/nethack.
+Using hosted environment jonathanliu/nethack@latest
+✓ Hosted evaluation started
+Environment: jonathanliu/nethack
+Evaluation ID: scabcp7ywfqngeibndlq64jj
+View results: 
+https://app.primeintellect.ai/dashboard/evaluations/scabcp7ywfqngeibndlq64jj
+View logs: prime eval logs scabcp7ywfqngeibndlq64jj -f
+[launch] B Qwen/Qwen3.5-9B seed=31
+Local environment code differs from the latest published version of 
+jonathanliu/nethack.
+Hosted evaluations always use the latest published version of 
+jonathanliu/nethack.
+Using hosted environment jonathanliu/nethack@latest
+✓ Hosted evaluation started
+Environment: jonathanliu/nethack
+Evaluation ID: jalitdp7yy3dhs9tqvg5qd0e
+View results: 
+https://app.primeintellect.ai/dashboard/evaluations/jalitdp7yy3dhs9tqvg5qd0e
+View logs: prime eval logs jalitdp7yy3dhs9tqvg5qd0e -f
+[launch] B Qwen/Qwen3.5-9B seed=32
+Local environment code differs from the latest published version of 
+jonathanliu/nethack.
+Hosted evaluations always use the latest published version of 
+jonathanliu/nethack.
+Using hosted environment jonathanliu/nethack@latest
+✓ Hosted evaluation started
+Environment: jonathanliu/nethack
+Evaluation ID: lgj9rc1jxr84njqurdc4cnkq
+View results: 
+https://app.primeintellect.ai/dashboard/evaluations/lgj9rc1jxr84njqurdc4cnkq
+View logs: prime eval logs lgj9rc1jxr84njqurdc4cnkq -f
+[launch] B Qwen/Qwen3.5-9B seed=33
+Local environment code differs from the latest published version of 
+jonathanliu/nethack.
+Hosted evaluations always use the latest published version of 
+jonathanliu/nethack.
+Using hosted environment jonathanliu/nethack@latest
+✓ Hosted evaluation started
+Environment: jonathanliu/nethack
+Evaluation ID: qq0ss3vnfyeodqhkbrm7mozx
+View results: 
+https://app.primeintellect.ai/dashboard/evaluations/qq0ss3vnfyeodqhkbrm7mozx
+View logs: prime eval logs qq0ss3vnfyeodqhkbrm7mozx -f
+[launch] B Qwen/Qwen3.5-9B seed=34
+Local environment code differs from the latest published version of 
+jonathanliu/nethack.
+Hosted evaluations always use the latest published version of 
+jonathanliu/nethack.
+Using hosted environment jonathanliu/nethack@latest
+✓ Hosted evaluation started
+Environment: jonathanliu/nethack
+Evaluation ID: hw1r64c16ytvpu8ms3j2elhb
+View results: 
+https://app.primeintellect.ai/dashboard/evaluations/hw1r64c16ytvpu8ms3j2elhb
+View logs: prime eval logs hw1r64c16ytvpu8ms3j2elhb -f

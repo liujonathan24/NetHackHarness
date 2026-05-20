@@ -12,9 +12,15 @@ given the working hypothesis that compaction is currently load-bearing for
 both (a) staying within context and (b) keeping the LLM's attention on
 signal. Compare paper-attributed baselines against the current default.
 
-**Metric:** mean max-Dlvl reached over seeds 22–41 (20 seeds), 200-move
-budget. Side-metric: tokens/turn (≤1.5× B1 acceptable). Primary model:
-Qwen3.5-9B. Top-3 winners re-evaluated on Haiku.
+**Metric:** mean max-Dlvl reached over seeds 22–26 (5 seeds, preliminary
+stage), 200-move budget. Side-metric: tokens/turn (≤1.5× B1 acceptable).
+Primary model: Qwen3.5-9B. Top-3 winners promoted to Haiku stage on seeds
+22–24 (3 seeds). The seed-count was deliberately cut (originally planned
+for 20 + 5) to control wall-clock and inference cost; 5 seeds is
+preliminary — high-confidence wins still need a follow-up wider sweep.
+
+**Hub publish:** `jonathanliu/nethack@0.0.64` (2026-05-20). Required
+because hosted eval pins the latest published version, not local code.
 
 **Variants** (each a single `load_environment(variant=..., ...)` setting):
 
