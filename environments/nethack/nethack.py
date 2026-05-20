@@ -194,6 +194,138 @@ def _run_length_encode_messages(messages) -> list:
     return out
 
 
+# ---------- variant-specific renderers (wave-1 baselines) ----------
+
+
+def _glyph_to_words(ch: str) -> str:
+    """Tiny vocab mapper from ASCII glyph -> natural-language token. Used by
+    variant B (BALROG NLE text wrapper)."""
+    _TBL = {
+        ".": "floor", "#": "corridor", "|": "wall", "-": "wall", "+": "door",
+        ">": "stairs-down", "<": "stairs-up", "_": "altar", "{": "fountain",
+        "}": "pool", "\\": "throne", "$": "gold", "%": "food",
+        "[": "armor", ")": "weapon", "(": "tool", "*": "rock", "?": "scroll",
+        "!": "potion", "=": "ring", "/": "wand", "@": "you", " ": "void",
+    }
+    if ch in _TBL:
+        return _TBL[ch]
+    if ch.isalpha():
+        return f"creature({ch})"
+    return f"glyph({ch})"
+
+
+def _format_obs_balrog(structured, journal, state, journal_max_chars: int) -> str:
+    """Variant B: BALROG / NLE language wrapper. No ASCII grid; render a
+    natural-language description of the scene, status, inventory, messages.
+    Tests the hypothesis that the ASCII map adds little for small LLMs."""
+    lines: list[str] = []
+    if journal is not None and not journal.is_empty():
+        lines.append("=== JOURNAL ===")
+        lines.append(journal.render(max_chars=journal_max_chars))
+        lines.append("")
+    s = structured.status or {}
+    lines.append("=== STATUS ===")
+    lines.append(
+        f"HP {s.get('hitpoints','?')}/{s.get('max_hitpoints','?')}  "
+        f"AC {s.get('armor_class','?')}  "
+        f"Dlvl {s.get('depth','?')}  "
+        f"Turn {s.get('time','?')}  "
+        f"XP {s.get('experience_level','?')}"
+    )
+    if "x" in s and "y" in s:
+        lines.append(f"Position: ({s['x']},{s['y']})")
+    c = structured.character or {}
+    if c:
+        lines.append(f"Character: {c.get('role','?')} ({c.get('race','?')}, {c.get('alignment','?')})")
+    lines.append("")
+    if structured.inventory:
+        lines.append("=== INVENTORY ===")
+        for item in structured.inventory:
+            lines.append(f"  {item.letter}: {item.description}")
+        lines.append("")
+    under = getattr(structured, "under_player", None)
+    if under:
+        lines.append(f"=== UNDER PLAYER === {under}")
+        lines.append("")
+    adj = getattr(structured, "adjacent", None) or {}
+    if adj:
+        order = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+        bits = []
+        for d in order:
+            tile = adj.get(d, " ")
+            bits.append(f"{d}={_glyph_to_words(tile[0] if tile else ' ')}")
+        lines.append("=== ADJACENT ===")
+        lines.append("  " + ", ".join(bits))
+        lines.append("")
+    # Visible features (parsed from the grid) — the "what's around me" block
+    # without forcing the model to read ASCII.
+    if state is not None and "raw_obs" in state:
+        try:
+            from nethack_core.observations import (
+                extract_visible_features, extract_hostiles_in_sight,
+            )
+            features = extract_visible_features(state["raw_obs"].tty_chars)
+            if features:
+                lines.append("=== VISIBLE FEATURES ===")
+                for f in features:
+                    lines.append(f"  - {f}")
+                lines.append("")
+            hostiles = extract_hostiles_in_sight(
+                state["raw_obs"].tty_chars,
+                getattr(state["raw_obs"], "glyphs", None),
+            )
+            if hostiles:
+                lines.append("=== HOSTILES IN SIGHT ===")
+                for h in hostiles:
+                    lines.append(f"  - {h}")
+                lines.append("")
+        except Exception:
+            pass
+    if structured.messages:
+        lines.append("=== MESSAGES ===")
+        for m in _run_length_encode_messages(structured.messages):
+            lines.append(f"  {m}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def _format_obs_glyphbox(structured, journal, state, journal_max_chars: int) -> str:
+    """Variant G: Glyphbox-style obs. ASCII map + explicit player coords +
+    adjacent-tile descriptions + visible-hostile list + inventory + messages.
+    Closest analog to Ken Wang's Glyphbox harness."""
+    # Reuse the canonical formatter (it already emits ADJACENT and VISIBLE
+    # GLYPHS/FEATURES blocks). The Glyphbox delta is the *intent* to pair
+    # this obs with the code-mode tool — toggled via interface="code"
+    # in load_environment, not here.
+    return format_observation_as_chat(
+        structured, journal, state=state, compact=True,
+        journal_max_chars=journal_max_chars,
+    )
+
+
+def _format_obs_summarize_reset(structured, journal, state, journal_max_chars: int) -> str:
+    """Variant R: CPP/GPP summarize-and-reset. Same per-turn formatter as
+    B1; the difference lives in get_prompt_messages — see _compact_chat_history
+    behavior under summarize_and_reset=True, which hard-drops everything
+    before the most recent belief-state checkpoint."""
+    return format_observation_as_chat(
+        structured, journal, state=state, compact=True,
+        journal_max_chars=journal_max_chars,
+    )
+
+
+_VARIANT_FORMATTERS = {
+    # variant code -> formatter callable, or None to use the canonical formatter
+    "B1": None,
+    "B0": None,        # same formatter as B1; B0 just turns compact_obs off via kwargs
+    "G": _format_obs_glyphbox,
+    "B": _format_obs_balrog,
+    "N": None,         # NetPlay differs only in skill_set, not in obs formatter
+    "R": _format_obs_summarize_reset,
+    "P": None,         # Continual Harness uses canonical formatter + refinement directive
+}
+
+
 def format_observation_as_chat(
     structured,
     journal: Optional[Journal] = None,
@@ -556,6 +688,20 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         # agent calls pin_objective/add_note). See docs/PROMPTING_SURVEY.md.
         variant: str = "B1",
         refine_interval: int = 20,
+        # Variant R (CPP/GPP summarize-and-reset): when True, get_prompt_messages
+        # hard-drops every user/assistant turn that landed before the most-recent
+        # belief_state:tN journal note. Combined with belief_state_interval > 0
+        # this implements "the belief state IS the memory; chat is disposable."
+        summarize_and_reset: bool = False,
+        # Per-turn NDJSON trace (raw_grid + rendered_user_message +
+        # assistant_message + tool_calls). One file per rollout. Off by default.
+        trace_dir: Optional[str] = None,
+        # Continual-harness mode: on death, auto-reset NLE and keep playing in
+        # the same chat session, preserving journal + belief state across
+        # episodes. The rollout terminates when continual_lives is exhausted
+        # or the agent ascends.
+        continual: bool = False,
+        continual_lives: int = 5,
         **kwargs,
     ):
         self.interface = interface
@@ -575,6 +721,10 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         self.journal_render_max_chars = journal_render_max_chars
         self.variant = variant
         self.refine_interval = refine_interval
+        self.summarize_and_reset = summarize_and_reset
+        self.trace_dir = trace_dir
+        self.continual = continual
+        self.continual_lives = continual_lives
         super().__init__(*args, **kwargs)
 
     async def setup_state(self, state: vf.State) -> vf.State:
@@ -597,6 +747,10 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
 
         state["env"] = env
         state["character"] = character
+        # Continual-harness bookkeeping (no-op when self.continual=False).
+        state["_orig_seed"] = int(seed)
+        state["_continual_life"] = 1
+        state["_continual_lives_left"] = self.continual_lives if self.continual else 0
         state["spec"] = spec
         state["meta"] = meta
         state["scout_tiles_seen"] = set()
@@ -737,7 +891,11 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
             journal: Journal = state["journal"]
             feedback = result.journal_op(journal)
             state["scout_delta"] = 0  # no exploration happened
-            obs_text = format_observation_as_chat(state["structured_obs"], journal, state=state, compact=self.compact_obs, journal_max_chars=self.journal_render_max_chars)
+            _fmt = _VARIANT_FORMATTERS.get(self.variant)
+            if _fmt is not None:
+                obs_text = _fmt(state["structured_obs"], journal, state, self.journal_render_max_chars)
+            else:
+                obs_text = format_observation_as_chat(state["structured_obs"], journal, state=state, compact=self.compact_obs, journal_max_chars=self.journal_render_max_chars)
             if feedback:
                 obs_text = f"[{feedback}]\n\n{obs_text}"
             return [vf.UserMessage(role="user", content=obs_text)]
@@ -856,6 +1014,23 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
             halt_reason = halt_reason.lstrip()
         state["last_reward"] = total_reward
         state["terminated"] = terminated or truncated
+        # Continual harness mode: if the agent died (not ascended), and lives
+        # remain, auto-reseed and reset the NLE env so the chat session
+        # continues into a new game. Journal + belief state survive across
+        # lives — this is the "memory persists; episodes don't" pattern.
+        if (
+            self.continual
+            and (terminated or truncated)
+            and not state.get("ascended", False)
+            and state.get("_continual_lives_left", self.continual_lives) > 0
+        ):
+            try:
+                _continual_reset(state, env, self)
+                terminated = truncated = False
+                state["terminated"] = False
+            except Exception as e:
+                # Best-effort: if reset fails, end the rollout normally.
+                state["_continual_error"] = repr(e)
         # BALROG-style progression score (informational; not in rubric).
         # Tracks deepest (DL, XL) achieved as an empirical-ish P(ascend).
         from nethack_core.balrog import progression_score
@@ -957,8 +1132,20 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         else:
             state["consecutive_short_autoexplore"] = 0
 
-        # Build observation message for the model.
-        obs_text = format_observation_as_chat(state["structured_obs"], state["journal"], state=state, compact=self.compact_obs, journal_max_chars=self.journal_render_max_chars)
+        # Build observation message for the model. Variant-specific formatter
+        # if registered; else the canonical compact-aware formatter.
+        formatter = _VARIANT_FORMATTERS.get(self.variant)
+        if formatter is not None:
+            obs_text = formatter(
+                state["structured_obs"], state["journal"], state,
+                self.journal_render_max_chars,
+            )
+        else:
+            obs_text = format_observation_as_chat(
+                state["structured_obs"], state["journal"], state=state,
+                compact=self.compact_obs,
+                journal_max_chars=self.journal_render_max_chars,
+            )
         prefix_parts = []
         # Variant P (Continual Harness adaptation, arXiv:2605.09998): every
         # `refine_interval` turns, inject a self-refinement directive asking
@@ -994,6 +1181,12 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
             prefix_parts.append(f"[{result.feedback}]")
         if prefix_parts:
             obs_text = "\n".join(prefix_parts) + "\n\n" + obs_text
+        # Per-turn trace (NDJSON) for replay/debugging. No-op when trace_dir
+        # is unset; never raises.
+        _write_trace_entry(
+            self, state, assistant_msg, tool_calls,
+            action_indices, total_reward, obs_text,
+        )
         return [vf.UserMessage(role="user", content=obs_text)]
 
     async def is_completed(self, state: vf.State) -> bool:
@@ -1012,7 +1205,12 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         thresholds (see docs/PROMPTING_SURVEY.md).
         """
         messages = await super().get_prompt_messages(state)
-        return _compact_chat_history(messages, keep_full=self.history_keep_full, drop_after=self.history_drop_after)
+        messages = _compact_chat_history(messages, keep_full=self.history_keep_full, drop_after=self.history_drop_after)
+        if self.summarize_and_reset:
+            # Variant R: drop everything prior to the most-recent belief
+            # checkpoint. The belief state in the journal is the memory.
+            messages = _drop_before_last_belief(messages, state)
+        return messages
 
     def update_tool_args(self, tool_args: dict, messages, state) -> dict:
         """
@@ -1025,6 +1223,181 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
 
 
 # ---------- helpers ----------
+
+
+def _continual_reset(state: dict, env, env_self) -> None:
+    """Continual harness: reseed and reset the underlying NLE so the chat
+    session continues into a new life. Preserves journal + belief notes;
+    bumps a `_continual_life` counter; records the death into the journal."""
+    lives_left = state.get("_continual_lives_left", env_self.continual_lives)
+    life_no = state.get("_continual_life", 1)
+    # Snapshot death context into the journal so the agent can remember it.
+    s = state.get("structured_obs")
+    death_note = "died"
+    if s is not None:
+        death_note = (
+            f"life {life_no}: died at Dlvl {s.status.get('depth','?')} "
+            f"on turn {s.status.get('time','?')} "
+            f"(max Dlvl reached {state.get('max_dlvl_reached','?')})"
+        )
+    journal = state.get("journal")
+    if journal is not None:
+        try:
+            journal.add_note(f"death:life{life_no}", death_note)
+        except Exception:
+            pass
+    # Reseed deterministically from the original seed + life number.
+    orig_seed = state.get("_orig_seed")
+    if orig_seed is None:
+        # Recover from env metadata if not stored yet.
+        orig_seed = (env.current_seeds or (0, 0))[0]
+        state["_orig_seed"] = orig_seed
+    new_seed = (int(orig_seed) * 1_000_003 + life_no) & 0x7FFFFFFF
+    env.seed(core=new_seed, disp=new_seed)
+    obs, _meta = env.reset()
+    from nethack_core.skills import bootstrap_character
+    character = bootstrap_character(env)
+    state["character"] = character
+    state["raw_obs"] = obs
+    state["structured_obs"] = shape_observation(obs, character)
+    state["max_dlvl_reached"] = max(state.get("max_dlvl_reached", 1), 1)
+    state["died"] = False
+    state["ascended"] = False
+    state["_continual_life"] = life_no + 1
+    state["_continual_lives_left"] = lives_left - 1
+    # Reset per-life ephemera but keep cross-life memory (journal, belief).
+    state["_seen_stairs_down"] = set()
+
+
+def _write_trace_entry(env_self, state: dict, assistant_msg, tool_calls,
+                       action_indices, total_reward: float, obs_text: str) -> None:
+    """Write one NDJSON line per env_response turn. Best-effort; never raises.
+
+    Captures everything needed by the replay viewer to render the game as
+    the model saw it: raw 24x80 tty grid, structured obs, the literal user
+    message we will send back, the assistant message we just consumed, the
+    parsed tool calls, the NLE action indices applied, reward, dlvl, hp.
+    """
+    if not env_self.trace_dir:
+        return
+    try:
+        import json as _json
+        import os as _os
+        import time as _time
+        out_dir = Path(env_self.trace_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        run_id = state.get("_trace_run_id")
+        if run_id is None:
+            seeds = state.get("env").current_seeds if state.get("env") else (0, 0)
+            run_id = f"{seeds[0]}_{_os.getpid()}_{int(_time.time())}"
+            state["_trace_run_id"] = run_id
+        path = out_dir / f"{run_id}.ndjson"
+        raw = state.get("raw_obs")
+        grid = []
+        if raw is not None:
+            try:
+                grid = [
+                    "".join(chr(int(c)) for c in row).rstrip()
+                    for row in raw.tty_chars
+                ]
+            except Exception:
+                pass
+        s = state.get("structured_obs")
+        status = dict(s.status) if s is not None else {}
+        assist_content = ""
+        if assistant_msg is not None:
+            if isinstance(assistant_msg, dict):
+                assist_content = assistant_msg.get("content", "") or ""
+            else:
+                assist_content = getattr(assistant_msg, "content", "") or ""
+        tc_serial = []
+        for tc in (tool_calls or []):
+            if isinstance(tc, dict):
+                fn = tc.get("function") or {}
+                tc_serial.append({
+                    "name": fn.get("name") or tc.get("name"),
+                    "arguments": fn.get("arguments") or tc.get("arguments"),
+                })
+            else:
+                fn = getattr(tc, "function", None)
+                tc_serial.append({
+                    "name": getattr(fn, "name", None) if fn is not None
+                            else getattr(tc, "name", None),
+                    "arguments": getattr(fn, "arguments", None) if fn is not None
+                                 else getattr(tc, "arguments", None),
+                })
+        entry = {
+            "turn": state.get("turn_count", 0),
+            "t_wall": _time.time(),
+            "variant": env_self.variant,
+            "raw_grid": grid,
+            "status": status,
+            "dlvl": status.get("depth"),
+            "hp": status.get("hitpoints"),
+            "max_hp": status.get("max_hitpoints"),
+            "max_dlvl_reached": state.get("max_dlvl_reached"),
+            "continual_life": state.get("_continual_life", 1),
+            "rendered_user_message": obs_text,
+            "assistant_message": assist_content,
+            "tool_calls": tc_serial,
+            "action_indices": list(action_indices) if action_indices else [],
+            "reward": float(total_reward),
+            "messages": list(s.messages) if s and s.messages else [],
+        }
+        with path.open("a") as f:
+            f.write(_json.dumps(entry) + "\n")
+    except Exception:
+        # Tracing must never break a rollout.
+        pass
+
+
+def _drop_before_last_belief(messages, state) -> list:
+    """Variant R: hard-drop every message before the chat-position corresponding
+    to the most-recent belief_state:tN checkpoint.
+
+    Heuristic: we don't track which chat turn produced each belief note, so
+    instead we drop everything older than (refine_distance_from_end) where
+    refine_distance is set to the belief_state_interval. The journal block
+    inside the *current* user message already carries the belief notes, so
+    no semantic info is lost.
+
+    Leaves the system message and the most recent user/assistant pair fully
+    intact. Inserts a single elision marker so the model knows context was
+    dropped.
+    """
+    if not state:
+        return messages
+    journal = state.get("journal")
+    if journal is None:
+        return messages
+    # If no belief checkpoint has fired yet, do nothing.
+    has_belief = any(k.startswith("belief_state:") for k in (journal.notes or {}).keys())
+    if not has_belief:
+        return messages
+    # Find indices of user messages and keep only the last K (here K=2 — the
+    # last user obs and its preceding assistant exchange suffice once the
+    # belief state carries the rest).
+    keep_window = 2
+    user_idx = [i for i, m in enumerate(messages) if _msg_role(m) == "user"]
+    if len(user_idx) <= keep_window:
+        return messages
+    cut_at = user_idx[-keep_window]
+    out = []
+    for i, m in enumerate(messages):
+        if i == 0 and _msg_role(m) == "system":
+            out.append(m)
+            continue
+        if i >= cut_at:
+            out.append(m)
+    # Insert elision marker right after the system message.
+    insert_at = 1 if out and _msg_role(out[0]) == "system" else 0
+    n_dropped = len(messages) - len(out)
+    if n_dropped > 0:
+        out.insert(insert_at, vf.UserMessage(
+            role="user",
+            content=f"[variant=R: {n_dropped} prior turns dropped; see JOURNAL belief_state notes for context]",
+        ))
+    return out
 
 
 def _refinement_directive(state: dict) -> str:
@@ -1543,6 +1916,10 @@ def load_environment(
     journal_render_max_chars: int = 2000,
     variant: str = "B1",
     refine_interval: int = 20,
+    summarize_and_reset: bool = False,
+    trace_dir: Optional[str] = None,
+    continual: bool = False,
+    continual_lives: int = 5,
     **kwargs: Any,
 ) -> vf.Environment:
     """
@@ -1567,6 +1944,28 @@ def load_environment(
             result added to the journal as belief_state:tN. Set to 0 to disable.
         journal_render_max_chars: soft cap on per-turn journal block size; older
             non-belief-state notes get elided when over the cap.
+        variant: obs/skill-structure variant for wave-1 experiments.
+            "B1" (default) = current shipping behavior, no override.
+            "P" = Continual Harness adaptation (arXiv:2605.09998): every
+            `refine_interval` turns, inject a self-refinement directive
+            asking the agent to revise its pinned objective and/or record
+            a lesson note. Journal ops short-circuit the NLE step, so
+            refinement is free game-turn-wise.
+        refine_interval: cadence for variant=P self-refinement turns
+            (default 20). Set to 0 to disable even when variant="P".
+        summarize_and_reset: variant=R toggle. When True, get_prompt_messages
+            drops every chat turn older than the most recent belief_state
+            checkpoint. Pair with belief_state_interval > 0.
+        trace_dir: if set, env_response writes per-turn NDJSON capturing
+            raw_grid, structured_obs, rendered_user_message, assistant_message,
+            tool_calls, action, reward, dlvl, hp. One file per rollout under
+            <trace_dir>/<run_id>.ndjson. Off by default.
+        continual: when True, the env auto-resets the underlying NLE on death
+            and continues the same chat session, preserving journal + belief
+            state. Implements the continual-harness mode (separate from
+            variant=P's mid-rollout refinement).
+        continual_lives: cap on auto-resets within a single rollout
+            (default 5). Ignored unless continual=True.
     """
     explicit_seeds = kwargs.pop("explicit_seeds", None)
     dataset = _build_task_dataset(tier, n_examples, seed, explicit_seeds=explicit_seeds)
@@ -1594,6 +1993,10 @@ def load_environment(
         journal_render_max_chars=journal_render_max_chars,
         variant=variant,
         refine_interval=refine_interval,
+        summarize_and_reset=summarize_and_reset,
+        trace_dir=trace_dir,
+        continual=continual,
+        continual_lives=continual_lives,
         **kwargs,
     )
 

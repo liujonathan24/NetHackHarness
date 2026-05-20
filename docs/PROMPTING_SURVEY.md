@@ -231,6 +231,35 @@ of magnitude. Multiplicatively compounds with all the above.
 - `messages.dedup_run_length`: bool (default true).
 - `tty.strip_blank_rows`, `tty.glyph_runs`: bool/bool.
 
+### Wave-1 experimental variants
+
+Toggleable via `load_environment(variant=..., ...)`:
+
+- **B1** (default): current shipping behavior — compact_obs + belief-state
+  every 25 + history compact 5/100. Baseline.
+- **G**: Glyphbox-style adjacency + hostile-list emphasis, ASCII map kept.
+- **B**: BALROG NLE language wrapper (no ASCII map).
+- **N**: NetPlay skill-only action surface (no `move`/`autoexplore` aggregators).
+- **R**: CPP/GPP summarize-and-reset — drop everything before the last
+  belief-state checkpoint.
+- **P**: Continual Harness adaptation
+  ([arXiv:2605.09998](https://arxiv.org/abs/2605.09998), Karten et al. 2026).
+  Original paper proposes reset-free online self-refinement: an embodied
+  agent alternates between acting and rewriting its own prompt / sub-agents
+  / skills / memory during a single rollout, with a process-reward
+  co-learning loop relabeled by a frontier teacher (demonstrated by
+  completing hard-mode Pokémon without battle loss). We adapt the
+  *self-refinement loop only* (not the teacher-relabeling pipeline, which
+  is out of scope for this evaluation wave): every `refine_interval` turns
+  (default 20) the harness injects a "self-refinement turn" directive
+  asking the agent to revise its `pin_objective` and/or write an
+  `add_note(key='lesson:t<turn>', ...)`. Both are journal ops that
+  short-circuit the NLE step, so refinement is free game-turn-wise. The
+  agent may also ignore the directive and take a normal action. Code:
+  `environments/nethack/nethack.py::_refinement_directive` and the
+  variant=="P" branch in `env_response`. Flags: `variant="P"`,
+  `refine_interval=20`.
+
 ### Expected combined impact
 
 Items 1+2+6+8 alone should cut per-turn payload by ~3–5x on map/tty alone,
