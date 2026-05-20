@@ -549,6 +549,13 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         history_drop_after: int = 100,
         belief_state_interval: int = 25,
         journal_render_max_chars: int = 2000,
+        # Obs/skill-structure variant for wave-1 experiments. "B1" (default) is
+        # the current shipping behavior. "P" is the Continual Harness adaptation:
+        # periodic self-refinement turns that prompt the agent to revise its
+        # objective and record a lesson note (no NLE step consumed when the
+        # agent calls pin_objective/add_note). See docs/PROMPTING_SURVEY.md.
+        variant: str = "B1",
+        refine_interval: int = 20,
         **kwargs,
     ):
         self.interface = interface
@@ -566,6 +573,8 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         self.history_drop_after = history_drop_after
         self.belief_state_interval = belief_state_interval
         self.journal_render_max_chars = journal_render_max_chars
+        self.variant = variant
+        self.refine_interval = refine_interval
         super().__init__(*args, **kwargs)
 
     async def setup_state(self, state: vf.State) -> vf.State:
@@ -951,6 +960,24 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         # Build observation message for the model.
         obs_text = format_observation_as_chat(state["structured_obs"], state["journal"], state=state, compact=self.compact_obs, journal_max_chars=self.journal_render_max_chars)
         prefix_parts = []
+        # Variant P (Continual Harness adaptation, arXiv:2605.09998): every
+        # `refine_interval` turns, inject a self-refinement directive asking
+        # the agent to update its objective and record a lesson. Journal ops
+        # short-circuit the NLE step (see line ~727), so a `pin_objective` or
+        # `add_note` call this turn does not consume a game turn. If the agent
+        # ignores the directive and picks an in-game action, the rollout
+        # continues normally — refinement is best-effort, not enforced.
+        if (
+            self.variant == "P"
+            and self.refine_interval > 0
+            and state.get("turn_count", 0) > 0
+            and state["turn_count"] % self.refine_interval == 0
+            and not state.get("_refine_emitted_this_turn")
+        ):
+            prefix_parts.append(_refinement_directive(state))
+            state["_refine_emitted_this_turn"] = True
+        else:
+            state["_refine_emitted_this_turn"] = False
         if loop_hint:
             prefix_parts.append(loop_hint)
         if halt_reason:
@@ -998,6 +1025,28 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
 
 
 # ---------- helpers ----------
+
+
+def _refinement_directive(state: dict) -> str:
+    """Variant P (Continual Harness, arXiv:2605.09998) periodic self-refinement
+    prompt. Injected every refine_interval turns; asks the agent to reflect on
+    the last window of play and update its objective and/or write a lesson
+    note. Because `pin_objective` and `add_note` are journal ops that don't
+    consume an NLE step, the agent can spend this turn editing its own
+    persistent memory without losing a game action."""
+    turn = state.get("turn_count", 0)
+    max_dlvl = state.get("max_dlvl_reached", 1)
+    cur_dlvl = state["structured_obs"].status.get("depth", 1) if state.get("structured_obs") else 1
+    return (
+        f"[self-refinement turn (variant=P, t={turn})] "
+        f"You are at Dlvl {cur_dlvl} (max reached {max_dlvl}). "
+        f"Before your next action, reflect: is your current objective still "
+        f"the right one? What pattern from the last {state.get('_refine_window', 20)} "
+        f"turns should you remember? Call `pin_objective(text=...)` to update "
+        f"the goal if it has shifted, or `add_note(key='lesson:t{turn}', "
+        f"text=...)` to record a short lesson. These calls do NOT consume a "
+        f"game turn. If nothing needs updating, take your normal action."
+    )
 
 
 def _compact_chat_history(messages, keep_full: int = 5, drop_after: int = 100):
@@ -1492,6 +1541,8 @@ def load_environment(
     history_drop_after: int = 100,
     belief_state_interval: int = 25,
     journal_render_max_chars: int = 2000,
+    variant: str = "B1",
+    refine_interval: int = 20,
     **kwargs: Any,
 ) -> vf.Environment:
     """
@@ -1541,6 +1592,8 @@ def load_environment(
         history_drop_after=history_drop_after,
         belief_state_interval=belief_state_interval,
         journal_render_max_chars=journal_render_max_chars,
+        variant=variant,
+        refine_interval=refine_interval,
         **kwargs,
     )
 

@@ -2142,7 +2142,7 @@ wheels = [
 
 [[package]]
 name = "nethack"
-version = "0.0.60"
+version = "0.0.63"
 source = { editable = "environments/nethack" }
 dependencies = [
     { name = "datasets" },
