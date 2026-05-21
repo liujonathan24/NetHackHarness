@@ -120,14 +120,13 @@ def load_hosted(eval_id: str) -> list[dict]:
     if not samples:
         raise RuntimeError("No samples returned for that eval_id.")
     s = samples[0]
-    # Heuristic: messages live under sample['messages'] OR sample['input']+sample['output'].
-    msgs = (s.get("messages") or s.get("trajectory") or [])
-    if not msgs and "input" in s:
-        # Older shape: sample['input'] is the prompt list, output is the response
-        msgs = list(s.get("input") or [])
-        out_msg = s.get("output")
-        if out_msg is not None:
-            msgs.append({"role": "assistant", "content": out_msg})
+    # Prime/verifiers shape: sample['prompt'] is system+initial user (length 2),
+    # sample['completion'] is the alternating list of (assistant, tool, user)
+    # messages produced during the rollout.
+    msgs = list(s.get("prompt") or []) + list(s.get("completion") or [])
+    # Fall back to older shapes if needed.
+    if not msgs:
+        msgs = (s.get("messages") or s.get("trajectory") or [])
     frames = []
     turn = 0
     last_user = None
@@ -248,6 +247,8 @@ def main():
                     help="Hosted eval ID to fetch via `prime eval samples`. Repeatable.")
     ap.add_argument("--ndjson", action="append", default=[],
                     help="Local NDJSON trace file. Repeatable.")
+    ap.add_argument("--samples-json", action="append", default=[],
+                    help="Already-fetched `prime eval samples ... -o json` file. Repeatable.")
     ap.add_argument("--labels", nargs="+", default=None,
                     help="Panel labels (one per input source).")
     ap.add_argument("--out", required=True, type=Path,
@@ -255,17 +256,40 @@ def main():
     ap.add_argument("--fps", type=int, default=4)
     args = ap.parse_args()
 
-    sources = [("eval", e) for e in args.eval_id] + [("ndjson", n) for n in args.ndjson]
+    sources = (
+        [("eval", e) for e in args.eval_id]
+        + [("ndjson", n) for n in args.ndjson]
+        + [("samples_json", j) for j in args.samples_json]
+    )
     if not sources:
-        ap.error("Pass at least one --eval-id or --ndjson.")
+        ap.error("Pass at least one --eval-id, --ndjson, or --samples-json.")
     groups = []
     auto_labels = []
     for kind, src in sources:
         if kind == "eval":
             frames = load_hosted(src)
             auto_labels.append(f"eval:{src[:8]}")
-        else:
+        elif kind == "ndjson":
             frames = load_ndjson(Path(src))
+            auto_labels.append(Path(src).stem)
+        else:  # samples_json — already-cached `prime eval samples` output
+            d = json.loads(Path(src).read_text())
+            s = (d.get("samples") or [None])[0]
+            if s is None:
+                raise RuntimeError(f"No samples in {src}")
+            msgs = list(s.get("prompt") or []) + list(s.get("completion") or [])
+            frames = []
+            turn = 0
+            last_user = None
+            for m in msgs:
+                role = (m.get("role") or "").lower()
+                content = m.get("content") or ""
+                if role == "user":
+                    last_user = content
+                elif role == "assistant" and last_user is not None:
+                    turn += 1
+                    frames.append({"turn": turn, "user_msg": last_user, "assistant_msg": m})
+                    last_user = None
             auto_labels.append(Path(src).stem)
         groups.append(frames)
         print(f"loaded {len(frames)} frames from {kind}:{src}")

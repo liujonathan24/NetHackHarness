@@ -79,6 +79,27 @@ Plots: `wave1_box.png`, `wave1_box_logy.png`, `wave1_cohens_d.png`.
 the only variant with a positive directional signal, but high variance.
 Compaction's role is cost, not capability, at 200 turns.
 
+**Correction (2026-05-20, post-samples-pull):** `avg_score` is the
+UNWEIGHTED reward-fn sum, not the rubric-weighted total. With proper
+decomposition (`prime eval samples`):
+
+- N seed 22: scout=0.155, descent=1, **success=1** → reward 2.155
+- N seed 23: scout=0.257, descent=1, **success=1** → reward 2.257
+- B1 seed 22, 24: all pure scout, zero descents/successes.
+
+**N actually solved the corridor_explore milestone on 2/4 completed seeds.
+B1 solved 0/4.** That's a 50% vs 0% success rate, not "small effect" —
+the high mean and high variance are explained by N either succeeding
+or failing entirely. Plots: `wave1_decomp_v2.png`, `wave1_success_rate.png`.
+
+**Side-by-side gameplay videos** (rendered via
+`tools/render_rollout_video.py` against `prime eval samples`):
+
+- `videos/N22_vs_B1_22.gif`  same-seed head-to-head (both seed 22)
+- `videos/N23_vs_B1_24.gif`  best-N vs best-B1
+
+The videos show the actual ASCII map + status + tool call per turn.
+
 **Followups:**
 - Wider sweep on N (n=20) to nail its floor.
 - Fix Anthropic-key wiring on Prime hosted runner — Haiku stage 12/12 FAILED.
