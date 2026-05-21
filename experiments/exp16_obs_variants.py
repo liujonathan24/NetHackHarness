@@ -157,6 +157,25 @@ VARIANTS: dict[str, Variant] = {
         },
         notes="Karten et al., 2026. Periodic self-refinement turn directives.",
     ),
+    "CH": Variant(
+        name="CH",
+        description="Continual Harness FULL (arXiv:2605.09998): teacher Refiner edits prompt+subagents+skills+memory",
+        env_args={
+            "variant": "CH",
+            "refine_interval": 20,
+            "refiner_model": "claude-opus-4-7",
+            # bootstrap_dir=None by default; pass via CLI override for cross-rollout persistence.
+            "compact_obs": True,
+            "history_keep_full": 5,
+            "history_drop_after": 100,
+            "belief_state_interval": 25,
+        },
+        notes=(
+            "Karten et al., 2026 — full Refiner pass. Distinct from P (directive only). "
+            "Uses a separate teacher model for the four-pass CRUD over prompt, sub-agents, "
+            "skill macros, and journal memory."
+        ),
+    ),
 }
 
 

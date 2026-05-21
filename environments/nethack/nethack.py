@@ -323,6 +323,7 @@ _VARIANT_FORMATTERS = {
     "N": None,         # NetPlay differs only in skill_set, not in obs formatter
     "R": _format_obs_summarize_reset,
     "P": None,         # Continual Harness uses canonical formatter + refinement directive
+    "CH": None,        # Full Continual Harness — same formatter; addendum/macros injected in get_prompt_messages
 }
 
 
@@ -702,6 +703,15 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         # or the agent ascends.
         continual: bool = False,
         continual_lives: int = 5,
+        # Variant CH (Continual Harness, arXiv:2605.09998) full Refiner.
+        # `refiner` is a pluggable object satisfying nethack_core.refiner.Refiner;
+        # when None and variant=="CH", we build a TeacherLLMRefiner from
+        # refiner_model (or fall back to OfflineRefiner). bootstrap_dir, if set,
+        # is used to persist/load the four CH components (prompt addendum,
+        # sub-agents, skills, journal) across rollouts.
+        refiner: Any = None,
+        refiner_model: Optional[str] = None,
+        bootstrap_dir: Optional[str] = None,
         **kwargs,
     ):
         self.interface = interface
@@ -725,6 +735,23 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         self.trace_dir = trace_dir
         self.continual = continual
         self.continual_lives = continual_lives
+        self.bootstrap_dir = bootstrap_dir
+        # Lazy: only build a refiner when variant=="CH" actually selected, so
+        # other variants don't pull in API clients.
+        self.refiner = refiner
+        self.refiner_model = refiner_model
+        if variant == "CH" and self.refiner is None:
+            from nethack_core.refiner import OfflineRefiner, TeacherLLMRefiner
+            if refiner_model:
+                self.refiner = TeacherLLMRefiner(model=refiner_model)
+            else:
+                import warnings
+                warnings.warn(
+                    "variant=CH selected without refiner_model; falling back to "
+                    "OfflineRefiner (no-op). Set refiner_model to enable real "
+                    "refinement.", stacklevel=2,
+                )
+                self.refiner = OfflineRefiner()
         super().__init__(*args, **kwargs)
 
     async def setup_state(self, state: vf.State) -> vf.State:
@@ -768,6 +795,12 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         state["last_reward"] = 0.0
         state["terminated"] = False
         state["journal"] = Journal()
+        # Variant CH (Continual Harness) component slots. Always initialized so
+        # downstream code can read them unconditionally; only populated when
+        # variant=="CH" and the Refiner runs (or bootstrap_dir loads them).
+        state["_ch_prompt_addendum"] = ""
+        state["_ch_subagents"] = {}
+        state["_ch_skills"] = {}
         # Pre-pin the tier's description as the agent's objective so the
         # goal stays in every obs (without forcing the model to call
         # pin_objective). For dynamic_subgoal, the proposer pin below
@@ -798,6 +831,19 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
             }
             # Pin the objective into the journal so the agent sees it.
             state["journal"].pin_objective(subgoal.objective)
+
+        # Bootstrap I/O for variant=CH: if bootstrap_dir is set and a prior
+        # snapshot exists for this seed, load the four components in.
+        if self.variant == "CH" and self.bootstrap_dir:
+            try:
+                import os, json
+                path = os.path.join(self.bootstrap_dir, f"seed{seed}.json")
+                if os.path.exists(path):
+                    from nethack_core.refiner import load_components
+                    with open(path) as f:
+                        load_components(state, json.load(f))
+            except Exception:
+                pass  # bootstrap failures must never break a rollout
 
         return state
 
@@ -866,10 +912,46 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
             skill_args = {"direction": _DIR_BIND[skill_name]}
             skill_name = "move"
 
+        # Variant CH: `run_macro(name=...)` expands a Refiner-registered
+        # macro (an ordered list of existing skill calls) into a concatenated
+        # SkillResult. Resolution happens here, BEFORE the registry dispatch
+        # below, so the rest of env_response sees a normal SkillResult.
+        if skill_name == "run_macro":
+            from nethack_core.skills import SkillResult as _SR
+            macro_name = (skill_args or {}).get("name", "")
+            macro = (state.get("_ch_skills") or {}).get(macro_name)
+            if not macro:
+                result = _SR(actions=[], feedback=f"Unknown macro: {macro_name!r}", interrupted=True)
+            else:
+                actions_acc: list = []
+                fb_parts: list[str] = []
+                interrupted = False
+                for step_def in macro:
+                    sub_name = step_def.get("skill")
+                    sub_args = dict(step_def.get("args") or {})
+                    if not sub_name:
+                        continue
+                    sub_res = skill_registry.call(sub_name, env, state["structured_obs"], **sub_args)
+                    if sub_res.journal_op is not None:
+                        try:
+                            sub_res.journal_op(state["journal"])
+                        except Exception:
+                            pass
+                    actions_acc.extend(sub_res.actions)
+                    if sub_res.feedback:
+                        fb_parts.append(f"{sub_name}: {sub_res.feedback}")
+                    if sub_res.interrupted:
+                        interrupted = True
+                        break
+                result = _SR(
+                    actions=actions_acc,
+                    feedback=f"[macro:{macro_name}] " + " | ".join(fb_parts),
+                    interrupted=interrupted,
+                )
         # Code-mode dispatch: if the model called the `code` tool, run the
         # source against the nh namespace and convert its action queue into
         # a SkillResult shape so the rest of env_response can stay unchanged.
-        if self.interface == "code" and skill_name == "code":
+        elif self.interface == "code" and skill_name == "code":
             from nethack_core.code_mode import run_user_code
             from nethack_core.skills import SkillResult
             source = skill_args.get("source", "")
@@ -1014,6 +1096,10 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
             halt_reason = halt_reason.lstrip()
         state["last_reward"] = total_reward
         state["terminated"] = terminated or truncated
+        # Variant CH: on terminal, persist the refined components for the
+        # next rollout (if bootstrap_dir is configured).
+        if state["terminated"] and self.variant == "CH":
+            _ch_save_bootstrap(self, state)
         # Continual harness mode: if the agent died (not ascended), and lives
         # remain, auto-reseed and reset the NLE env so the chat session
         # continues into a new game. Journal + belief state survive across
@@ -1165,6 +1251,51 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
             state["_refine_emitted_this_turn"] = True
         else:
             state["_refine_emitted_this_turn"] = False
+
+        # Variant CH (full Continual Harness): every refine_interval turns,
+        # call the configured Refiner, apply its CRUD edits to the four
+        # components (prompt addendum, sub-agents, skill macros, journal).
+        # Errors are logged and swallowed — losing a refinement window is
+        # fine; killing the rollout is not.
+        if (
+            self.variant == "CH"
+            and self.refiner is not None
+            and self.refine_interval > 0
+            and state.get("turn_count", 0) > 0
+            and state["turn_count"] % self.refine_interval == 0
+            and not state.get("_ch_refined_this_turn")
+        ):
+            try:
+                from nethack_core.refiner import snapshot_components, apply_edits
+                window = _ch_build_window(state.get("trajectory") or [], n_turns=self.refine_interval)
+                edits = self.refiner.refine(
+                    window=window,
+                    components=snapshot_components(state),
+                )
+                applied = apply_edits(state, edits)
+                state["_ch_last_edits"] = edits.to_trace_dict()
+                state["_ch_last_applied"] = applied
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning("CH refiner failed: %s", e)
+            state["_ch_refined_this_turn"] = True
+        else:
+            state["_ch_refined_this_turn"] = False
+            state.pop("_ch_last_edits", None)
+
+        # CH sub-agent triggers: prepend any directive whose trigger fires
+        # against the current structured_obs. Multiple subagents can fire
+        # in the same turn; we cap at 3 to bound prompt growth.
+        if self.variant == "CH" and state.get("_ch_subagents"):
+            from nethack_core.refiner import trigger_fires
+            fired = []
+            for name, spec in state["_ch_subagents"].items():
+                if trigger_fires(spec.get("trigger", ""), state.get("structured_obs")):
+                    fired.append(f"[subagent:{name}] {spec.get('text','')}")
+                    if len(fired) >= 3:
+                        break
+            if fired:
+                prefix_parts.extend(fired)
         if loop_hint:
             prefix_parts.append(loop_hint)
         if halt_reason:
@@ -1210,6 +1341,11 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
             # Variant R: drop everything prior to the most-recent belief
             # checkpoint. The belief state in the journal is the memory.
             messages = _drop_before_last_belief(messages, state)
+        # Variant CH: append the Refiner-edited prompt addendum + any
+        # registered macros to the system message so the agent sees them
+        # without re-rendering the whole prompt every turn.
+        if self.variant == "CH":
+            messages = _ch_inject_system(messages, state)
         return messages
 
     def update_tool_args(self, tool_args: dict, messages, state) -> dict:
@@ -1420,6 +1556,66 @@ def _refinement_directive(state: dict) -> str:
         f"text=...)` to record a short lesson. These calls do NOT consume a "
         f"game turn. If nothing needs updating, take your normal action."
     )
+
+
+def _ch_build_window(trajectory: list, n_turns: int) -> list[dict]:
+    """Slice the last `n_turns` of chat history into {role, content} dicts
+    for the Refiner. Handles both dict-shape and verifiers pydantic msgs."""
+    out: list[dict] = []
+    for msg in trajectory[-(2 * n_turns):]:
+        if isinstance(msg, dict):
+            role = msg.get("role", "?")
+            content = msg.get("content", "")
+        else:
+            role = getattr(msg, "role", "?")
+            content = getattr(msg, "content", "")
+        out.append({"role": role, "content": content if isinstance(content, str) else str(content)})
+    return out
+
+
+def _ch_inject_system(messages, state: dict):
+    """Append CH prompt addendum + macro list onto the system message."""
+    addendum = (state.get("_ch_prompt_addendum") or "").strip()
+    macros = state.get("_ch_skills") or {}
+    if not addendum and not macros:
+        return messages
+    extra_lines: list[str] = []
+    if addendum:
+        extra_lines.append("\n[continual-harness addendum]\n" + addendum)
+    if macros:
+        # Surface available macros so the agent can call run_macro(name=...).
+        macro_names = ", ".join(sorted(macros.keys()))
+        extra_lines.append(
+            f"\n[continual-harness macros] You may also call "
+            f"`run_macro(name=...)` with one of: {macro_names}."
+        )
+    extra = "".join(extra_lines)
+    out = list(messages)
+    for i, m in enumerate(out):
+        if _msg_role(m) == "system":
+            out[i] = _replace_content(m, _msg_content(m) + extra)
+            return out
+    # No system message found (shouldn't happen, dataset prepends one) —
+    # prepend a fresh system block.
+    out.insert(0, vf.SystemMessage(role="system", content=extra.lstrip()))
+    return out
+
+
+def _ch_save_bootstrap(env_self, state: dict) -> None:
+    """Persist the four CH components to <bootstrap_dir>/seed<N>.json on
+    terminal. Best-effort; never raises."""
+    try:
+        if not getattr(env_self, "bootstrap_dir", None):
+            return
+        import os, json
+        from nethack_core.refiner import snapshot_components
+        os.makedirs(env_self.bootstrap_dir, exist_ok=True)
+        seed = state.get("_orig_seed", 0)
+        path = os.path.join(env_self.bootstrap_dir, f"seed{seed}.json")
+        with open(path, "w") as f:
+            json.dump(snapshot_components(state), f, indent=2)
+    except Exception:
+        pass
 
 
 def _compact_chat_history(messages, keep_full: int = 5, drop_after: int = 100):
@@ -1920,6 +2116,9 @@ def load_environment(
     trace_dir: Optional[str] = None,
     continual: bool = False,
     continual_lives: int = 5,
+    refiner: Any = None,
+    refiner_model: Optional[str] = None,
+    bootstrap_dir: Optional[str] = None,
     **kwargs: Any,
 ) -> vf.Environment:
     """
@@ -1973,6 +2172,10 @@ def load_environment(
 
     if interface == "skill":
         tool_callables = _build_skill_adapter_callables(skill_set=kwargs.pop("skill_set", "full"))
+        # Variant CH exposes a `run_macro` tool that expands into Refiner-
+        # registered sequences of existing skill calls (resolved in env_response).
+        if variant == "CH":
+            tool_callables.append(_make_run_macro_adapter())
     elif interface == "code":
         tool_callables = [_code_tool_adapter()]
     else:
@@ -1997,6 +2200,9 @@ def load_environment(
         trace_dir=trace_dir,
         continual=continual,
         continual_lives=continual_lives,
+        refiner=refiner,
+        refiner_model=refiner_model,
+        bootstrap_dir=bootstrap_dir,
         **kwargs,
     )
 
@@ -2094,6 +2300,18 @@ def _build_skill_adapter_callables(skill_set: str = "full") -> list:
         params = schema.get("parameters", {}) or {}
         out.append(_make_skill_adapter(name, schema.get("description", ""), params))
     return out
+
+
+def _make_run_macro_adapter():
+    """Tool stub for variant=CH `run_macro(name=...)`. The actual dispatch
+    lives in NetHackVerifiersEnv.env_response — this exists only to surface
+    the tool to the verifiers schema-introspection layer."""
+    def run_macro(name: str):
+        """Run a Continual-Harness macro (a Refiner-registered sequence of
+        skill calls). The macro must already exist; ask `recall` or check
+        the system message for available macro names."""
+        return None
+    return run_macro
 
 
 def _make_fixed_direction_adapter(tool_name: str, direction: str):
