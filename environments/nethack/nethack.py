@@ -1386,6 +1386,12 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
                         f"`move_to` a DIFFERENT visible tile or `search` more — the "
                         f"way down is likely behind a hidden wall.]"
                     )
+            # If the auto-kick/search advanced the game state to a terminal
+            # outcome (e.g. starved mid-search), re-run detection so death is
+            # attributed and the rollout ends cleanly.
+            if terminated or truncated:
+                state["terminated"] = True
+                _detect_terminal_outcome(last_obs, state)
         # ----------------------------------------------------------------
 
         # Autoexplore-loop detection: when autoexplore returns "short" feedback
