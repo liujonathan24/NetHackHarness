@@ -9,3 +9,6 @@ dist/
 
 # dashboard local cache
 tools/.dashboard_cache/
+
+# agent worktrees
+.claude/worktrees/
