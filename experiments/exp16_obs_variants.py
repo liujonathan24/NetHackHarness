@@ -131,6 +131,37 @@ VARIANTS: dict[str, Variant] = {
         },
         notes="NetPlay (Jeurissen, CoG 2024). NetHack-origin.",
     ),
+    "ND": Variant(
+        name="ND",
+        description="NetPlay skill set + descent-salience obs block + level clock (Wave-2)",
+        env_args={
+            "variant": "ND",          # enables _descent_status_block via _descent_salient
+            "compact_obs": True,
+            "history_keep_full": 5,
+            "history_drop_after": 100,
+            "belief_state_interval": 25,
+            # Same curated skill whitelist as N (no low-level `move`), so the
+            # ND vs N delta isolates the descent-salience obs block.
+            "skill_set": "move_to,autoexplore,find_and_descend,attack,descend,search,pickup,engrave_elbereth,pray,eat,quaff,read,add_note,recall,pin_objective,wiki_lookup,wiki_search,kick",
+        },
+        notes="Wave-2 front-runner: N (best wave-1 variant) + persistent DOWNSTAIRS/clock block.",
+    ),
+    "FD": Variant(
+        name="FD",
+        description="find_and_descend autopilot: minimal skill set + descent-salience block (Wave-2)",
+        env_args={
+            "variant": "FD",
+            "compact_obs": True,
+            "history_keep_full": 5,
+            "history_drop_after": 100,
+            "belief_state_interval": 25,
+            # Tightest descent-focused surface: exploration + descent + survival
+            # only. No pickup (a turn-sink in failing traces), no wiki. Makes
+            # `find_and_descend` the obvious dominant action.
+            "skill_set": "find_and_descend,autoexplore,move_to,descend,attack,search,engrave_elbereth,pray,eat,kick,add_note,pin_objective",
+        },
+        notes="Wave-2: strips turn-sink skills; pairs minimal surface with descent-salience.",
+    ),
     "R": Variant(
         name="R",
         description="CPP/GPP summarize-and-reset: drop everything before last belief checkpoint",
