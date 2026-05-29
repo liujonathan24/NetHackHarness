@@ -314,6 +314,83 @@ def _format_obs_summarize_reset(structured, journal, state, journal_max_chars: i
     )
 
 
+def _descent_status_block(structured, state) -> list[str]:
+    """Wave-2 descent-salience block. Diagnosis (see experiment_log.md Wave-2):
+    in EVERY failing rollout the down-stairs `>` never appeared in VISIBLE
+    FEATURES — the agent wandered/oscillated around the starting room for
+    300-1900 game-turns and DIED (usually starvation while Fainting). Runs
+    that descended did so in <65 game-turns. So the dominant failure is
+    "never reveal/reach `>`, then starve."
+
+    This block makes the descent objective and the time-pressure impossible
+    to miss, every turn. It is gated on state["_descent_salient"] (set for
+    variants ND/FD) so the baselines are unaffected.
+
+    Emits one of:
+      DOWNSTAIRS: VISIBLE at (x,y) — call find_and_descend NOW to path there
+                  and descend in one action.
+      DOWNSTAIRS: not found yet — call find_and_descend to explore toward
+                  unrevealed territory (it auto-paths to `>` the moment it is
+                  seen). Avoid repeated search/pickup; they burn game-turns.
+    Plus a level-clock warning once the in-game turn count on the current
+    level grows large (starvation territory).
+    """
+    if not state or not state.get("_descent_salient"):
+        return []
+    out: list[str] = []
+    stairs_xy = None
+    try:
+        from nethack_core.observations import extract_visible_features
+        feats = extract_visible_features(state["raw_obs"].tty_chars)
+        for f in feats:
+            if f.startswith("stairs DOWN at "):
+                m = re.search(r"\((\d+),(\d+)\)", f)
+                if m:
+                    stairs_xy = (int(m.group(1)), int(m.group(2)))
+                break
+    except Exception:
+        pass
+    # Memoized stairs (player may be standing on them, hiding the glyph).
+    if stairs_xy is None and state.get("_seen_stairs_down"):
+        try:
+            px = int(structured.status.get("x", -1))
+            py = int(structured.status.get("y", -1))
+            if (px, py) in state["_seen_stairs_down"]:
+                stairs_xy = (px, py)
+        except Exception:
+            pass
+        if stairs_xy is None:
+            stairs_xy = next(iter(state["_seen_stairs_down"]))
+    out.append("=== DESCENT STATUS ===")
+    if stairs_xy is not None:
+        out.append(
+            f"DOWNSTAIRS: VISIBLE at {stairs_xy}. Your goal is to descend. "
+            f"Call `find_and_descend` NOW — it paths to `>` and descends in "
+            f"one action. (Or `descend` if you are already standing on it.)"
+        )
+    else:
+        out.append(
+            "DOWNSTAIRS: not found yet on this level. Call `find_and_descend` "
+            "to push exploration into unrevealed territory; it auto-walks to "
+            "`>` and descends the instant the stairs are seen. Do NOT "
+            "loop on `search`/`pickup` — every wasted turn risks starvation."
+        )
+    # Level clock: NLE in-game turn counter. Starvation deaths in the failing
+    # runs clustered at T:600-1900. Warn early so the agent prioritizes descent.
+    try:
+        t = int(structured.status.get("time", 0))
+        if t >= 250:
+            out.append(
+                f"CLOCK: {t} in-game turns elapsed and still on Dlvl "
+                f"{structured.status.get('depth','?')}. You are taking too "
+                f"long — descend before hunger kills you."
+            )
+    except Exception:
+        pass
+    out.append("")
+    return out
+
+
 _VARIANT_FORMATTERS = {
     # variant code -> formatter callable, or None to use the canonical formatter
     "B1": None,
@@ -324,6 +401,10 @@ _VARIANT_FORMATTERS = {
     "R": _format_obs_summarize_reset,
     "P": None,         # Continual Harness uses canonical formatter + refinement directive
     "CH": None,        # Full Continual Harness — same formatter; addendum/macros injected in get_prompt_messages
+    # Wave-2 descent variants share the canonical formatter; the descent-salience
+    # block is injected via state["_descent_salient"] (set in setup_state).
+    "ND": None,        # NetPlay skill set + descent-salience block + clock warning
+    "FD": None,        # find_and_descend autopilot: minimal skill set + salience block
 }
 
 
@@ -365,6 +446,9 @@ def format_observation_as_chat(
         if state is not None:
             state["_journal_fingerprint"] = cur_fp
         lines.append("")
+    # Wave-2: descent-salience block (variants ND/FD). Placed immediately after
+    # the journal/objective so it's the first concrete thing the model reads.
+    lines.extend(_descent_status_block(structured, state))
     lines.append("=== MAP ===")
     map_view = structured.map_view
     if compact:
@@ -792,6 +876,10 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         # extract_visible_features stops finding the tile — without memory,
         # the agent oscillates on/off the stairs without realizing to descend.
         state["_seen_stairs_down"] = set()
+        # Wave-2: descent-salience flag drives _descent_status_block. Enabled for
+        # the descent-focused variants (ND/FD) discovered after the wave-1
+        # diagnosis showed failures = "never reveal `>`, wander, starve".
+        state["_descent_salient"] = self.variant in ("ND", "FD")
         state["last_reward"] = 0.0
         state["terminated"] = False
         state["journal"] = Journal()
@@ -1199,6 +1287,107 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
             except (KeyError, IndexError, TypeError, AttributeError):
                 pass
 
+        # ---- Wave-2: position-stuck deadlock breaker -------------------
+        # Diagnosis (experiment_log.md Wave-2): exploration skills can wedge.
+        # A scripted `find_and_descend` loop on seed 22 froze at pos (63,6)
+        # with the in-game clock stuck at T:51 for 90+ turns: A* kept choosing
+        # a 1-step "far frontier" whose first step was a no-op (an adjacent
+        # closed/locked door `+` that walking-into does nothing). Real LM
+        # rollouts hit the same wedge and oscillate until they starve.
+        #
+        # Fix: when a movement/exploration skill leaves the player at the SAME
+        # (x,y) AND the in-game turn counter did not advance, count it. After
+        # 2 such no-progress calls, auto-KICK an adjacent closed door `+` to
+        # break the wedge (or, if none, surface a strong search-or-redirect
+        # hint). This runs for every variant — it's a pure correctness fix.
+        _EXPLORE_SKILLS = {"autoexplore", "find_and_descend", "move_to", "move"}
+        stuck_hint: Optional[str] = None
+        if skill_name in _EXPLORE_SKILLS and pre_pos is not None and not (terminated or truncated):
+            try:
+                post_blstats = last_obs.blstats if hasattr(last_obs, "blstats") else last_obs.get("blstats")
+                post_pos = (int(post_blstats[0]), int(post_blstats[1])) if post_blstats is not None else None
+            except (KeyError, IndexError, TypeError, AttributeError):
+                post_pos = None
+            # No-progress = the in-game clock did not advance. This catches both
+            # "bumped a wall" (pos same) AND the false-frontier oscillation
+            # (pos toggles between two adjacent corridor tiles whose only
+            # "unexplored" neighbor is actually solid rock, so the game clock
+            # never moves and no new tiles are revealed). Clock-frozen is the
+            # reliable signal: a real exploration step always advances T.
+            cur_time = state["structured_obs"].status.get("time")
+            prev_time = state.get("_last_stuck_time")
+            clock_frozen = (prev_time is not None and cur_time == prev_time)
+            # Also track revealed-tile count: if the scout set didn't grow,
+            # the call revealed nothing new.
+            no_new_tiles = state.get("scout_delta", 0) == 0
+            no_progress = clock_frozen and no_new_tiles
+            if no_progress:
+                state["_stuck_count"] = state.get("_stuck_count", 0) + 1
+            else:
+                state["_stuck_count"] = 0
+            state["_last_stuck_time"] = cur_time
+            if state.get("_stuck_count", 0) >= 2:
+                # Find an adjacent closed door `+` to kick.
+                adj = getattr(state["structured_obs"], "adjacent", None) or {}
+                door_dir = None
+                for d, tile in adj.items():
+                    if tile and (tile == "+" or tile.startswith("+")):
+                        door_dir = d
+                        break
+                if door_dir is not None:
+                    # Auto-kick: KICK command then the direction key. Step it.
+                    try:
+                        from nethack_core.skills import _DIRECTION_KEYS  # type: ignore
+                    except Exception:
+                        _DIRECTION_KEYS = None
+                    _DKEY = {"N": ord("k"), "S": ord("j"), "E": ord("l"), "W": ord("h"),
+                             "NE": ord("u"), "NW": ord("y"), "SE": ord("n"), "SW": ord("b")}
+                    from nle import nethack as _nh
+                    kick_cmd = int(_nh.Command.KICK)
+                    kick_seq = _to_action_indices(env, [kick_cmd]) + _to_action_indices(env, [_DKEY.get(door_dir, ord("."))])
+                    for ka in kick_seq:
+                        last_obs, _kr, kt, ktr, _ki = env.step(ka)
+                        terminated = terminated or kt
+                        truncated = truncated or ktr
+                        if terminated or truncated:
+                            break
+                    state["raw_obs"] = last_obs
+                    state["structured_obs"] = shape_observation(last_obs, state["character"])
+                    state["_stuck_count"] = 0
+                    stuck_hint = (
+                        f"[deadlock-breaker: stuck at {pre_pos}; auto-kicked the "
+                        f"closed door to {door_dir}. If it didn't open, kick again "
+                        f"or pick a different exploration target.]"
+                    )
+                else:
+                    # No door to kick and the level's visible frontiers are
+                    # all false (adjacent only to solid rock) — the genuine
+                    # exit is a HIDDEN passage. Auto-search in place to reveal
+                    # it, escalating count the longer we're wedged. NLE caps a
+                    # search run, so this is safe. This is what unwedges the
+                    # seed-22 corridor pocket (all frontiers border rock).
+                    from nle import nethack as _nh
+                    search_idx = _to_action_indices(env, [int(_nh.Command.SEARCH)])
+                    n_search = min(10 * state.get("_stuck_count", 2), 30)
+                    if search_idx:
+                        for _ in range(n_search):
+                            last_obs, _sr, stt, str_, _si = env.step(search_idx[0])
+                            terminated = terminated or stt
+                            truncated = truncated or str_
+                            if terminated or truncated:
+                                break
+                        state["raw_obs"] = last_obs
+                        state["structured_obs"] = shape_observation(last_obs, state["character"])
+                    state["_stuck_count"] = 0
+                    stuck_hint = (
+                        f"[deadlock-breaker: exploration wedged at {pre_pos} (all "
+                        f"reachable frontiers border solid rock). Auto-searched "
+                        f"{n_search}x for a hidden passage. If still no new exit, "
+                        f"`move_to` a DIFFERENT visible tile or `search` more — the "
+                        f"way down is likely behind a hidden wall.]"
+                    )
+        # ----------------------------------------------------------------
+
         # Autoexplore-loop detection: when autoexplore returns "short" feedback
         # repeatedly (frontier shrunk to 1-2 step paths near level edges), the
         # model often spam-calls it ignoring the tail hint. After N consecutive
@@ -1296,6 +1485,8 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
                         break
             if fired:
                 prefix_parts.extend(fired)
+        if stuck_hint:
+            prefix_parts.append(stuck_hint)
         if loop_hint:
             prefix_parts.append(loop_hint)
         if halt_reason:

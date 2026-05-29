@@ -109,3 +109,86 @@ The videos show the actual ASCII map + status + tool call per turn.
 - Wave-2 combo candidate: N+R (skill-only + history-reset).
 
 ---
+
+# Wave-2: descent reliability (2026-05-28)
+
+Goal: make dlvl-2 + success (`corridor_explore`) reliable, not lucky.
+
+## Diagnosis (from real pulled rollouts)
+
+Pulled per-turn samples for the descended N runs and the failures
+(`prime eval samples`, decomposed the 4 reward fields). Findings:
+
+| run | eval_id | score | descent | success | LM turns | game-T | outcome |
+|-----|---------|-------|---------|---------|----------|--------|---------|
+| N s22 | cz7wjzq818ckwdi1xdpksnoy | 2.155 | 1 | 1 | 61 | 63 | descended |
+| N s23 | kpdsywnfm7vzqxcxvtw2kgkq | 2.257 | 1 | 1 | 53 | 54 | descended |
+| N s26 | rsh5i07hwqajfe8avlqp99u1 | 0.097 | 0 | 0 | 133 | 309 | killed by newt |
+| N s25 | fikki61ohiwxcoc3tifkm4fo | 0.039 | 0 | 0 | — | 1921 | starved (Fainting) |
+| B1 s22 | p3s6kuijz0dwjlz21m8cxxo6 | 0.048 | 0 | 0 | 297 | 1522 | starved (Fainting) |
+| B1 s23 | cwk591png0ex0i729b3jvjve | 0.054 | 0 | 0 | 165 | 629 | killed by kobold zombie |
+| B1 s24 | nokl8nw88oatwao3fz0cjbfb | 0.115 | 0 | 0 | 183 | 568 | killed by fox |
+| B1 s26 | esx38vdrxwu659zpwoslknwc | 0.109 | 0 | 0 | — | 1486 | starved |
+| Haiku s22 | vwgp2g00lj2wx573384ol85p | 0.289 | 0 | 0 | 407 | 868 | killed kicking a wall |
+
+**The failure mode is (a) never revealing/reaching `>`, then dying — almost
+always by starvation (Fainting/Weak) or a weak monster while wandering.**
+Concrete evidence: in EVERY failing rollout, `stairs DOWN` NEVER appears in
+the `VISIBLE FEATURES` block (parsed per-turn) — the agents never even SEE
+the down-stairs. Successful runs descend in <65 game-turns; every run that
+passed ~300 game-turns died on dlvl-1. Time-on-level is the killer.
+
+Mechanism (feedback histogram of failing runs): agents oscillate around
+1–2 doorways/frontiers near the starting room — repeated "pathing to door
+at (X,Y)", "Already at (X,Y)", and `search`/`pickup` loops — and never push
+through to reveal the rest of the level. Nobody was confused about `<` vs
+`>`; nobody failed to step onto known stairs. It's purely an exploration
++ survival-time problem.
+
+**Harness bug found while stress-testing:** a scripted `find_and_descend`
+loop on seed 22 froze permanently at one tile with the in-game clock stuck
+(T:51 for 90+ calls). `find_and_descend`/`autoexplore` repeatedly choose a
+1-step "far frontier" whose only unexplored neighbor is solid rock — a
+*false frontier* — so the step is a no-op and no new tiles are revealed.
+Real LM rollouts hit the same wedge and burn their whole budget on it.
+
+## Fixes shipped (env v0.0.65)
+
+1. **Deadlock-breaker (all variants, `nethack.py:env_response`).** Track the
+   in-game clock + scout-delta after each exploration/move skill. If the
+   clock is frozen AND no new tiles revealed for 2 consecutive calls, the
+   harness auto-acts: kick an adjacent closed door `+` if present, else
+   force an escalating `search(10–30x)` in place to reveal a hidden passage.
+   This unwedges the false-frontier loop (verified: scripted loop now keeps
+   advancing 66→67→68→71 instead of freezing at one tile).
+2. **Descent-salience obs block (variants ND/FD).** A persistent
+   `=== DESCENT STATUS ===` block at the top of every obs: either
+   "DOWNSTAIRS: VISIBLE at (x,y) — find_and_descend NOW" or "DOWNSTAIRS:
+   not found yet — find_and_descend to push into unrevealed territory; do
+   NOT loop on search/pickup", plus a `CLOCK:` warning once T≥250 game-turns
+   ("descend before hunger kills you"). Gated on `_descent_salient`;
+   baselines unaffected (verified B1 obs unchanged, all 311 tests pass).
+3. **New variants in `exp16_obs_variants.py`:**
+   - **ND** = NetPlay skill set (best wave-1 variant, no low-level `move`)
+     + descent-salience block. Isolates the obs delta vs N.
+   - **FD** = find_and_descend autopilot: tightest skill surface
+     (find_and_descend/autoexplore/move_to/descend/attack/search/kick/
+     eat/pray/engrave_elbereth, no pickup/wiki — pickup was a turn-sink in
+     failing traces) + descent-salience block.
+
+## Validation (hosted Qwen3.5-9B, seeds 22–26, 200 turns) — IN FLIGHT
+
+Launched on env v0.0.65 (Haiku still unavailable on runner → Qwen primary):
+
+| variant | seed22 | seed23 | seed24 | seed25 | seed26 |
+|---------|--------|--------|--------|--------|--------|
+| ND | m8aujshel4rirw1vz6gr6qwk | zj09rpuhruimzfxd6xhw4no2 | v3h6eo8m4fpf4psvgziysyd4 | c03p4kfdm5zw73yxxo7bnqdq | zf64gmmhte3s6rhz50gf8ro5 |
+| FD | a2cmfdj6on6xy7ixrqko4uki | zf443vtheorlpmcg1t0afqcb | xmdfqhn1ufnevarthooxere2 | zp6hgzc7ncplw5l4vat4jwcl | hjmmvlj3nrzcyn3k8x2w576u |
+| B1 (control, same code) | a5wrtd06w4byrfmphhnt4s60 | ytnhyaucokdoz0qt4wtluzvv | gmqx5as0q09d7i0jab9ynhx5 | z9gw7fetvb8xxy56ro4rzkup | vbzs9917n8k1ozeokl4xj0sp |
+
+Pull with `tools/render_rollout_video.load_hosted` or
+`prime eval samples <id> -o json --plain`; decompose the
+scout/descent/success/ascension fields. Target metric: fraction of seeds
+with descent≥1 AND success==1.
+
+---
