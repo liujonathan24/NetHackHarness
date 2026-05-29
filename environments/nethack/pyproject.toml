@@ -2,7 +2,7 @@
 name = "nethack"
 description = "Training-grade NetHack environment for LM agents with skill-based tools, milestone curriculum, replay capture, and journal memory."
 tags = ["games", "long-horizon", "tool-use", "procgen", "train", "eval"]
-version = "0.0.64"
+version = "0.0.65"
 requires-python = ">=3.10,<3.14"
 readme = "README.md"
 license = { text = "Apache-2.0" }
