@@ -28,6 +28,12 @@ uv run vf-eval nethack -m gpt-4.1-mini -n 3 -r 1 -a '{"tier": "empty_room"}'
 | `interface`        | str              | `"skill"`            | `"skill"` (one tool per skill) or `"code"` (sandboxed Python with `nh` namespace) |
 | `sub_lm`           | SubLM or None    | None                 | Backend for `nh.summarize/plan/recall_lm`. Default at rollout time: `OfflineSubLM` |
 | `subgoal_proposer` | Proposer or None | None                 | Backend for the `dynamic_subgoal` tier. Default: `OfflineSubgoalProposer` |
+| `variant`          | str              | `"B1"`               | Observation/skill preset (see [Observation variants](#observation-variants)). |
+| `compact_obs`      | bool             | True                 | Glyph-run encoding, blank-row strip, inventory diff. Token lever, not a capability lever. |
+| `skill_set`        | str              | `"full"`             | `"full"`, `"dir8"`, `"move"`, or a CSV whitelist of skills (NetPlay uses a curated CSV with no low-level `move`). |
+| `trace_dir`        | str or None      | None                 | If set, writes per-turn NDJSON (raw grid + rendered obs + assistant msg + tool calls + reward) for offline replay. |
+| `continual`        | bool             | False                | Auto-reseed NLE on death and carry the journal/belief state across lives. |
+| `continual_lives`  | int              | 5                    | Max lives when `continual=True`. |
 
 ### CLI gotcha: `-a` vs `-x`
 
@@ -44,6 +50,34 @@ it via `-x` is silently ignored. The hosted-eval writeup for Qwen3.5-9B v0.0.14
 hit exactly this: `-x '{"max_turns": 30}'` had no effect and the rollout ran to
 the default cap of 200 turns. **Always pass env config through `-a`.** See
 `docs/EVAL_RECIPES.md`.
+
+## Observation variants
+
+The `variant` kwarg selects a per-turn observation/skill preset. These let you
+A/B the observation surface without touching env internals; each is a single
+`load_environment(variant=...)` setting. They are wired up and swept by
+`experiments/exp16_obs_variants.py`; see `experiment_log.md` for findings.
+
+| code | source | what it changes |
+|------|--------|-----------------|
+| `B1` | current default | Standing baseline: ASCII grid + compaction + journal. |
+| `B0` | calibration | All compaction off (raw rendering). Isolates whether compaction is load-bearing. |
+| `G`  | Glyphbox (Wang, 2026) | ASCII + adjacency + hostile-list + code-mode tool surface. |
+| `B`  | BALROG (Paglieri et al., ICLR 2025) | No ASCII grid; natural-language scene description only. |
+| `N`  | NetPlay (Jeurissen, CoG 2024) | Skill-only action surface (no low-level `move(direction=…)`). |
+| `R`  | CPP/GPP | Belief state every 25 turns + hard-drop history before the last checkpoint. |
+| `P`  | Continual Harness (arXiv:2605.09998) | Periodic self-refinement directive (update journal objective / record a lesson). |
+| `CH` | Continual Harness (full) | Teacher "Refiner" model edits prompt + sub-agents + skill macros + memory. |
+| `ND` | this repo | NetPlay skill set + a persistent `=== DESCENT STATUS ===` salience block. |
+| `FD` | this repo | `find_and_descend` autopilot skill surface + descent salience block. |
+
+**Findings so far** (preliminary, Qwen3.5-9B, seeds 22–26, 200-turn budget):
+the ASCII grid is load-bearing — `B` (no grid) collapses capability. Compaction
+(`B0` vs `B1`) is a token/cost lever, not a capability lever. The descent
+bottleneck (reaching dungeon level 2) is the dominant failure mode: agents
+explore but starve or die while looping on the first level. Skill-only surfaces
+(`N`) and the `v0.0.65` deadlock-breaker are the levers under active study;
+see `experiment_log.md` for the live numbers.
 
 ## Tiers
 
@@ -93,55 +127,50 @@ it's gameable. See design doc §3.4. The four shaped rewards form an
 exponentially-spaced ladder (1 → 10 → 100 → 1000) so the gradient always
 points at the deepest unlocked rung.
 
-### Reward signal calibration
+### Reading the reward signal
 
-Recent hosted-eval writeups (`experiments/results/hosted_eval_*.md`) report
-`reward: 0.0` across 146–162 turns at 9B and 35B-A3B. Two reasons this is
-expected before treating it as a bug:
+`avg_score` reported by `prime eval` is the **unweighted sum** of the four
+raw reward-function values, *not* the rubric-weighted total. Decompose it
+with `prime eval samples <id> -o json` — each sample carries `scout_reward`,
+`descent_reward`, `success_reward`, and `ascension_reward` directly. A score
+of `2.155`, for example, is `scout 0.155 + descent 1 + success 1` — a rollout
+that explored, descended to dlvl 2, and fired the `corridor_explore`
+milestone. Real Qwen3.5-9B rollouts reach this; scout reward accumulates
+correctly across the trajectory.
 
-1. **Sparse by design.** `descent_reward` requires reaching dlvl 2; neither
-   model managed it in the 10-minute wallclock. `success_reward` and
-   `ascension_reward` only fire on terminal milestones. For a non-fine-tuned
-   LM on `corridor_explore`, only `scout_reward` is expected to be nonzero
-   in a short eval.
-2. **Per-step averaging hides scout reward.** Verifiers reports `avg_metrics`
-   as a per-step mean. `scout_reward = scout_delta / 1000.0` is at most
-   ~0.05/step (50 new tiles × 1/1000) and is exactly 0 on any step that
-   didn't reveal new tiles — including journal-op steps, blocked moves, and
-   menu navigation. A 144-step rollout that revealed ~200 tiles total
-   averages to ~0.0014/step, which rounds to 0.0 in two-decimal display.
+Two things to keep in mind when interpreting short evals:
 
-To verify scout is actually accumulating (not a code bug), look at
-`state["scout_tiles_seen"]` size or the **sum** of scout reward across the
-trajectory rather than the per-step mean. Replay JSONs in
-`tools/replay_viewer.html` show this directly.
+1. **Sparse by design.** `descent_reward`/`success_reward`/`ascension_reward`
+   only fire on milestones. For a non-fine-tuned LM, only `scout_reward` is
+   expected to be nonzero until the agent actually descends.
+2. **Per-step averaging hides scout reward.** If you look at verifiers'
+   per-step `avg_metrics` rather than the trajectory sum, `scout_reward`
+   (≤ ~0.05/step, exactly 0 on steps that reveal no new tiles) rounds to 0.0
+   in a two-decimal display. Sum across the trajectory, or read
+   `state["scout_tiles_seen"]`, to see it accumulating.
 
-#### Suspected scout-reward bug (under investigation)
+Implementation notes for anyone extending the rubric: scout tiles are keyed
+by `(max_dlvl_reached, x, y)`, and `max_dlvl_reached` is bumped at the end of
+`env_response`, so the first step on a new dlvl attributes its tiles to the
+previous dlvl. Journal-op skills deliberately zero `scout_delta` and return
+before stepping, so a journal-heavy agent shows `scout_reward: 0` for those
+turns regardless of what's on screen.
 
-A separate subagent is auditing this; flagging the suspect for the doc.
-`env_response` updates `state["scout_tiles_seen"]` inside the per-action
-loop via `_iterate_visible_tiles(last_obs)`, which reads `obs.chars` as an
-**attribute**. Other code paths in the same function read the same obs as a
-**dict** (`raw_obs.get("blstats")` in `_check_halt_condition`). If
-`NetHackCoreEnv.step` returns a dict, the attribute access raises
-`AttributeError` inside the tile-iteration loop — and because the loop is
-the only writer to `scout_tiles_seen`, scout_delta stays 0 for the whole
-rollout while everything else proceeds normally. Two related quirks worth
-noting either way:
+### Replaying rollouts
 
-- Tiles are keyed by `(max_dlvl_reached, x, y)` but `max_dlvl_reached` is
-  only bumped at the **end** of `env_response`, so the first step on a new
-  dlvl attributes its tiles to the previous dlvl.
-- Journal-op skills explicitly zero `scout_delta` and return before any
-  env stepping, which is correct but also means a journal-heavy agent will
-  show `scout_reward: 0` regardless of what's on screen.
-
-Don't patch from this README — defer to subagent C.
+`tools/render_rollout_video.py` renders an animated GIF/MP4 of a rollout
+(ASCII map + status + per-turn tool call) from either a hosted eval
+(`--eval-id`) or a local `trace_dir` NDJSON (`--ndjson`). `tools/dashboard.py`
+is a browseable web dashboard over all evals: per-variant reward decomposition
+plus a turn-by-turn replay view.
 
 ## Status
 
 Live on the Hub at [`jonathanliu/nethack`](https://app.primeintellect.ai/dashboard/environments/jonathanliu/nethack).
-Latest verified: **v0.0.14** running end-to-end against Qwen3.5-9B and
-Qwen3.5-35B-A3B in hosted eval (no crashes, both `skill` and `code`
-interfaces). Reward is currently 0 for short rollouts — long-horizon eval,
-that's the design. See `experiments/results/` for full eval writeups.
+Published: **v0.0.64** (hosted eval pins the latest published version, not
+local code). Verified end-to-end against Qwen3.5-9B in hosted eval across the
+observation variants above — no crashes, both `skill` and `code` interfaces.
+Rollouts reach descent + the `corridor_explore` success milestone (e.g. the
+NetPlay `N` variant on seeds 22–23). The descent-reliability work in
+`v0.0.65` (deadlock-breaker + descent-salience obs) is under validation; see
+`experiment_log.md` and `experiments/results/` for the live numbers.

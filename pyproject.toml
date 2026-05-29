@@ -3,6 +3,9 @@ name = "nethack-rl"
 version = "0.0.1"
 description = "Workspace root for nethack_core (layer 1) and nethack (layer 2 verifiers env)."
 requires-python = ">=3.10,<3.14"
+dependencies = [
+    "flask>=3.1.3",
+]
 
 [tool.uv.workspace]
 members = ["nethack_core", "environments/nethack"]
