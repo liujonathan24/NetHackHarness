@@ -597,7 +597,67 @@ _VARIANT_FORMATTERS = {
     # new blocks (FRONTIERS, EXPLORATION, SPATIAL BELIEF, status delta) are
     # gated on state["_e1_obs"] (set in setup_state when variant == "E1").
     "E1": None,
+    # Wave-3 Track C v2: paint frontier-adjacent unexplored tiles with '?'
+    # directly on the map. No text blocks — the spatial cue lives in the
+    # glyph grid the model already parses. Gated on state["_e2_obs"].
+    "E2": None,
 }
+
+
+def _paint_frontiers_on_map(map_view: str, chars, frontiers, cap: int = 40) -> str:
+    """Overlay '?' on truly-unseen tiles adjacent to each frontier.
+
+    Frontiers are walkable tiles bordering unexplored space; the adjacent
+    unseen tiles are where unrevealed content sits. Painting them as '?'
+    gives the model a visual cue in the spatial layout it already reads,
+    so the FRONTIERS/EXPLORATION/SPATIAL BELIEF text blocks become
+    redundant.
+
+    Only paints where the existing glyph is ' ' (space) — never overwrites
+    walls, floor, items, or the agent. Caps the total paint count so a
+    pathological map can't blow up the obs.
+    """
+    if not frontiers or chars is None:
+        return map_view
+    try:
+        from nethack_core.pathfinding import is_truly_unseen
+    except Exception:
+        return map_view
+    rows = map_view.split("\n")
+    grid = [list(r) for r in rows]
+    h = len(grid)
+    painted = 0
+    seen: set[tuple[int, int]] = set()
+    for (fx, fy) in frontiers:
+        if painted >= cap:
+            break
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                if dx == 0 and dy == 0:
+                    continue
+                nx, ny = fx + dx, fy + dy
+                if (nx, ny) in seen:
+                    continue
+                if not (0 <= ny < h):
+                    continue
+                row = grid[ny]
+                if not (0 <= nx < len(row)):
+                    continue
+                if row[nx] != " ":
+                    continue
+                try:
+                    if not is_truly_unseen(chars, nx, ny):
+                        continue
+                except Exception:
+                    continue
+                row[nx] = "?"
+                seen.add((nx, ny))
+                painted += 1
+                if painted >= cap:
+                    break
+            if painted >= cap:
+                break
+    return "\n".join("".join(r) for r in grid)
 
 
 def format_observation_as_chat(
@@ -652,6 +712,19 @@ def format_observation_as_chat(
         lines.extend(_e1_spatial_belief_block(state, structured))
     lines.append("=== MAP ===")
     map_view = structured.map_view
+    # Wave-3 Track C v2 (variant E2): paint '?' over truly-unseen tiles
+    # adjacent to each frontier, directly on the map. Done BEFORE compaction
+    # so glyph-RLE still applies to floor/corridor runs.
+    if state is not None and state.get("_e2_obs"):
+        try:
+            from nethack_core.pathfinding import find_frontiers
+            raw = state.get("raw_obs")
+            chars = getattr(raw, "chars", None) if raw is not None else None
+            if chars is not None:
+                frontiers = find_frontiers(chars)
+                map_view = _paint_frontiers_on_map(map_view, chars, frontiers)
+        except Exception:
+            pass
     if compact:
         map_view = _strip_blank_rows(map_view)
         map_view = _glyph_run_encode(map_view)
@@ -1098,6 +1171,11 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         # Wave-3 Track C: surface frontiers + coverage + spatial belief to the
         # model. Gates the four new obs blocks in format_observation_as_chat.
         state["_e1_obs"] = self.variant == "E1"
+        # Wave-3 Track C v2: paint frontier-adjacent unseen tiles with '?'
+        # directly on the map; no text blocks. E2 is the recommended successor
+        # to E1 — same intent (surface frontiers to the model), but in the
+        # glyph layout instead of as a separate coordinate listing.
+        state["_e2_obs"] = self.variant == "E2"
         state["last_reward"] = 0.0
         state["terminated"] = False
         state["journal"] = Journal()

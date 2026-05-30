@@ -188,6 +188,19 @@ VARIANTS: dict[str, Variant] = {
         },
         notes="Karten et al., 2026. Periodic self-refinement turn directives.",
     ),
+    "E2": Variant(
+        name="E2",
+        description="Wave-3: NetPlay skills + paint frontier-adjacent unseen tiles with '?' on the map (no text blocks)",
+        env_args={
+            "variant": "E2",
+            "compact_obs": True,
+            "history_keep_full": 5,
+            "history_drop_after": 100,
+            "belief_state_interval": 25,
+            "skill_set": "move_to,autoexplore,find_and_descend,attack,descend,search,pickup,engrave_elbereth,pray,eat,quaff,read,add_note,recall,pin_objective,wiki_lookup,wiki_search,kick",
+        },
+        notes="Wave-3 successor to E1: spatial cue lives in the glyph grid, not a coordinate list. Wave-2 N vs E1 showed the text blocks didn't earn their token budget.",
+    ),
     "E1": Variant(
         name="E1",
         description="Wave-2: NetPlay skills + FRONTIERS/coverage/scout_delta blocks + memory-aware frontier blacklist",
