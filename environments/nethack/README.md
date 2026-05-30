@@ -70,6 +70,7 @@ A/B the observation surface without touching env internals; each is a single
 | `CH` | Continual Harness (full) | Teacher "Refiner" model edits prompt + sub-agents + skill macros + memory. |
 | `ND` | this repo | NetPlay skill set + a persistent `=== DESCENT STATUS ===` salience block. |
 | `FD` | this repo | `find_and_descend` autopilot skill surface + descent salience block. |
+| `E1` | this repo (Wave-3 C) | Surfaces `find_frontiers` output: `=== FRONTIERS ===` (top-5 nearest, with bearing + tile kind), `=== EXPLORATION ===` (coverage + per-turn scout delta), `=== SPATIAL BELIEF ===` (bearings + known stairs coords). Replaces the legacy descent-salience exhortation with pure spatial information. Skill-only + compacted obs (same as `N`). |
 
 **Findings so far** (preliminary, Qwen3.5-9B, seeds 22–26, 200-turn budget):
 the ASCII grid is load-bearing — `B` (no grid) collapses capability. Compaction

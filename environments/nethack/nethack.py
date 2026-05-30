@@ -391,6 +391,194 @@ def _descent_status_block(structured, state) -> list[str]:
     return out
 
 
+# ---------- Wave-3 / E1: frontier-surface obs blocks ----------
+
+# 8-compass bearings shared across the E1 blocks.
+_E1_BEARINGS = [
+    ("N",  0, -1),
+    ("NE", 1, -1),
+    ("E",  1,  0),
+    ("SE", 1,  1),
+    ("S",  0,  1),
+    ("SW", -1, 1),
+    ("W", -1,  0),
+    ("NW", -1, -1),
+]
+
+
+def _e1_bearing(dx: int, dy: int) -> str:
+    """Quantize (dx, dy) to one of 8 compass bearings. Uses atan2-style
+    bucketing — cheap and deterministic. Returns "@" when dx == dy == 0."""
+    if dx == 0 and dy == 0:
+        return "@"
+    # Choose the bearing whose unit vector has the highest dot product with
+    # the (dx, dy) heading. Equivalent to nearest-octant in 22.5° buckets.
+    import math
+    best = None
+    best_dot = -1e9
+    norm = math.hypot(dx, dy) or 1.0
+    ux, uy = dx / norm, dy / norm
+    for name, bx, by in _E1_BEARINGS:
+        bnorm = math.hypot(bx, by) or 1.0
+        dot = (ux * (bx / bnorm)) + (uy * (by / bnorm))
+        if dot > best_dot:
+            best_dot = dot
+            best = name
+    return best or "?"
+
+
+def _e1_classify_frontier(chars, x: int, y: int) -> str:
+    """One-word frontier-tile classifier. Reads the rendered glyph; falls
+    back to 'tile' on anything exotic."""
+    try:
+        ch = chr(int(chars[y, x]))
+    except Exception:
+        return "tile"
+    if ch == "#":
+        return "corridor"
+    if ch == ".":
+        return "room edge"
+    if ch == "<":
+        return "stairs up"
+    if ch == ">":
+        return "stairs down"
+    if ch in "+'":
+        return "doorway"
+    return "tile"
+
+
+def _e1_frontiers_block(state) -> list[str]:
+    """Render the 3-5 nearest unexplored frontiers (Wave-3 Track C).
+
+    Surfaces the output of nethack_core.pathfinding.find_frontiers — which
+    the harness already computes for autoexplore — to the model. The
+    "(no frontiers ...)" fallback directly cues the search skill, which
+    is the documented out for sealed-room rollouts.
+    """
+    if not state or "raw_obs" not in state:
+        return []
+    try:
+        from nethack_core.pathfinding import find_frontiers
+        raw = state["raw_obs"]
+        chars = getattr(raw, "chars", None)
+        if chars is None:
+            return []
+        blstats = getattr(raw, "blstats", None)
+        if blstats is None:
+            return []
+        px, py = int(blstats[0]), int(blstats[1])
+        frontiers = find_frontiers(chars)
+    except Exception:
+        return []
+
+    out: list[str] = ["=== FRONTIERS ==="]
+    if not frontiers:
+        out.append("(no frontiers — try `search` for hidden passages)")
+        out.append("")
+        return out
+
+    # Sort by Chebyshev distance from the agent (matches the A* heuristic
+    # used by autoexplore). Cap at 5; cap line length at ~60 chars.
+    scored = []
+    for (fx, fy) in frontiers:
+        d = max(abs(fx - px), abs(fy - py))
+        scored.append((d, fx, fy))
+    scored.sort(key=lambda t: t[0])
+    for (d, fx, fy) in scored[:5]:
+        bearing = _e1_bearing(fx - px, fy - py)
+        kind = _e1_classify_frontier(chars, fx, fy)
+        line = f"({fx}, {fy})  ~{d} steps {bearing}  — {kind}"
+        if len(line) > 60:
+            line = line[:57] + "..."
+        out.append(line)
+    out.append("")
+    return out
+
+
+def _e1_exploration_block(state, structured) -> list[str]:
+    """Coverage + progress-delta indicator (Wave-3 Track C).
+
+    Surfaces scout_tiles_seen (cumulative tiles revealed on the current
+    dlvl) and scout_delta (newly revealed this turn). Persistent 0-delta
+    is the oscillation signature we want the model to recognize and
+    correct (by switching skills / picking a different frontier).
+    """
+    if not state:
+        return []
+    out: list[str] = []
+    try:
+        dlvl = state.get("max_dlvl_reached", 1)
+        # scout_tiles_seen is keyed by (dlvl, x, y); filter to current dlvl.
+        tiles = state.get("scout_tiles_seen") or set()
+        cur_tiles = sum(1 for k in tiles if isinstance(k, tuple) and len(k) == 3 and k[0] == dlvl)
+    except Exception:
+        cur_tiles = 0
+    # Count frontiers cheaply (re-uses the find_frontiers call cost; if
+    # this becomes a hotspot we can memoize). On most maps len(frontiers)
+    # is tiny (<20) so the extra walk is fine.
+    n_frontiers = 0
+    try:
+        if "raw_obs" in state:
+            from nethack_core.pathfinding import find_frontiers
+            chars = getattr(state["raw_obs"], "chars", None)
+            if chars is not None:
+                n_frontiers = len(find_frontiers(chars))
+    except Exception:
+        pass
+    line = f"Explored: {cur_tiles} tiles, {n_frontiers} frontiers open"
+    delta = state.get("scout_delta")
+    if delta is None:
+        line += " — turn 0 (no delta yet)"
+    elif delta > 0:
+        line += f" — revealed {int(delta)} new tiles"
+    else:
+        line += " — revealed 0 — retreading"
+    out.append("=== EXPLORATION ===")
+    out.append(line)
+    out.append("")
+    return out
+
+
+def _e1_spatial_belief_block(state, structured) -> list[str]:
+    """Replacement for the legacy descent-salience block (Wave-3 Track C).
+
+    Instead of exhorting "descend now!", emit a compact spatial belief:
+    bearings to the nearest 3 unexplored frontiers + any known
+    stairs-down coordinates. Pure information — no nagging.
+    """
+    if not state:
+        return []
+    out: list[str] = ["=== SPATIAL BELIEF ==="]
+    try:
+        from nethack_core.pathfinding import find_frontiers
+        raw = state.get("raw_obs")
+        chars = getattr(raw, "chars", None) if raw is not None else None
+        blstats = getattr(raw, "blstats", None) if raw is not None else None
+        if chars is not None and blstats is not None:
+            px, py = int(blstats[0]), int(blstats[1])
+            frontiers = find_frontiers(chars)
+            if frontiers:
+                scored = sorted(
+                    ((max(abs(fx - px), abs(fy - py)), fx, fy) for (fx, fy) in frontiers),
+                    key=lambda t: t[0],
+                )[:3]
+                bearings = ", ".join(f"{_e1_bearing(fx - px, fy - py)}~{d}" for d, fx, fy in scored)
+                out.append(f"Unexplored bearings: {bearings}")
+            else:
+                out.append("Unexplored bearings: none (level fully revealed)")
+    except Exception:
+        pass
+    seen = state.get("_seen_stairs_down") or set()
+    if seen:
+        # Cap at 3 coords to keep the line short.
+        coords = ", ".join(f"({x},{y})" for (x, y) in list(seen)[:3])
+        out.append(f"Known stairs DOWN: {coords}")
+    else:
+        out.append("Known stairs DOWN: none yet")
+    out.append("")
+    return out
+
+
 _VARIANT_FORMATTERS = {
     # variant code -> formatter callable, or None to use the canonical formatter
     "B1": None,
@@ -405,6 +593,10 @@ _VARIANT_FORMATTERS = {
     # block is injected via state["_descent_salient"] (set in setup_state).
     "ND": None,        # NetPlay skill set + descent-salience block + clock warning
     "FD": None,        # find_and_descend autopilot: minimal skill set + salience block
+    # Wave-3 Track C: frontier-surface obs. Canonical formatter; the four
+    # new blocks (FRONTIERS, EXPLORATION, SPATIAL BELIEF, status delta) are
+    # gated on state["_e1_obs"] (set in setup_state when variant == "E1").
+    "E1": None,
 }
 
 
@@ -449,6 +641,15 @@ def format_observation_as_chat(
     # Wave-2: descent-salience block (variants ND/FD). Placed immediately after
     # the journal/objective so it's the first concrete thing the model reads.
     lines.extend(_descent_status_block(structured, state))
+    # Wave-3 Track C (variant E1): frontier + coverage + spatial-belief
+    # blocks. Gated on state["_e1_obs"] so the legacy variants stay
+    # bit-identical. The SPATIAL BELIEF block REPLACES (does not augment)
+    # the legacy descent-salience block — but E1 sets _descent_salient=False
+    # in setup_state, so the call above is a no-op for E1.
+    if state is not None and state.get("_e1_obs"):
+        lines.extend(_e1_frontiers_block(state))
+        lines.extend(_e1_exploration_block(state, structured))
+        lines.extend(_e1_spatial_belief_block(state, structured))
     lines.append("=== MAP ===")
     map_view = structured.map_view
     if compact:
@@ -880,6 +1081,9 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         # the descent-focused variants (ND/FD) discovered after the wave-1
         # diagnosis showed failures = "never reveal `>`, wander, starve".
         state["_descent_salient"] = self.variant in ("ND", "FD")
+        # Wave-3 Track C: surface frontiers + coverage + spatial belief to the
+        # model. Gates the four new obs blocks in format_observation_as_chat.
+        state["_e1_obs"] = self.variant == "E1"
         state["last_reward"] = 0.0
         state["terminated"] = False
         state["journal"] = Journal()
