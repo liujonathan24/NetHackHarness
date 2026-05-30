@@ -244,7 +244,35 @@ def main() -> int:
                         "experiments/results/<tag>_summary.md.")
     p.add_argument("--tag-base", default="experiments/results",
                    help="Base dir for tagged artifacts. Default: experiments/results")
+    p.add_argument("--descent-table", action="store_true",
+                   help="Treat the two positional paths as hosted-eval sample dumps "
+                        "(prime eval get --output json) and emit a Wave-3 descent-rate "
+                        "comparison table with Wilson CIs and a failure-mode breakdown.")
+    p.add_argument("--trace-dir-a", default=None,
+                   help="Optional local trace_dir for samples A (NDJSON per rollout). "
+                        "Improves failure-mode classification.")
+    p.add_argument("--trace-dir-b", default=None,
+                   help="Optional local trace_dir for samples B.")
     args = p.parse_args()
+
+    if args.descent_table:
+        if len(args.paths) != 2:
+            print("--descent-table needs exactly two hosted-eval JSON paths", file=sys.stderr)
+            return 1
+        from tools.eval_instrument import (
+            load_hosted_eval_samples, attach_local_traces, comparison_table,
+        )
+        path_a, path_b = args.paths
+        sa = load_hosted_eval_samples(path_a)
+        sb = load_hosted_eval_samples(path_b)
+        if args.trace_dir_a:
+            attach_local_traces(sa, args.trace_dir_a)
+        if args.trace_dir_b:
+            attach_local_traces(sb, args.trace_dir_b)
+        label_a = args.label_a or Path(path_a).stem
+        label_b = args.label_b or Path(path_b).stem
+        print(comparison_table(label_a, sa, label_b, sb))
+        return 0
 
     # Tagged aggregation path: short-circuits pairwise compare.
     if args.tag:
