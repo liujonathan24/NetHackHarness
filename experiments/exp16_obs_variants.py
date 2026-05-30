@@ -188,6 +188,20 @@ VARIANTS: dict[str, Variant] = {
         },
         notes="Karten et al., 2026. Periodic self-refinement turn directives.",
     ),
+    "E1": Variant(
+        name="E1",
+        description="Wave-2: NetPlay skills + FRONTIERS/coverage/scout_delta blocks + memory-aware frontier blacklist",
+        env_args={
+            "variant": "E1",          # enables FRONTIERS, EXPLORATION, SPATIAL BELIEF blocks; salience nag OFF
+            "compact_obs": True,
+            "history_keep_full": 5,
+            "history_drop_after": 100,
+            "belief_state_interval": 25,
+            # Same curated skill whitelist as N — isolates the obs/detection delta.
+            "skill_set": "move_to,autoexplore,find_and_descend,attack,descend,search,pickup,engrave_elbereth,pray,eat,quaff,read,add_note,recall,pin_objective,wiki_lookup,wiki_search,kick",
+        },
+        notes="Wave-2: surfaces existing pathfinding state to the model + tightened frontier detection + visited-frontier blacklist.",
+    ),
     "CH": Variant(
         name="CH",
         description="Continual Harness FULL (arXiv:2605.09998): teacher Refiner edits prompt+subagents+skills+memory",
