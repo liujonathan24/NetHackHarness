@@ -314,6 +314,271 @@ def _format_obs_summarize_reset(structured, journal, state, journal_max_chars: i
     )
 
 
+def _descent_status_block(structured, state) -> list[str]:
+    """Wave-2 descent-salience block. Diagnosis (see experiment_log.md Wave-2):
+    in EVERY failing rollout the down-stairs `>` never appeared in VISIBLE
+    FEATURES — the agent wandered/oscillated around the starting room for
+    300-1900 game-turns and DIED (usually starvation while Fainting). Runs
+    that descended did so in <65 game-turns. So the dominant failure is
+    "never reveal/reach `>`, then starve."
+
+    This block makes the descent objective and the time-pressure impossible
+    to miss, every turn. It is gated on state["_descent_salient"] (set for
+    variants ND/FD) so the baselines are unaffected.
+
+    Emits one of:
+      DOWNSTAIRS: VISIBLE at (x,y) — call find_and_descend NOW to path there
+                  and descend in one action.
+      DOWNSTAIRS: not found yet — call find_and_descend to explore toward
+                  unrevealed territory (it auto-paths to `>` the moment it is
+                  seen). Avoid repeated search/pickup; they burn game-turns.
+    Plus a level-clock warning once the in-game turn count on the current
+    level grows large (starvation territory).
+    """
+    if not state or not state.get("_descent_salient"):
+        return []
+    out: list[str] = []
+    stairs_xy = None
+    try:
+        from nethack_core.observations import extract_visible_features
+        feats = extract_visible_features(state["raw_obs"].tty_chars)
+        for f in feats:
+            if f.startswith("stairs DOWN at "):
+                m = re.search(r"\((\d+),(\d+)\)", f)
+                if m:
+                    stairs_xy = (int(m.group(1)), int(m.group(2)))
+                break
+    except Exception:
+        pass
+    # Memoized stairs (player may be standing on them, hiding the glyph).
+    if stairs_xy is None and state.get("_seen_stairs_down"):
+        try:
+            px = int(structured.status.get("x", -1))
+            py = int(structured.status.get("y", -1))
+            if (px, py) in state["_seen_stairs_down"]:
+                stairs_xy = (px, py)
+        except Exception:
+            pass
+        if stairs_xy is None:
+            stairs_xy = next(iter(state["_seen_stairs_down"]))
+    out.append("=== DESCENT STATUS ===")
+    if stairs_xy is not None:
+        out.append(
+            f"DOWNSTAIRS: VISIBLE at {stairs_xy}. Your goal is to descend. "
+            f"Call `find_and_descend` NOW — it paths to `>` and descends in "
+            f"one action. (Or `descend` if you are already standing on it.)"
+        )
+    else:
+        out.append(
+            "DOWNSTAIRS: not found yet on this level. Call `find_and_descend` "
+            "to push exploration into unrevealed territory; it auto-walks to "
+            "`>` and descends the instant the stairs are seen. Do NOT "
+            "loop on `search`/`pickup` — every wasted turn risks starvation."
+        )
+    # Level clock: NLE in-game turn counter. Starvation deaths in the failing
+    # runs clustered at T:600-1900. Warn early so the agent prioritizes descent.
+    try:
+        t = int(structured.status.get("time", 0))
+        if t >= 250:
+            out.append(
+                f"CLOCK: {t} in-game turns elapsed and still on Dlvl "
+                f"{structured.status.get('depth','?')}. You are taking too "
+                f"long — descend before hunger kills you."
+            )
+    except Exception:
+        pass
+    out.append("")
+    return out
+
+
+# ---------- Wave-3 / E1: frontier-surface obs blocks ----------
+
+# 8-compass bearings shared across the E1 blocks.
+_E1_BEARINGS = [
+    ("N",  0, -1),
+    ("NE", 1, -1),
+    ("E",  1,  0),
+    ("SE", 1,  1),
+    ("S",  0,  1),
+    ("SW", -1, 1),
+    ("W", -1,  0),
+    ("NW", -1, -1),
+]
+
+
+def _e1_bearing(dx: int, dy: int) -> str:
+    """Quantize (dx, dy) to one of 8 compass bearings. Uses atan2-style
+    bucketing — cheap and deterministic. Returns "@" when dx == dy == 0."""
+    if dx == 0 and dy == 0:
+        return "@"
+    # Choose the bearing whose unit vector has the highest dot product with
+    # the (dx, dy) heading. Equivalent to nearest-octant in 22.5° buckets.
+    import math
+    best = None
+    best_dot = -1e9
+    norm = math.hypot(dx, dy) or 1.0
+    ux, uy = dx / norm, dy / norm
+    for name, bx, by in _E1_BEARINGS:
+        bnorm = math.hypot(bx, by) or 1.0
+        dot = (ux * (bx / bnorm)) + (uy * (by / bnorm))
+        if dot > best_dot:
+            best_dot = dot
+            best = name
+    return best or "?"
+
+
+def _e1_classify_frontier(chars, x: int, y: int) -> str:
+    """One-word frontier-tile classifier. Reads the rendered glyph; falls
+    back to 'tile' on anything exotic."""
+    try:
+        ch = chr(int(chars[y, x]))
+    except Exception:
+        return "tile"
+    if ch == "#":
+        return "corridor"
+    if ch == ".":
+        return "room edge"
+    if ch == "<":
+        return "stairs up"
+    if ch == ">":
+        return "stairs down"
+    if ch in "+'":
+        return "doorway"
+    return "tile"
+
+
+def _e1_frontiers_block(state) -> list[str]:
+    """Render the 3-5 nearest unexplored frontiers (Wave-3 Track C).
+
+    Surfaces the output of nethack_core.pathfinding.find_frontiers — which
+    the harness already computes for autoexplore — to the model. The
+    "(no frontiers ...)" fallback directly cues the search skill, which
+    is the documented out for sealed-room rollouts.
+    """
+    if not state or "raw_obs" not in state:
+        return []
+    try:
+        from nethack_core.pathfinding import find_frontiers
+        raw = state["raw_obs"]
+        chars = getattr(raw, "chars", None)
+        if chars is None:
+            return []
+        blstats = getattr(raw, "blstats", None)
+        if blstats is None:
+            return []
+        px, py = int(blstats[0]), int(blstats[1])
+        frontiers = find_frontiers(chars)
+    except Exception:
+        return []
+
+    out: list[str] = ["=== FRONTIERS ==="]
+    if not frontiers:
+        out.append("(no frontiers — try `search` for hidden passages)")
+        out.append("")
+        return out
+
+    # Sort by Chebyshev distance from the agent (matches the A* heuristic
+    # used by autoexplore). Cap at 5; cap line length at ~60 chars.
+    scored = []
+    for (fx, fy) in frontiers:
+        d = max(abs(fx - px), abs(fy - py))
+        scored.append((d, fx, fy))
+    scored.sort(key=lambda t: t[0])
+    for (d, fx, fy) in scored[:5]:
+        bearing = _e1_bearing(fx - px, fy - py)
+        kind = _e1_classify_frontier(chars, fx, fy)
+        line = f"({fx}, {fy})  ~{d} steps {bearing}  — {kind}"
+        if len(line) > 60:
+            line = line[:57] + "..."
+        out.append(line)
+    out.append("")
+    return out
+
+
+def _e1_exploration_block(state, structured) -> list[str]:
+    """Coverage + progress-delta indicator (Wave-3 Track C).
+
+    Surfaces scout_tiles_seen (cumulative tiles revealed on the current
+    dlvl) and scout_delta (newly revealed this turn). Persistent 0-delta
+    is the oscillation signature we want the model to recognize and
+    correct (by switching skills / picking a different frontier).
+    """
+    if not state:
+        return []
+    out: list[str] = []
+    try:
+        dlvl = state.get("max_dlvl_reached", 1)
+        # scout_tiles_seen is keyed by (dlvl, x, y); filter to current dlvl.
+        tiles = state.get("scout_tiles_seen") or set()
+        cur_tiles = sum(1 for k in tiles if isinstance(k, tuple) and len(k) == 3 and k[0] == dlvl)
+    except Exception:
+        cur_tiles = 0
+    # Count frontiers cheaply (re-uses the find_frontiers call cost; if
+    # this becomes a hotspot we can memoize). On most maps len(frontiers)
+    # is tiny (<20) so the extra walk is fine.
+    n_frontiers = 0
+    try:
+        if "raw_obs" in state:
+            from nethack_core.pathfinding import find_frontiers
+            chars = getattr(state["raw_obs"], "chars", None)
+            if chars is not None:
+                n_frontiers = len(find_frontiers(chars))
+    except Exception:
+        pass
+    line = f"Explored: {cur_tiles} tiles, {n_frontiers} frontiers open"
+    delta = state.get("scout_delta")
+    if delta is None:
+        line += " — turn 0 (no delta yet)"
+    elif delta > 0:
+        line += f" — revealed {int(delta)} new tiles"
+    else:
+        line += " — revealed 0 — retreading"
+    out.append("=== EXPLORATION ===")
+    out.append(line)
+    out.append("")
+    return out
+
+
+def _e1_spatial_belief_block(state, structured) -> list[str]:
+    """Replacement for the legacy descent-salience block (Wave-3 Track C).
+
+    Instead of exhorting "descend now!", emit a compact spatial belief:
+    bearings to the nearest 3 unexplored frontiers + any known
+    stairs-down coordinates. Pure information — no nagging.
+    """
+    if not state:
+        return []
+    out: list[str] = ["=== SPATIAL BELIEF ==="]
+    try:
+        from nethack_core.pathfinding import find_frontiers
+        raw = state.get("raw_obs")
+        chars = getattr(raw, "chars", None) if raw is not None else None
+        blstats = getattr(raw, "blstats", None) if raw is not None else None
+        if chars is not None and blstats is not None:
+            px, py = int(blstats[0]), int(blstats[1])
+            frontiers = find_frontiers(chars)
+            if frontiers:
+                scored = sorted(
+                    ((max(abs(fx - px), abs(fy - py)), fx, fy) for (fx, fy) in frontiers),
+                    key=lambda t: t[0],
+                )[:3]
+                bearings = ", ".join(f"{_e1_bearing(fx - px, fy - py)}~{d}" for d, fx, fy in scored)
+                out.append(f"Unexplored bearings: {bearings}")
+            else:
+                out.append("Unexplored bearings: none (level fully revealed)")
+    except Exception:
+        pass
+    seen = state.get("_seen_stairs_down") or set()
+    if seen:
+        # Cap at 3 coords to keep the line short.
+        coords = ", ".join(f"({x},{y})" for (x, y) in list(seen)[:3])
+        out.append(f"Known stairs DOWN: {coords}")
+    else:
+        out.append("Known stairs DOWN: none yet")
+    out.append("")
+    return out
+
+
 _VARIANT_FORMATTERS = {
     # variant code -> formatter callable, or None to use the canonical formatter
     "B1": None,
@@ -323,6 +588,15 @@ _VARIANT_FORMATTERS = {
     "N": None,         # NetPlay differs only in skill_set, not in obs formatter
     "R": _format_obs_summarize_reset,
     "P": None,         # Continual Harness uses canonical formatter + refinement directive
+    "CH": None,        # Full Continual Harness — same formatter; addendum/macros injected in get_prompt_messages
+    # Wave-2 descent variants share the canonical formatter; the descent-salience
+    # block is injected via state["_descent_salient"] (set in setup_state).
+    "ND": None,        # NetPlay skill set + descent-salience block + clock warning
+    "FD": None,        # find_and_descend autopilot: minimal skill set + salience block
+    # Wave-3 Track C: frontier-surface obs. Canonical formatter; the four
+    # new blocks (FRONTIERS, EXPLORATION, SPATIAL BELIEF, status delta) are
+    # gated on state["_e1_obs"] (set in setup_state when variant == "E1").
+    "E1": None,
 }
 
 
@@ -364,6 +638,18 @@ def format_observation_as_chat(
         if state is not None:
             state["_journal_fingerprint"] = cur_fp
         lines.append("")
+    # Wave-2: descent-salience block (variants ND/FD). Placed immediately after
+    # the journal/objective so it's the first concrete thing the model reads.
+    lines.extend(_descent_status_block(structured, state))
+    # Wave-3 Track C (variant E1): frontier + coverage + spatial-belief
+    # blocks. Gated on state["_e1_obs"] so the legacy variants stay
+    # bit-identical. The SPATIAL BELIEF block REPLACES (does not augment)
+    # the legacy descent-salience block — but E1 sets _descent_salient=False
+    # in setup_state, so the call above is a no-op for E1.
+    if state is not None and state.get("_e1_obs"):
+        lines.extend(_e1_frontiers_block(state))
+        lines.extend(_e1_exploration_block(state, structured))
+        lines.extend(_e1_spatial_belief_block(state, structured))
     lines.append("=== MAP ===")
     map_view = structured.map_view
     if compact:
@@ -702,6 +988,15 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         # or the agent ascends.
         continual: bool = False,
         continual_lives: int = 5,
+        # Variant CH (Continual Harness, arXiv:2605.09998) full Refiner.
+        # `refiner` is a pluggable object satisfying nethack_core.refiner.Refiner;
+        # when None and variant=="CH", we build a TeacherLLMRefiner from
+        # refiner_model (or fall back to OfflineRefiner). bootstrap_dir, if set,
+        # is used to persist/load the four CH components (prompt addendum,
+        # sub-agents, skills, journal) across rollouts.
+        refiner: Any = None,
+        refiner_model: Optional[str] = None,
+        bootstrap_dir: Optional[str] = None,
         **kwargs,
     ):
         self.interface = interface
@@ -725,6 +1020,23 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         self.trace_dir = trace_dir
         self.continual = continual
         self.continual_lives = continual_lives
+        self.bootstrap_dir = bootstrap_dir
+        # Lazy: only build a refiner when variant=="CH" actually selected, so
+        # other variants don't pull in API clients.
+        self.refiner = refiner
+        self.refiner_model = refiner_model
+        if variant == "CH" and self.refiner is None:
+            from nethack_core.refiner import OfflineRefiner, TeacherLLMRefiner
+            if refiner_model:
+                self.refiner = TeacherLLMRefiner(model=refiner_model)
+            else:
+                import warnings
+                warnings.warn(
+                    "variant=CH selected without refiner_model; falling back to "
+                    "OfflineRefiner (no-op). Set refiner_model to enable real "
+                    "refinement.", stacklevel=2,
+                )
+                self.refiner = OfflineRefiner()
         super().__init__(*args, **kwargs)
 
     async def setup_state(self, state: vf.State) -> vf.State:
@@ -765,9 +1077,36 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         # extract_visible_features stops finding the tile — without memory,
         # the agent oscillates on/off the stairs without realizing to descend.
         state["_seen_stairs_down"] = set()
+        # Wave-2 Track B: visited-frontier memory. Tracks (level_key, (x,y)) →
+        # consecutive turns the agent has been within 1 step of this frontier
+        # without scout_delta > 0. When the count hits FRONTIER_STUCK_TURNS,
+        # the frontier is blacklisted on its level. Blacklist resets on level
+        # change (we key by max_dlvl_reached at sighting time). Cleared by
+        # `_update_frontier_blacklist` each turn.
+        state["_frontier_approach_count"] = {}  # (dlvl, x, y) -> int
+        state["_frontier_blacklist"] = {}       # dlvl -> set[(x, y)]
+        state["_frontier_prev_dlvl"] = 1
+        # Deadlock-breaker flag (Track C reads this; we only set it). Becomes
+        # True when all reachable frontiers on the current level are
+        # blacklisted AND scout_delta has been 0 for >= NEEDS_HIDDEN_TURNS.
+        state["_needs_hidden_passage"] = False
+        state["_zero_scout_streak"] = 0
+        # Wave-2: descent-salience flag drives _descent_status_block. Enabled for
+        # the descent-focused variants (ND/FD) discovered after the wave-1
+        # diagnosis showed failures = "never reveal `>`, wander, starve".
+        state["_descent_salient"] = self.variant in ("ND", "FD")
+        # Wave-3 Track C: surface frontiers + coverage + spatial belief to the
+        # model. Gates the four new obs blocks in format_observation_as_chat.
+        state["_e1_obs"] = self.variant == "E1"
         state["last_reward"] = 0.0
         state["terminated"] = False
         state["journal"] = Journal()
+        # Variant CH (Continual Harness) component slots. Always initialized so
+        # downstream code can read them unconditionally; only populated when
+        # variant=="CH" and the Refiner runs (or bootstrap_dir loads them).
+        state["_ch_prompt_addendum"] = ""
+        state["_ch_subagents"] = {}
+        state["_ch_skills"] = {}
         # Pre-pin the tier's description as the agent's objective so the
         # goal stays in every obs (without forcing the model to call
         # pin_objective). For dynamic_subgoal, the proposer pin below
@@ -798,6 +1137,19 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
             }
             # Pin the objective into the journal so the agent sees it.
             state["journal"].pin_objective(subgoal.objective)
+
+        # Bootstrap I/O for variant=CH: if bootstrap_dir is set and a prior
+        # snapshot exists for this seed, load the four components in.
+        if self.variant == "CH" and self.bootstrap_dir:
+            try:
+                import os, json
+                path = os.path.join(self.bootstrap_dir, f"seed{seed}.json")
+                if os.path.exists(path):
+                    from nethack_core.refiner import load_components
+                    with open(path) as f:
+                        load_components(state, json.load(f))
+            except Exception:
+                pass  # bootstrap failures must never break a rollout
 
         return state
 
@@ -866,10 +1218,46 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
             skill_args = {"direction": _DIR_BIND[skill_name]}
             skill_name = "move"
 
+        # Variant CH: `run_macro(name=...)` expands a Refiner-registered
+        # macro (an ordered list of existing skill calls) into a concatenated
+        # SkillResult. Resolution happens here, BEFORE the registry dispatch
+        # below, so the rest of env_response sees a normal SkillResult.
+        if skill_name == "run_macro":
+            from nethack_core.skills import SkillResult as _SR
+            macro_name = (skill_args or {}).get("name", "")
+            macro = (state.get("_ch_skills") or {}).get(macro_name)
+            if not macro:
+                result = _SR(actions=[], feedback=f"Unknown macro: {macro_name!r}", interrupted=True)
+            else:
+                actions_acc: list = []
+                fb_parts: list[str] = []
+                interrupted = False
+                for step_def in macro:
+                    sub_name = step_def.get("skill")
+                    sub_args = dict(step_def.get("args") or {})
+                    if not sub_name:
+                        continue
+                    sub_res = skill_registry.call(sub_name, env, state["structured_obs"], **sub_args)
+                    if sub_res.journal_op is not None:
+                        try:
+                            sub_res.journal_op(state["journal"])
+                        except Exception:
+                            pass
+                    actions_acc.extend(sub_res.actions)
+                    if sub_res.feedback:
+                        fb_parts.append(f"{sub_name}: {sub_res.feedback}")
+                    if sub_res.interrupted:
+                        interrupted = True
+                        break
+                result = _SR(
+                    actions=actions_acc,
+                    feedback=f"[macro:{macro_name}] " + " | ".join(fb_parts),
+                    interrupted=interrupted,
+                )
         # Code-mode dispatch: if the model called the `code` tool, run the
         # source against the nh namespace and convert its action queue into
         # a SkillResult shape so the rest of env_response can stay unchanged.
-        if self.interface == "code" and skill_name == "code":
+        elif self.interface == "code" and skill_name == "code":
             from nethack_core.code_mode import run_user_code
             from nethack_core.skills import SkillResult
             source = skill_args.get("source", "")
@@ -1014,6 +1402,10 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
             halt_reason = halt_reason.lstrip()
         state["last_reward"] = total_reward
         state["terminated"] = terminated or truncated
+        # Variant CH: on terminal, persist the refined components for the
+        # next rollout (if bootstrap_dir is configured).
+        if state["terminated"] and self.variant == "CH":
+            _ch_save_bootstrap(self, state)
         # Continual harness mode: if the agent died (not ascended), and lives
         # remain, auto-reseed and reset the NLE env so the chat session
         # continues into a new game. Journal + belief state survive across
@@ -1064,6 +1456,12 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
             state["descent_count"] = state.get("descent_count", 0) + (new_dlvl - state["max_dlvl_reached"])
             state["max_dlvl_reached"] = new_dlvl  # update AFTER computing the level delta
 
+        # Wave-2 Track B: update visited-frontier memory + deadlock flag.
+        try:
+            _update_frontier_blacklist(state)
+        except Exception:
+            pass
+
         state["turn_count"] = state.get("turn_count", 0) + 1
         if self.belief_state_interval > 0 and state["turn_count"] > 0 and state["turn_count"] % self.belief_state_interval == 0:
             _maybe_belief_state_summary(state)
@@ -1112,6 +1510,113 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
                             result = _SR(actions=result.actions, feedback=outcome, interrupted=result.interrupted)
             except (KeyError, IndexError, TypeError, AttributeError):
                 pass
+
+        # ---- Wave-2: position-stuck deadlock breaker -------------------
+        # Diagnosis (experiment_log.md Wave-2): exploration skills can wedge.
+        # A scripted `find_and_descend` loop on seed 22 froze at pos (63,6)
+        # with the in-game clock stuck at T:51 for 90+ turns: A* kept choosing
+        # a 1-step "far frontier" whose first step was a no-op (an adjacent
+        # closed/locked door `+` that walking-into does nothing). Real LM
+        # rollouts hit the same wedge and oscillate until they starve.
+        #
+        # Fix: when a movement/exploration skill leaves the player at the SAME
+        # (x,y) AND the in-game turn counter did not advance, count it. After
+        # 2 such no-progress calls, auto-KICK an adjacent closed door `+` to
+        # break the wedge (or, if none, surface a strong search-or-redirect
+        # hint). This runs for every variant — it's a pure correctness fix.
+        _EXPLORE_SKILLS = {"autoexplore", "find_and_descend", "move_to", "move"}
+        stuck_hint: Optional[str] = None
+        if skill_name in _EXPLORE_SKILLS and pre_pos is not None and not (terminated or truncated):
+            try:
+                post_blstats = last_obs.blstats if hasattr(last_obs, "blstats") else last_obs.get("blstats")
+                post_pos = (int(post_blstats[0]), int(post_blstats[1])) if post_blstats is not None else None
+            except (KeyError, IndexError, TypeError, AttributeError):
+                post_pos = None
+            # No-progress = the in-game clock did not advance. This catches both
+            # "bumped a wall" (pos same) AND the false-frontier oscillation
+            # (pos toggles between two adjacent corridor tiles whose only
+            # "unexplored" neighbor is actually solid rock, so the game clock
+            # never moves and no new tiles are revealed). Clock-frozen is the
+            # reliable signal: a real exploration step always advances T.
+            cur_time = state["structured_obs"].status.get("time")
+            prev_time = state.get("_last_stuck_time")
+            clock_frozen = (prev_time is not None and cur_time == prev_time)
+            # Also track revealed-tile count: if the scout set didn't grow,
+            # the call revealed nothing new.
+            no_new_tiles = state.get("scout_delta", 0) == 0
+            no_progress = clock_frozen and no_new_tiles
+            if no_progress:
+                state["_stuck_count"] = state.get("_stuck_count", 0) + 1
+            else:
+                state["_stuck_count"] = 0
+            state["_last_stuck_time"] = cur_time
+            if state.get("_stuck_count", 0) >= 2:
+                # Find an adjacent closed door `+` to kick.
+                adj = getattr(state["structured_obs"], "adjacent", None) or {}
+                door_dir = None
+                for d, tile in adj.items():
+                    if tile and (tile == "+" or tile.startswith("+")):
+                        door_dir = d
+                        break
+                if door_dir is not None:
+                    # Auto-kick: KICK command then the direction key. Step it.
+                    try:
+                        from nethack_core.skills import _DIRECTION_KEYS  # type: ignore
+                    except Exception:
+                        _DIRECTION_KEYS = None
+                    _DKEY = {"N": ord("k"), "S": ord("j"), "E": ord("l"), "W": ord("h"),
+                             "NE": ord("u"), "NW": ord("y"), "SE": ord("n"), "SW": ord("b")}
+                    from nle import nethack as _nh
+                    kick_cmd = int(_nh.Command.KICK)
+                    kick_seq = _to_action_indices(env, [kick_cmd]) + _to_action_indices(env, [_DKEY.get(door_dir, ord("."))])
+                    for ka in kick_seq:
+                        last_obs, _kr, kt, ktr, _ki = env.step(ka)
+                        terminated = terminated or kt
+                        truncated = truncated or ktr
+                        if terminated or truncated:
+                            break
+                    state["raw_obs"] = last_obs
+                    state["structured_obs"] = shape_observation(last_obs, state["character"])
+                    state["_stuck_count"] = 0
+                    stuck_hint = (
+                        f"[deadlock-breaker: stuck at {pre_pos}; auto-kicked the "
+                        f"closed door to {door_dir}. If it didn't open, kick again "
+                        f"or pick a different exploration target.]"
+                    )
+                else:
+                    # No door to kick and the level's visible frontiers are
+                    # all false (adjacent only to solid rock) — the genuine
+                    # exit is a HIDDEN passage. Auto-search in place to reveal
+                    # it, escalating count the longer we're wedged. NLE caps a
+                    # search run, so this is safe. This is what unwedges the
+                    # seed-22 corridor pocket (all frontiers border rock).
+                    from nle import nethack as _nh
+                    search_idx = _to_action_indices(env, [int(_nh.Command.SEARCH)])
+                    n_search = min(10 * state.get("_stuck_count", 2), 30)
+                    if search_idx:
+                        for _ in range(n_search):
+                            last_obs, _sr, stt, str_, _si = env.step(search_idx[0])
+                            terminated = terminated or stt
+                            truncated = truncated or str_
+                            if terminated or truncated:
+                                break
+                        state["raw_obs"] = last_obs
+                        state["structured_obs"] = shape_observation(last_obs, state["character"])
+                    state["_stuck_count"] = 0
+                    stuck_hint = (
+                        f"[deadlock-breaker: exploration wedged at {pre_pos} (all "
+                        f"reachable frontiers border solid rock). Auto-searched "
+                        f"{n_search}x for a hidden passage. If still no new exit, "
+                        f"`move_to` a DIFFERENT visible tile or `search` more — the "
+                        f"way down is likely behind a hidden wall.]"
+                    )
+            # If the auto-kick/search advanced the game state to a terminal
+            # outcome (e.g. starved mid-search), re-run detection so death is
+            # attributed and the rollout ends cleanly.
+            if terminated or truncated:
+                state["terminated"] = True
+                _detect_terminal_outcome(last_obs, state)
+        # ----------------------------------------------------------------
 
         # Autoexplore-loop detection: when autoexplore returns "short" feedback
         # repeatedly (frontier shrunk to 1-2 step paths near level edges), the
@@ -1165,6 +1670,53 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
             state["_refine_emitted_this_turn"] = True
         else:
             state["_refine_emitted_this_turn"] = False
+
+        # Variant CH (full Continual Harness): every refine_interval turns,
+        # call the configured Refiner, apply its CRUD edits to the four
+        # components (prompt addendum, sub-agents, skill macros, journal).
+        # Errors are logged and swallowed — losing a refinement window is
+        # fine; killing the rollout is not.
+        if (
+            self.variant == "CH"
+            and self.refiner is not None
+            and self.refine_interval > 0
+            and state.get("turn_count", 0) > 0
+            and state["turn_count"] % self.refine_interval == 0
+            and not state.get("_ch_refined_this_turn")
+        ):
+            try:
+                from nethack_core.refiner import snapshot_components, apply_edits
+                window = _ch_build_window(state.get("trajectory") or [], n_turns=self.refine_interval)
+                edits = self.refiner.refine(
+                    window=window,
+                    components=snapshot_components(state),
+                )
+                applied = apply_edits(state, edits)
+                state["_ch_last_edits"] = edits.to_trace_dict()
+                state["_ch_last_applied"] = applied
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning("CH refiner failed: %s", e)
+            state["_ch_refined_this_turn"] = True
+        else:
+            state["_ch_refined_this_turn"] = False
+            state.pop("_ch_last_edits", None)
+
+        # CH sub-agent triggers: prepend any directive whose trigger fires
+        # against the current structured_obs. Multiple subagents can fire
+        # in the same turn; we cap at 3 to bound prompt growth.
+        if self.variant == "CH" and state.get("_ch_subagents"):
+            from nethack_core.refiner import trigger_fires
+            fired = []
+            for name, spec in state["_ch_subagents"].items():
+                if trigger_fires(spec.get("trigger", ""), state.get("structured_obs")):
+                    fired.append(f"[subagent:{name}] {spec.get('text','')}")
+                    if len(fired) >= 3:
+                        break
+            if fired:
+                prefix_parts.extend(fired)
+        if stuck_hint:
+            prefix_parts.append(stuck_hint)
         if loop_hint:
             prefix_parts.append(loop_hint)
         if halt_reason:
@@ -1210,6 +1762,11 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
             # Variant R: drop everything prior to the most-recent belief
             # checkpoint. The belief state in the journal is the memory.
             messages = _drop_before_last_belief(messages, state)
+        # Variant CH: append the Refiner-edited prompt addendum + any
+        # registered macros to the system message so the agent sees them
+        # without re-rendering the whole prompt every turn.
+        if self.variant == "CH":
+            messages = _ch_inject_system(messages, state)
         return messages
 
     def update_tool_args(self, tool_args: dict, messages, state) -> dict:
@@ -1420,6 +1977,66 @@ def _refinement_directive(state: dict) -> str:
         f"text=...)` to record a short lesson. These calls do NOT consume a "
         f"game turn. If nothing needs updating, take your normal action."
     )
+
+
+def _ch_build_window(trajectory: list, n_turns: int) -> list[dict]:
+    """Slice the last `n_turns` of chat history into {role, content} dicts
+    for the Refiner. Handles both dict-shape and verifiers pydantic msgs."""
+    out: list[dict] = []
+    for msg in trajectory[-(2 * n_turns):]:
+        if isinstance(msg, dict):
+            role = msg.get("role", "?")
+            content = msg.get("content", "")
+        else:
+            role = getattr(msg, "role", "?")
+            content = getattr(msg, "content", "")
+        out.append({"role": role, "content": content if isinstance(content, str) else str(content)})
+    return out
+
+
+def _ch_inject_system(messages, state: dict):
+    """Append CH prompt addendum + macro list onto the system message."""
+    addendum = (state.get("_ch_prompt_addendum") or "").strip()
+    macros = state.get("_ch_skills") or {}
+    if not addendum and not macros:
+        return messages
+    extra_lines: list[str] = []
+    if addendum:
+        extra_lines.append("\n[continual-harness addendum]\n" + addendum)
+    if macros:
+        # Surface available macros so the agent can call run_macro(name=...).
+        macro_names = ", ".join(sorted(macros.keys()))
+        extra_lines.append(
+            f"\n[continual-harness macros] You may also call "
+            f"`run_macro(name=...)` with one of: {macro_names}."
+        )
+    extra = "".join(extra_lines)
+    out = list(messages)
+    for i, m in enumerate(out):
+        if _msg_role(m) == "system":
+            out[i] = _replace_content(m, _msg_content(m) + extra)
+            return out
+    # No system message found (shouldn't happen, dataset prepends one) —
+    # prepend a fresh system block.
+    out.insert(0, vf.SystemMessage(role="system", content=extra.lstrip()))
+    return out
+
+
+def _ch_save_bootstrap(env_self, state: dict) -> None:
+    """Persist the four CH components to <bootstrap_dir>/seed<N>.json on
+    terminal. Best-effort; never raises."""
+    try:
+        if not getattr(env_self, "bootstrap_dir", None):
+            return
+        import os, json
+        from nethack_core.refiner import snapshot_components
+        os.makedirs(env_self.bootstrap_dir, exist_ok=True)
+        seed = state.get("_orig_seed", 0)
+        path = os.path.join(env_self.bootstrap_dir, f"seed{seed}.json")
+        with open(path, "w") as f:
+            json.dump(snapshot_components(state), f, indent=2)
+    except Exception:
+        pass
 
 
 def _compact_chat_history(messages, keep_full: int = 5, drop_after: int = 100):
@@ -1759,6 +2376,86 @@ def _iterate_visible_tiles(obs):
             yield (x, y), bytes([int(chars[y, x])])
 
 
+# ----- Wave-2 Track B: visited-frontier memory + deadlock-breaker -----
+#
+# Knobs (kept module-level so tests can monkeypatch):
+FRONTIER_STUCK_TURNS = 3      # adjacency turns w/o new tiles before blacklist
+FRONTIER_APPROACH_RADIUS = 1  # Chebyshev distance counting as "approached"
+NEEDS_HIDDEN_TURNS = 5        # zero-scout streak that triggers needs-hidden
+
+
+def _update_frontier_blacklist(state: dict) -> None:
+    """Per-turn maintenance of the visited-frontier memory.
+
+    Rules:
+      * Reset blacklist + counters when max_dlvl_reached changes (per-level
+        memory is what we want — a "stuck" frontier on L1 isn't stuck on L2).
+      * Walk all current-level frontiers. For each frontier within
+        FRONTIER_APPROACH_RADIUS of the player, increment its consecutive
+        no-progress count iff `scout_delta == 0` this turn. Any turn that
+        revealed new tiles resets all counts (we're making progress somehow).
+      * When a frontier's count hits FRONTIER_STUCK_TURNS, add it to the
+        per-level blacklist.
+      * Set `_needs_hidden_passage` when every reachable frontier is
+        blacklisted AND we've had `_zero_scout_streak >= NEEDS_HIDDEN_TURNS`.
+        Cleared when scout_delta > 0 (the search/kick worked).
+
+    Track C reads `state["_needs_hidden_passage"]`; we only set it here.
+    """
+    from nethack_core.pathfinding import find_frontiers
+    raw = state.get("raw_obs")
+    if raw is None or not hasattr(raw, "chars") or not hasattr(raw, "blstats"):
+        return
+    chars = raw.chars
+    blstats = raw.blstats
+    px, py = int(blstats[0]), int(blstats[1])
+    cur_dlvl = int(state.get("max_dlvl_reached", 1))
+    prev_dlvl = state.get("_frontier_prev_dlvl", cur_dlvl)
+    if cur_dlvl != prev_dlvl:
+        # Level changed — clear per-level state and exit.
+        state["_frontier_approach_count"] = {}
+        state["_frontier_blacklist"].pop(prev_dlvl, None)
+        state["_frontier_prev_dlvl"] = cur_dlvl
+        state["_needs_hidden_passage"] = False
+        state["_zero_scout_streak"] = 0
+        return
+    scout_delta = int(state.get("scout_delta", 0) or 0)
+    if scout_delta > 0:
+        # Real progress — wipe counters AND clear hidden-passage flag.
+        state["_frontier_approach_count"] = {}
+        state["_needs_hidden_passage"] = False
+        state["_zero_scout_streak"] = 0
+        return
+    state["_zero_scout_streak"] = int(state.get("_zero_scout_streak", 0)) + 1
+    blacklist_for_lvl = state["_frontier_blacklist"].setdefault(cur_dlvl, set())
+    # Use legacy (loose) predicate for blacklist accounting so we don't miss
+    # nominal frontiers — strict predicate culls them at pick time anyway.
+    frontiers = find_frontiers(chars, blacklist=None, strict=False)
+    approach = state["_frontier_approach_count"]
+    for fx, fy in frontiers:
+        if (fx, fy) in blacklist_for_lvl:
+            continue
+        cheb = max(abs(fx - px), abs(fy - py))
+        if cheb <= FRONTIER_APPROACH_RADIUS:
+            key = (cur_dlvl, fx, fy)
+            approach[key] = approach.get(key, 0) + 1
+            if approach[key] >= FRONTIER_STUCK_TURNS:
+                blacklist_for_lvl.add((fx, fy))
+    # Recompute reachable-frontier set (strict + blacklisted).
+    open_frontiers = find_frontiers(chars, blacklist=blacklist_for_lvl, strict=True)
+    if not open_frontiers and state["_zero_scout_streak"] >= NEEDS_HIDDEN_TURNS:
+        state["_needs_hidden_passage"] = True
+    # Expose the current-level blacklist on the underlying NLE env so the
+    # in-skill autoexplore picker can consume it without needing the full
+    # verifiers state dict (which it doesn't have access to).
+    try:
+        env_obj = state.get("env")
+        if env_obj is not None:
+            env_obj.underlying.unwrapped._frontier_blacklist_current = set(blacklist_for_lvl)
+    except Exception:
+        pass
+
+
 # ---------- rewards ----------
 
 @vf.reward(weight=1.0)
@@ -1920,6 +2617,9 @@ def load_environment(
     trace_dir: Optional[str] = None,
     continual: bool = False,
     continual_lives: int = 5,
+    refiner: Any = None,
+    refiner_model: Optional[str] = None,
+    bootstrap_dir: Optional[str] = None,
     **kwargs: Any,
 ) -> vf.Environment:
     """
@@ -1973,6 +2673,10 @@ def load_environment(
 
     if interface == "skill":
         tool_callables = _build_skill_adapter_callables(skill_set=kwargs.pop("skill_set", "full"))
+        # Variant CH exposes a `run_macro` tool that expands into Refiner-
+        # registered sequences of existing skill calls (resolved in env_response).
+        if variant == "CH":
+            tool_callables.append(_make_run_macro_adapter())
     elif interface == "code":
         tool_callables = [_code_tool_adapter()]
     else:
@@ -1997,6 +2701,9 @@ def load_environment(
         trace_dir=trace_dir,
         continual=continual,
         continual_lives=continual_lives,
+        refiner=refiner,
+        refiner_model=refiner_model,
+        bootstrap_dir=bootstrap_dir,
         **kwargs,
     )
 
@@ -2094,6 +2801,18 @@ def _build_skill_adapter_callables(skill_set: str = "full") -> list:
         params = schema.get("parameters", {}) or {}
         out.append(_make_skill_adapter(name, schema.get("description", ""), params))
     return out
+
+
+def _make_run_macro_adapter():
+    """Tool stub for variant=CH `run_macro(name=...)`. The actual dispatch
+    lives in NetHackVerifiersEnv.env_response — this exists only to surface
+    the tool to the verifiers schema-introspection layer."""
+    def run_macro(name: str):
+        """Run a Continual-Harness macro (a Refiner-registered sequence of
+        skill calls). The macro must already exist; ask `recall` or check
+        the system message for available macro names."""
+        return None
+    return run_macro
 
 
 def _make_fixed_direction_adapter(tool_name: str, direction: str):

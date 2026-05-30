@@ -143,6 +143,109 @@ def _welch_t(a: list[float], b: list[float]) -> Optional[float]:
     return (mb - ma) / denom
 
 
+def _aggregate_hosted(tag_prefix: str) -> dict:
+    """Pull hosted evals via `prime eval list` and group by name prefix.
+
+    Naming convention from experiments/exp16_obs_variants.py:
+      `wave1-<variant>-<model-slug>-seed<N>`
+    where model-slug has '/' replaced with '-'. We parse variant + model
+    + seed back out and aggregate by (variant, model).
+    """
+    import subprocess, json as _json, re
+    # API limit: -n max 100 per page; paginate until total reached.
+    evals: list = []
+    page = 1
+    while True:
+        out = subprocess.check_output(
+            ["prime", "eval", "list", "--env", "nethack",
+             "-n", "100", "-p", str(page), "--output", "json", "--plain"],
+            text=True,
+        )
+        data = _json.loads(out)
+        chunk = data.get("evaluations") or []
+        if not chunk:
+            break
+        evals.extend(chunk)
+        if len(evals) >= int(data.get("total", 0)):
+            break
+        page += 1
+        if page > 20:  # safety
+            break
+    summary: dict = {}
+    # name pattern: wave1-<variant>-<model-with-dashes>-seed<N>.
+    # Restrict to canonical wave-1 variants so continual-validate runs and
+    # other ad-hoc names don't pollute the table.
+    _KNOWN = {"B0", "B1", "G", "B", "N", "R", "P"}
+    # Restrict to the current keeper seed range (matches launcher default).
+    # Older 20-seed sweeps that got cancelled may have stray COMPLETED rows
+    # for seeds 27-41; filter them out.
+    _KEEP_SEEDS = set(range(22, 27))
+    pat = re.compile(rf"^{re.escape(tag_prefix)}-([^-]+)-(.+)-seed(\d+)$")
+    for e in evals:
+        name = e.get("name") or ""
+        m = pat.match(name)
+        if not m:
+            continue
+        variant, model_slug, seed = m.group(1), m.group(2), int(m.group(3))
+        if variant not in _KNOWN:
+            continue
+        if seed not in _KEEP_SEEDS:
+            continue
+        # Skip cancelled rows — they get counted as pending below otherwise.
+        if e.get("status") == "CANCELLED":
+            continue
+        status = e.get("status") or ""
+        if status != "COMPLETED":
+            summary.setdefault((variant, model_slug), {"pending": 0, "rows": []})
+            summary[(variant, model_slug)]["pending"] = (
+                summary[(variant, model_slug)].get("pending", 0) + 1
+            )
+            continue
+        metrics = e.get("metrics") or {}
+        # Hosted `prime eval get` returns avg_score (the rubric-weighted
+        # total reward) reliably but `metrics` is often empty. Use avg_score
+        # as the comparison primitive; estimate descents from its magnitude
+        # via the rubric weights:
+        #   scout_reward (w=1) is ~0.05-0.20 typical
+        #   descent_reward (w=10) adds 10 per new dlvl
+        #   success_reward (w=100), ascension_reward (w=1000)
+        avg_score = e.get("avg_score")
+        if avg_score is None:
+            continue
+        # Estimate descents = floor(avg_score / 10) ignoring fractional scout/
+        # success/ascend bonuses. Max_dlvl = 1 + descents.
+        descents = max(0, int(float(avg_score) // 10))
+        max_dlvl = 1 + descents
+        bucket = summary.setdefault((variant, model_slug), {"pending": 0, "rows": []})
+        bucket["rows"].append({
+            "seed": seed,
+            "max_dlvl": float(max_dlvl),
+            "avg_score": float(avg_score),
+            "tokens_per_turn": None,
+            "metrics": metrics,
+        })
+    # Reduce each bucket to mean/sem.
+    final = {}
+    for key, bucket in summary.items():
+        dlvls = [r["max_dlvl"] for r in bucket["rows"] if r["max_dlvl"] is not None]
+        scores = [r["avg_score"] for r in bucket["rows"] if r.get("avg_score") is not None]
+        tpts = [r["tokens_per_turn"] for r in bucket["rows"] if r["tokens_per_turn"]]
+        m, sem = _mean_sem(dlvls)
+        sm, ssem = _mean_sem(scores)
+        tm, _ = _mean_sem(tpts)
+        final[key] = {
+            "n_seeds": len(bucket["rows"]),
+            "n_pending": bucket.get("pending", 0),
+            "mean_max_dlvl": m,
+            "sem_max_dlvl": sem,
+            "dlvls": dlvls,
+            "mean_avg_score": sm,
+            "sem_avg_score": ssem,
+            "mean_tokens_per_turn": tm,
+        }
+    return final
+
+
 def _aggregate_tag(tag_prefix: str, base: Path) -> dict:
     """Group metadata.json files by (variant, model) and aggregate."""
     files = _walk_tagged(tag_prefix, base)
@@ -210,19 +313,21 @@ def _emit_wave1_markdown(summary: dict, out_path: Path, baseline: str = "B1") ->
             if base_tpt:
                 token_ratio = agg["mean_tokens_per_turn"] / base_tpt
             rows.append((variant, agg, t, token_ratio))
-        rows.sort(key=lambda r: r[1]["mean_max_dlvl"], reverse=True)
-        lines.append("| variant | n | mean max-Dlvl | SEM | Δ vs B1 | t | tok/turn | tok ratio vs B1 |")
+        # Sort by avg_score (more granular than max_dlvl floor of 1).
+        rows.sort(key=lambda r: r[1].get("mean_avg_score", 0) or 0, reverse=True)
+        lines.append("| variant | n (pending) | mean max-Dlvl | SEM | mean avg_score | Δ score vs B1 | t | tok/turn |")
         lines.append("|---|---|---|---|---|---|---|---|")
-        base_m = summary.get((baseline, model), {}).get("mean_max_dlvl", 0)
+        base_score = summary.get((baseline, model), {}).get("mean_avg_score", 0) or 0
         for variant, agg, t, token_ratio in rows:
-            delta = agg["mean_max_dlvl"] - base_m if variant != baseline else 0.0
+            delta = (agg.get("mean_avg_score", 0) or 0) - base_score if variant != baseline else 0.0
             t_str = f"{t:+.2f}" if t is not None else "—"
-            tr_str = f"{token_ratio:.2f}×" if token_ratio is not None else "—"
+            pending = agg.get("n_pending", 0)
+            n_str = f"{agg['n_seeds']}" + (f" ({pending} pending)" if pending else "")
             lines.append(
-                f"| **{variant}** | {agg['n_seeds']} | "
+                f"| **{variant}** | {n_str} | "
                 f"{agg['mean_max_dlvl']:.2f} | {agg['sem_max_dlvl']:.2f} | "
-                f"{delta:+.2f} | {t_str} | "
-                f"{agg['mean_tokens_per_turn']:.0f} | {tr_str} |"
+                f"{agg.get('mean_avg_score', 0):.3f} | {delta:+.3f} | {t_str} | "
+                f"{agg['mean_tokens_per_turn']:.0f} |"
             )
         # Top-3 promotion list
         winners = [r for r in rows if r[0] != baseline][:3]
@@ -244,14 +349,48 @@ def main() -> int:
                         "experiments/results/<tag>_summary.md.")
     p.add_argument("--tag-base", default="experiments/results",
                    help="Base dir for tagged artifacts. Default: experiments/results")
+    p.add_argument("--hosted", action="store_true",
+                   help="With --tag, pull from `prime eval list` (hosted) instead of local artifact dir.")
+    p.add_argument("--descent-table", action="store_true",
+                   help="Treat the two positional paths as hosted-eval sample dumps "
+                        "(prime eval get --output json) and emit a Wave-3 descent-rate "
+                        "comparison table with Wilson CIs and a failure-mode breakdown.")
+    p.add_argument("--trace-dir-a", default=None,
+                   help="Optional local trace_dir for samples A (NDJSON per rollout). "
+                        "Improves failure-mode classification.")
+    p.add_argument("--trace-dir-b", default=None,
+                   help="Optional local trace_dir for samples B.")
     args = p.parse_args()
+
+    if args.descent_table:
+        if len(args.paths) != 2:
+            print("--descent-table needs exactly two hosted-eval JSON paths", file=sys.stderr)
+            return 1
+        from tools.eval_instrument import (
+            load_hosted_eval_samples, attach_local_traces, comparison_table,
+        )
+        path_a, path_b = args.paths
+        sa = load_hosted_eval_samples(path_a)
+        sb = load_hosted_eval_samples(path_b)
+        if args.trace_dir_a:
+            attach_local_traces(sa, args.trace_dir_a)
+        if args.trace_dir_b:
+            attach_local_traces(sb, args.trace_dir_b)
+        label_a = args.label_a or Path(path_a).stem
+        label_b = args.label_b or Path(path_b).stem
+        print(comparison_table(label_a, sa, label_b, sb))
+        return 0
 
     # Tagged aggregation path: short-circuits pairwise compare.
     if args.tag:
-        base = Path(args.tag_base).resolve()
-        summary = _aggregate_tag(args.tag, base)
+        if args.hosted:
+            summary = _aggregate_hosted(args.tag)
+        else:
+            base = Path(args.tag_base).resolve()
+            summary = _aggregate_tag(args.tag, base)
         if not summary:
-            print(f"No artifacts found under {base}/{args.tag}/", file=sys.stderr)
+            src = "prime eval list" if args.hosted else f"{args.tag_base}/{args.tag}/"
+            print(f"No artifacts found under {src}", file=sys.stderr)
             return 1
         out = Path(args.tag_base) / f"{args.tag}_summary.md"
         _emit_wave1_markdown(summary, out)

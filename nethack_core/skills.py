@@ -829,7 +829,18 @@ def autoexplore(env: NetHackCoreEnv, obs: StructuredObservation, max_steps: int 
                 )
     except Exception:
         pass
-    result = nearest_frontier(chars, start)
+    # Wave-2 Track B: optional per-level frontier blacklist. The harness
+    # ( nethack.py::_update_frontier_blacklist ) stashes the current-level
+    # set onto the underlying NLE env via `_frontier_blacklist_current` for
+    # skills to pick up; if absent we fall back to legacy behavior.
+    blacklist = None
+    try:
+        cur_bl = getattr(env.underlying.unwrapped, "_frontier_blacklist_current", None)
+        if isinstance(cur_bl, (set, frozenset)) and cur_bl:
+            blacklist = set(cur_bl)
+    except Exception:
+        blacklist = None
+    result = nearest_frontier(chars, start, blacklist=blacklist)
     # Skip-stairs-UP guard: trace 5/16 showed the frontier picker happily
     # returning the `<` tile (it's walkable + adjacent to closed door which
     # counts as unknown when door state is partially loaded). Walking to

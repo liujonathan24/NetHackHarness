@@ -42,7 +42,8 @@ from typing import Optional
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RESULTS_DIR = REPO_ROOT / "experiments" / "results" / "wave1"
 
-DEFAULT_SEEDS = list(range(22, 42))  # 20 seeds: 22..41 inclusive
+DEFAULT_SEEDS = list(range(22, 27))  # 5 seeds: 22..26 inclusive (primary stage)
+SECONDARY_SEEDS = list(range(22, 25))  # 3 seeds: 22..24 (haiku promotion stage)
 DEFAULT_MAX_TURNS = 200
 PRIMARY_MODEL = "Qwen/Qwen3.5-9B"
 SECONDARY_MODEL = "claude-haiku-4-5"
@@ -130,6 +131,37 @@ VARIANTS: dict[str, Variant] = {
         },
         notes="NetPlay (Jeurissen, CoG 2024). NetHack-origin.",
     ),
+    "ND": Variant(
+        name="ND",
+        description="NetPlay skill set + descent-salience obs block + level clock (Wave-2)",
+        env_args={
+            "variant": "ND",          # enables _descent_status_block via _descent_salient
+            "compact_obs": True,
+            "history_keep_full": 5,
+            "history_drop_after": 100,
+            "belief_state_interval": 25,
+            # Same curated skill whitelist as N (no low-level `move`), so the
+            # ND vs N delta isolates the descent-salience obs block.
+            "skill_set": "move_to,autoexplore,find_and_descend,attack,descend,search,pickup,engrave_elbereth,pray,eat,quaff,read,add_note,recall,pin_objective,wiki_lookup,wiki_search,kick",
+        },
+        notes="Wave-2 front-runner: N (best wave-1 variant) + persistent DOWNSTAIRS/clock block.",
+    ),
+    "FD": Variant(
+        name="FD",
+        description="find_and_descend autopilot: minimal skill set + descent-salience block (Wave-2)",
+        env_args={
+            "variant": "FD",
+            "compact_obs": True,
+            "history_keep_full": 5,
+            "history_drop_after": 100,
+            "belief_state_interval": 25,
+            # Tightest descent-focused surface: exploration + descent + survival
+            # only. No pickup (a turn-sink in failing traces), no wiki. Makes
+            # `find_and_descend` the obvious dominant action.
+            "skill_set": "find_and_descend,autoexplore,move_to,descend,attack,search,engrave_elbereth,pray,eat,kick,add_note,pin_objective",
+        },
+        notes="Wave-2: strips turn-sink skills; pairs minimal surface with descent-salience.",
+    ),
     "R": Variant(
         name="R",
         description="CPP/GPP summarize-and-reset: drop everything before last belief checkpoint",
@@ -143,7 +175,52 @@ VARIANTS: dict[str, Variant] = {
         },
         notes="Claude/Gemini Plays Pokemon. Survey rec #3 extended.",
     ),
-    # "P" is registered by the subagent if/when it lands.
+    "P": Variant(
+        name="P",
+        description="Continual Harness (arXiv:2605.09998): mid-rollout self-refinement",
+        env_args={
+            "variant": "P",
+            "refine_interval": 20,
+            "compact_obs": True,
+            "history_keep_full": 5,
+            "history_drop_after": 100,
+            "belief_state_interval": 25,
+        },
+        notes="Karten et al., 2026. Periodic self-refinement turn directives.",
+    ),
+    "E1": Variant(
+        name="E1",
+        description="Wave-2: NetPlay skills + FRONTIERS/coverage/scout_delta blocks + memory-aware frontier blacklist",
+        env_args={
+            "variant": "E1",          # enables FRONTIERS, EXPLORATION, SPATIAL BELIEF blocks; salience nag OFF
+            "compact_obs": True,
+            "history_keep_full": 5,
+            "history_drop_after": 100,
+            "belief_state_interval": 25,
+            # Same curated skill whitelist as N — isolates the obs/detection delta.
+            "skill_set": "move_to,autoexplore,find_and_descend,attack,descend,search,pickup,engrave_elbereth,pray,eat,quaff,read,add_note,recall,pin_objective,wiki_lookup,wiki_search,kick",
+        },
+        notes="Wave-2: surfaces existing pathfinding state to the model + tightened frontier detection + visited-frontier blacklist.",
+    ),
+    "CH": Variant(
+        name="CH",
+        description="Continual Harness FULL (arXiv:2605.09998): teacher Refiner edits prompt+subagents+skills+memory",
+        env_args={
+            "variant": "CH",
+            "refine_interval": 20,
+            "refiner_model": "claude-opus-4-7",
+            # bootstrap_dir=None by default; pass via CLI override for cross-rollout persistence.
+            "compact_obs": True,
+            "history_keep_full": 5,
+            "history_drop_after": 100,
+            "belief_state_interval": 25,
+        },
+        notes=(
+            "Karten et al., 2026 — full Refiner pass. Distinct from P (directive only). "
+            "Uses a separate teacher model for the four-pass CRUD over prompt, sub-agents, "
+            "skill macros, and journal memory."
+        ),
+    ),
 }
 
 
@@ -193,17 +270,26 @@ def build_prime_eval_cmd(
     # `prime eval run` accepts --env-args as a JSON blob.
     env_args_json = json.dumps(env_args, separators=(",", ":"))
     tag = run_tag(variant.name, model, seed)
+    out_dir = artifact_dir(variant.name, model, seed)
 
     cmd = [
         "prime", "eval", "run", "nethack",
         "--model", model,
         "--env-args", env_args_json,
-        "--rollouts-per-example", "1",
+        "-n", "1",
+        "-r", "1",
         "--max-concurrent", "1",
-        "--tag", tag,
     ]
     if hosted:
-        cmd.append("--hosted")
+        # Hosted eval CLI rejects --output-dir/--save-results/--abbreviated-summary;
+        # artifacts land on Prime infra and the aggregator pulls them by --eval-name.
+        cmd += ["--hosted", "--eval-name", tag.replace("/", "-")]
+    else:
+        cmd += [
+            "--save-results",
+            "--output-dir", str(out_dir),
+            "--abbreviated-summary",
+        ]
     return cmd
 
 

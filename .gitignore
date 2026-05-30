@@ -6,3 +6,9 @@ __pycache__/
 dist/
 *.egg-info/
 .DS_Store
+
+# dashboard local cache
+tools/.dashboard_cache/
+
+# agent worktrees
+.claude/worktrees/
