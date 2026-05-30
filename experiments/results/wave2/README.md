@@ -1,52 +1,42 @@
-# Wave-2 sweep: N (control) vs E1 (treatment)
+# Wave-2/3 sweep: N (control) vs E1 (text frontiers) vs E2 (painted frontiers)
 
-**Date:** 2026-05-30 · **Model:** Qwen/Qwen3.5-9B · **Seeds:** 22-31 (n=9 each; seed 29 still RUNNING at collection time, excluded)
+**Date:** 2026-05-30 · **Model:** Qwen/Qwen3.5-9B · **Seeds:** 22-31 · n=9 each (one straggler per sweep)
 
-## Headline result
-
-E1 — which surfaces frontiers, coverage, scout_delta, and a spatial-memory note,
-backed by tighter frontier detection and a visited-frontier blacklist —
-**did not improve descent over N** and trended worse on avg_score:
+## Headline
 
 | variant | n | descended | rate | 95% Wilson CI | avg_score |
 |---|---|---|---|---|---|
-| N  | 9 | 1 | 11.1% | [ 2.0%, 43.5%] | 0.309 |
-| E1 | 9 | 0 |  0.0% | [ 0.0%, 29.9%] | 0.059 |
+| **N**  | 9 | 1 | 11.1% | [ 2.0%, 43.5%] | 0.309 |
+| **E1** | 9 | 0 |  0.0% | [ 0.0%, 29.9%] | 0.059 |
+| **E2** | 9 | 0 |  0.0% | [ 0.0%, 29.9%] | 0.074 |
 
-CIs overlap heavily, but the direction is wrong on both descent and avg_score.
+**Neither E1 nor E2 improved over N.** Both collapsed avg_score. CIs overlap so descent isn't conclusive at n=9, but the direction is consistent across two independent interventions on the same hypothesis.
 
-## What changed: dominant failure mode is not what we predicted
+## Failure-mode breakdown
 
-Brainstorming reports converged on **false-frontier oscillation** as the root
-cause. The taxonomy says otherwise:
+| mode | N | E1 | E2 |
+|---|---|---|---|
+| starved | 4 | 3 | 1 |
+| killed_by_monster | 4 | 6 | **8** |
+| **stuck_no_progress** | **0** | **0** | **0** |
+| turn_budget | 0 | 0 | 0 |
+| door_block | 0 | 0 | 0 |
 
-| mode | N | E1 |
-|---|---|---|
-| starved | 4 | 3 |
-| killed_by_monster | 4 | 6 |
-| **stuck_no_progress** | **0** | **0** |
-| turn_budget | 0 | 0 |
-| door_block | 0 | 0 |
+Two takeaways:
 
-**No rollout was classified as `stuck_no_progress` in either condition** at the
-200-turn budget. The agent is *dying*, not looping. E1's extra obs blocks may
-even be pushing it into more aggressive exploration: deaths-by-monster went
-4 → 6.
+1. **`stuck_no_progress` is 0/27.** The wave-3 brainstorming reports converged on false-frontier oscillation as the dominant failure. The instrument says otherwise — agents die long before they have time to loop. *The diagnosis was wrong at this seed/budget/model.*
 
-## Files
-
-- `compare_N_vs_E1.md` — the descent-table emitted by `tools/eval_instrument.py`.
-- `N_combined.json`, `E1_combined.json` — combined sample dumps used as input.
-- Per-seed raw dumps: `{variant}_seed{N}_{eval_id}.json`.
+2. **Surfacing frontiers monotonically increases deaths-by-monster** (4 → 6 → 8 from N → E1 → E2). Both variants explicitly point the agent at frontier coordinates / frontier tiles, and the agent walks into more monster encounters as a result. The wedge isn't "where to explore" — it's "what to do when you get there." E2 lost N's only descent (seed 24) to a monster.
 
 ## Implications for wave-3
 
-1. **The eval instrument worked.** Wilson CIs + failure taxonomy gave us an
-   interpretable answer in one pass. We can trust future deltas.
-2. **The brainstorming diagnosis was wrong (at this seed/budget/model).** The
-   bottleneck is survival, not exploration coordination. Wave-3 should pivot to
-   `pray` / `engrave_elbereth` skill usage, food economy, or extending the
-   turn budget — not more obs blocks.
-3. **E1 obs blocks remain a candidate for ablation at larger n** but they are
-   not a free intervention: the +78-token-per-turn cost may be displacing
-   attention from survival cues.
+- The eval instrument (Wilson CIs + rule-based failure taxonomy) is working — interpretable answers in one pass.
+- The brainstorming diagnosis (frontier wedge) should be deprioritized until we see `stuck_no_progress > 0` on a different model/budget.
+- The real target is **survival**: `pray` / `engrave_elbereth` triggering, food economy, monster-avoidance routing. Worth examining whether the NetPlay skill set even surfaces a "retreat when low HP" path the model takes.
+- The E2 paint mechanic remains a candidate for the *long-horizon* setting (deeper dungeons, where coordination matters), but at dlvl-1 with this model it's pure pressure on the wrong axis.
+
+## Files
+
+- `compare_N_vs_E1.md`, `compare_N_vs_E2.md` — instrument outputs.
+- `N_combined.json`, `E1_combined.json`, `E2_combined.json` — combined sample dumps.
+- Per-seed raw dumps: `{variant}_seed{N}_{eval_id}.json`.

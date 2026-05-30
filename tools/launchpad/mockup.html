@@ -1,0 +1,658 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>NetHack Launchpad — mockup</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --bg-2: #161922;
+    --bg-3: #1d212c;
+    --border: #2a2f3d;
+    --fg: #d8dae0;
+    --fg-dim: #8a90a0;
+    --accent: #7aa2f7;
+    --good: #9ece6a;
+    --warn: #e0af68;
+    --bad: #f7768e;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+    font: 13px/1.45 -apple-system, "SF Pro Text", Inter, sans-serif; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { background: var(--bg-3); border: 1px solid var(--border); color: var(--fg);
+    padding: 5px 11px; border-radius: 5px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #0b0d12; border-color: var(--accent); font-weight: 600; }
+  input, select, textarea { background: var(--bg-2); border: 1px solid var(--border);
+    padding: 5px 8px; border-radius: 5px; }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+  .mono { font-family: var(--mono); }
+
+  /* layout */
+  .app { display: grid; grid-template-rows: 44px 1fr; height: 100vh; }
+  header.bar { display: flex; align-items: center; gap: 14px; padding: 0 14px;
+    border-bottom: 1px solid var(--border); background: var(--bg-2); }
+  header.bar .logo { font-weight: 700; letter-spacing: 0.3px; }
+  header.bar .logo span { color: var(--accent); }
+  header.bar nav { display: flex; gap: 4px; }
+  header.bar nav button.tab { background: transparent; border: 1px solid transparent; padding: 5px 12px; color: var(--fg-dim); }
+  header.bar nav button.tab.active { color: var(--fg); background: var(--bg-3); border-color: var(--border); }
+  header.bar .spacer { flex: 1; }
+  header.bar .meta { color: var(--fg-dim); font-size: 12px; }
+  header.bar .meta b { color: var(--fg); font-weight: 500; }
+
+  main { display: grid; grid-template-columns: 240px 1fr; min-height: 0; }
+  aside.rail { border-right: 1px solid var(--border); background: var(--bg-2); overflow: auto; }
+  aside.rail h3 { margin: 14px 14px 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--fg-dim); }
+  aside.rail .row { padding: 7px 14px; cursor: pointer; border-left: 2px solid transparent; font-size: 12.5px; }
+  aside.rail .row:hover { background: var(--bg-3); }
+  aside.rail .row.active { background: var(--bg-3); border-left-color: var(--accent); }
+  aside.rail .row .sub { color: var(--fg-dim); font-size: 11px; margin-top: 2px; }
+  aside.rail .row .pill { float: right; font-size: 10px; color: var(--good); }
+  aside.rail .row .pill.bad { color: var(--bad); }
+  aside.rail .row .pill.warn { color: var(--warn); }
+
+  .pane { padding: 18px 22px; overflow: auto; min-height: 0; }
+
+  /* launch */
+  .launch-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; max-width: 1100px; }
+  .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+  .field label { font-size: 11px; color: var(--fg-dim); text-transform: uppercase; letter-spacing: 0.6px; }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .card { background: var(--bg-2); border: 1px solid var(--border); border-radius: 8px; padding: 16px 18px; }
+  .card h2 { margin: 0 0 12px; font-size: 14px; }
+  .log { background: #08090c; border: 1px solid var(--border); border-radius: 6px;
+    padding: 10px 12px; font-family: var(--mono); font-size: 12px; height: 240px; overflow: auto;
+    white-space: pre; color: #b8bcc8; }
+  .log .info { color: var(--accent); }
+  .log .good { color: var(--good); }
+  .log .warn { color: var(--warn); }
+
+  /* edit */
+  .edit-grid { display: grid; grid-template-columns: 220px 1fr 1fr; gap: 14px; height: calc(100vh - 100px); }
+  .filetree { background: var(--bg-2); border: 1px solid var(--border); border-radius: 8px; overflow: auto; padding: 8px 0; }
+  .filetree .tnode { padding: 4px 14px; font-family: var(--mono); font-size: 12px; cursor: pointer; }
+  .filetree .tnode:hover { background: var(--bg-3); }
+  .filetree .tnode.active { background: var(--bg-3); color: var(--accent); }
+  .filetree .dir { color: var(--fg-dim); padding-top: 8px; padding-bottom: 2px; cursor: default; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .editor { display: flex; flex-direction: column; background: var(--bg-2); border: 1px solid var(--border); border-radius: 8px; }
+  .editor header { padding: 8px 12px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; }
+  .editor header .path { font-family: var(--mono); color: var(--fg-dim); font-size: 12px; flex: 1; }
+  .editor textarea { flex: 1; background: #08090c; color: #d8dae0; border: 0; border-radius: 0 0 8px 8px;
+    font-family: var(--mono); font-size: 12px; padding: 12px; resize: none; line-height: 1.55; }
+  .diff { background: var(--bg-2); border: 1px solid var(--border); border-radius: 8px; overflow: auto; font-family: var(--mono); font-size: 12px; }
+  .diff header { padding: 8px 12px; border-bottom: 1px solid var(--border); color: var(--fg-dim); font-family: -apple-system, sans-serif; font-size: 12px; }
+  .diff pre { margin: 0; padding: 8px 0; }
+  .diff .add { background: rgba(158,206,106,0.12); color: #c8e6a3; padding: 1px 12px; display: block; }
+  .diff .del { background: rgba(247,118,142,0.12); color: #f0a4b6; padding: 1px 12px; display: block; }
+  .diff .ctx { color: var(--fg-dim); padding: 1px 12px; display: block; }
+  .diff .hunk { color: var(--accent); padding: 4px 12px; display: block; }
+
+  /* traces */
+  .trace-head { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; flex-wrap: wrap; }
+  .trace-head .run { font-family: var(--mono); color: var(--accent); }
+  .trace-head .roll { color: var(--fg-dim); }
+  .scrubber { flex: 1; min-width: 320px; display: flex; align-items: center; gap: 10px; }
+  .scrubber input[type=range] { flex: 1; accent-color: var(--accent); }
+  .scrubber .t { font-family: var(--mono); color: var(--fg-dim); font-size: 12px; }
+  .dual { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; height: calc(100vh - 200px); }
+  .view { background: var(--bg-2); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; min-height: 0; }
+  .view header { padding: 8px 14px; border-bottom: 1px solid var(--border); font-size: 12px; display: flex; align-items: center; gap: 10px; }
+  .view header .tag { font-size: 10px; padding: 1px 7px; border-radius: 4px; background: var(--bg-3); color: var(--fg-dim); letter-spacing: 0.5px; text-transform: uppercase; }
+  .view header .tag.obs { color: var(--good); }
+  .view header .tag.llm { color: var(--accent); }
+  .view .body { padding: 14px; overflow: auto; flex: 1; min-height: 0; }
+
+  /* observer */
+  .obs-status { display: grid; grid-template-columns: repeat(6, auto); gap: 4px 16px; font-family: var(--mono); font-size: 12px; margin-bottom: 12px; }
+  .obs-status .k { color: var(--fg-dim); }
+  .obs-status .v { color: var(--fg); }
+  .obs-status .v.bad { color: var(--bad); }
+  .obs-status .v.warn { color: var(--warn); }
+  .map { font-family: var(--mono); font-size: 13px; line-height: 1.15; white-space: pre;
+    background: #050507; padding: 12px; border-radius: 6px; color: #c8ccd6; border: 1px solid #1c1f28; }
+  .map .you { color: var(--accent); font-weight: bold; }
+  .map .mon { color: var(--bad); }
+  .map .stair { color: var(--good); font-weight: bold; }
+  .map .wall { color: #4a5060; }
+  .map .item { color: var(--warn); }
+  .reward-strip { margin-top: 12px; padding: 8px 12px; background: var(--bg-3); border-radius: 6px;
+    font-family: var(--mono); font-size: 12px; display: flex; gap: 18px; }
+  .reward-strip .delta.pos { color: var(--good); }
+  .reward-strip .delta.zero { color: var(--fg-dim); }
+
+  /* llm view */
+  .turn { font-family: var(--mono); font-size: 12px; line-height: 1.55; }
+  .turn .role { color: var(--fg-dim); text-transform: uppercase; font-size: 10px; letter-spacing: 0.7px; margin-top: 14px; margin-bottom: 4px; }
+  .turn .role.assistant { color: var(--accent); }
+  .turn .role.tool { color: var(--warn); }
+  .turn .role.system { color: var(--good); }
+  .turn .msg { background: #08090c; padding: 10px 12px; border-radius: 6px; white-space: pre-wrap; border: 1px solid #1c1f28; }
+  .turn .msg.system { opacity: 0.7; }
+  .turn .toolcall { background: rgba(224,175,104,0.08); border: 1px solid rgba(224,175,104,0.3); padding: 8px 12px; border-radius: 6px; }
+  .turn .toolcall .name { color: var(--warn); font-weight: 600; }
+
+  .footer-hint { margin-top: 10px; color: var(--fg-dim); font-size: 11px; }
+  kbd { background: var(--bg-3); border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 3px;
+    padding: 1px 5px; font-family: var(--mono); font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="bar">
+    <div class="logo">net<span>hack</span> launchpad</div>
+    <nav>
+      <button class="tab" data-tab="launch">Launch</button>
+      <button class="tab" data-tab="edit">Edit</button>
+      <button class="tab active" data-tab="traces">Traces</button>
+    </nav>
+    <div class="spacer"></div>
+    <div class="meta">branch <b>wave2-frontier</b> · sha <b class="mono">3b6c2f9</b> · model <b>gpt-4.1-mini</b></div>
+  </header>
+
+  <main>
+    <aside class="rail" id="rail"></aside>
+    <section class="pane" id="pane"></section>
+  </main>
+</div>
+
+<script>
+/* ──────────────────────────  sample data  ────────────────────────── */
+
+const RUNS = [
+  {id: "wave2/E2_seed27", label: "E2 seed27", variant: "E2", model: "gpt-4.1-mini",
+   rollouts: 16, avg_reward: {scout: 0.41, descent: 1.6, success: 0.06, ascension: 0},
+   avg_turns: 94, status: "done"},
+  {id: "wave2/E1_seed22", label: "E1 seed22", variant: "E1", model: "gpt-4.1-mini",
+   rollouts: 16, avg_reward: {scout: 0.34, descent: 1.2, success: 0.0, ascension: 0},
+   avg_turns: 87, status: "done"},
+  {id: "wave2/N_seed24",  label: "N seed24",  variant: "N",  model: "gpt-4.1-mini",
+   rollouts: 16, avg_reward: {scout: 0.22, descent: 0.8, success: 0.0, ascension: 0},
+   avg_turns: 72, status: "done"},
+  {id: "wave3/E2_descend_smoke", label: "E2 descend smoke", variant: "E2", model: "claude-haiku-4.5",
+   rollouts: 4,  avg_reward: {scout: 0.18, descent: 0.5, success: 0.0, ascension: 0},
+   avg_turns: 41, status: "running"},
+];
+
+/* one fully-fleshed rollout. Turn array indexed 0..N-1 — the scrubber walks this. */
+const ROLLOUT = {
+  run_id: "wave2/E2_seed27",
+  rollout_idx: 3,
+  rollout_total: 16,
+  variant: "E2",
+  turns: makeTurns(),
+};
+
+function makeTurns() {
+  // Hand-authored 8 turns: arrival on dlvl2, see kobold, attack, descend.
+  const grid = [
+    "                                                ",
+    "   ----------                                   ",
+    "   |........|                                   ",
+    "   |........+####################               ",
+    "   |...@....|                       #           ",
+    "   |...d....|                       #           ",
+    "   ----------                       #           ",
+    "                                    #----+----  ",
+    "                                    #|...>...|  ",
+    "                                    #|.......|  ",
+    "                                     |.......|  ",
+    "                                     ---------  ",
+  ];
+  const base = {
+    status: {hp: 14, max_hp: 18, dlvl: 2, ac: 8, hunger: "Not Hungry", gold: 47, turn: 47},
+    raw_grid: grid,
+  };
+  const turns = [];
+  turns.push({...base, turn: 47,
+    rendered_user_message:
+`Turn 47 — Dungeons of Doom, level 2
+HP 14/18  AC 8  $47  hunger: Not Hungry
+
+VISIBLE FEATURES:
+  >  downstairs at (37,8)
+ADJACENT (8-dir from @):
+  N: floor
+  S: kobold (d)  — hostile
+  E: floor
+  W: floor
+
+[map]
+${grid.join("\n")}`,
+    assistant_message:
+`The kobold is directly south of me. At HP 14/18 I can take it — meleeing is safer than
+trying to step around (it would get a free attack). I'll attack south, then continue east
+through the corridor toward the downstairs I can see at (37,8).`,
+    tool_calls: [{name: "attack", arguments: {direction: "south"}}],
+    reward: {scout: 0.012, descent: 0.0, success: 0.0, ascension: 0.0},
+  });
+  // turn 48: killed kobold
+  const g2 = grid.map(r => r.replace("d", "."));
+  turns.push({turn: 48,
+    status: {hp: 13, max_hp: 18, dlvl: 2, ac: 8, hunger: "Not Hungry", gold: 47},
+    raw_grid: g2,
+    rendered_user_message:
+`Turn 48 — Dungeons of Doom, level 2
+HP 13/18  AC 8  $47
+MESSAGES: You kill the kobold!
+
+VISIBLE FEATURES:
+  >  downstairs at (37,8)
+ADJACENT: all floor
+
+[map]
+${g2.join("\n")}`,
+    assistant_message: `Killed it, took 1hp. Now I head east through the corridor toward the downstairs.`,
+    tool_calls: [{name: "move_to", arguments: {x: 37, y: 8}}],
+    reward: {scout: 0.008, descent: 0.0, success: 0.0, ascension: 0.0},
+  });
+  // turn 53: in corridor
+  const g3 = g2.map((r,i) => i===4 ? r.replace("...@....", "........") : i===7 ? r.replace("----+----", "----+@---") : r);
+  turns.push({turn: 53,
+    status: {hp: 13, max_hp: 18, dlvl: 2, ac: 8, hunger: "Not Hungry", gold: 47},
+    raw_grid: g3,
+    rendered_user_message:
+`Turn 53 — Dungeons of Doom, level 2
+HP 13/18  AC 8  $47
+MESSAGES: (none)
+
+VISIBLE: downstairs > at (37,8) — 3 tiles east
+ADJACENT: door (W), floor (E)`,
+    assistant_message: `Three steps from the downstairs. Continuing east.`,
+    tool_calls: [{name: "move", arguments: {direction: "east"}}],
+    reward: {scout: 0.020, descent: 0.0, success: 0.0, ascension: 0.0},
+  });
+  // turn 56: on downstairs
+  const g4 = g3.map((r,i) => i===7 ? r.replace("----+@---", "----+----") : i===8 ? r.replace("|...>...|", "|...@...|") : r);
+  turns.push({turn: 56,
+    status: {hp: 13, max_hp: 18, dlvl: 2, ac: 8, hunger: "Not Hungry", gold: 47},
+    raw_grid: g4,
+    rendered_user_message:
+`Turn 56 — Dungeons of Doom, level 2
+HP 13/18  AC 8  $47
+MESSAGES: There is a staircase down here.
+
+UNDER PLAYER: > downstairs
+ADJACENT: floor (all)`,
+    assistant_message: `Standing on the downstairs. Descending.`,
+    tool_calls: [{name: "descend", arguments: {}}],
+    reward: {scout: 0.004, descent: 0.0, success: 0.0, ascension: 0.0},
+  });
+  // turn 57: new level
+  const dl3 = [
+    "                                                ",
+    "                  ----------                    ",
+    "                  |........|                    ",
+    "                  |...@....|                    ",
+    "                  |........|                    ",
+    "                  |.f......|                    ",
+    "                  |........|                    ",
+    "                  -----+----                    ",
+    "                       #                        ",
+    "                       #                        ",
+    "                  ------+-----                  ",
+    "                  |..........|                  ",
+    "                  |....<.....|                  ",
+    "                  ------------                  ",
+  ];
+  turns.push({turn: 57,
+    status: {hp: 13, max_hp: 18, dlvl: 3, ac: 8, hunger: "Not Hungry", gold: 47},
+    raw_grid: dl3,
+    rendered_user_message:
+`Turn 57 — Dungeons of Doom, level 3
+HP 13/18  AC 8  $47
+MESSAGES: Welcome to level 3.
+
+VISIBLE: kitten (f) at (22,5) — peaceful
+ADJACENT: floor (all)`,
+    assistant_message: `New level. I see my kitten following — good. Let me explore east to find the downstairs.`,
+    tool_calls: [{name: "autoexplore", arguments: {}}],
+    reward: {scout: 0.180, descent: 1.0, success: 0.0, ascension: 0.0},
+  });
+  return turns;
+}
+
+const TREE = [
+  {dir: "environments/nethack/"},
+  {file: "nethack.py",          desc: "SYSTEM_PROMPT, reward funcs, trace writer"},
+  {file: "configs/eval/B1.toml", desc: "eval config"},
+  {file: "configs/eval/E2.toml", desc: "eval config"},
+  {dir: "nethack_core/"},
+  {file: "skills.py",           desc: "tool registry"},
+  {file: "curriculum.py",       desc: "TierSpec catalog"},
+  {file: "milestones.py",       desc: "termination predicates"},
+  {dir: "experiments/"},
+  {file: "exp16_obs_variants.py", desc: "matrix launcher"},
+];
+
+const SAMPLE_FILE = {
+  path: "environments/nethack/nethack.py",
+  content:
+`# lines 76–100
+SYSTEM_PROMPT = """You are playing NetHack. Each turn you receive a partial
+view of the dungeon as ASCII glyphs and a status line. Your goal is to descend
+as deep as possible without dying.
+
+Glyph key:
+  @  = you           d/f/r = small monsters     >  = downstairs
+  .  = floor         |/-   = walls              <  = upstairs
+  +  = door          #     = corridor           $  = gold
+  )  = weapon        [     = armor              !  = potion
+
+Strategy primer:
+  - Always prefer descending when HP is high and no immediate threat.
+  - Eat before "Weak". Pray ONLY if HP < 1/7 max and not recently prayed.
+  - Don't fight on stairs — descend and reset positioning.
+"""
+
+# lines 2540–2580
+def scout_reward(state, prev_state, action) -> float:
+    """Per-step exploration reward: +0.001 per newly-seen tile."""
+    seen_now = state["explored_tiles"]
+    seen_prev = prev_state.get("explored_tiles", set())
+    delta = len(seen_now - seen_prev)
+    return delta / 1000.0
+
+def descent_reward(state, prev_state, action) -> float:
+    """One-time +1.0 the first time we reach each new dlvl."""
+    cur = state["status"]["dlvl"]
+    if cur > prev_state.get("max_dlvl_seen", 0):
+        return 1.0
+    return 0.0
+`,
+};
+
+const SAMPLE_DIFF = [
+  {type: "hunk", text: "@@ -2540,7 +2540,9 @@ def scout_reward"},
+  {type: "ctx", text: "def scout_reward(state, prev_state, action) -> float:"},
+  {type: "del",  text: '-    """Per-step exploration reward: +0.001 per newly-seen tile."""'},
+  {type: "add",  text: '+    """Per-step exploration reward: +0.002 per newly-seen tile.'},
+  {type: "add",  text: '+    Doubled in wave3 to amplify scout signal on shallow dlvls."""'},
+  {type: "ctx", text: "    seen_now = state[\"explored_tiles\"]"},
+  {type: "ctx", text: "    seen_prev = prev_state.get(\"explored_tiles\", set())"},
+  {type: "ctx", text: "    delta = len(seen_now - seen_prev)"},
+  {type: "del",  text: "-    return delta / 1000.0"},
+  {type: "add",  text: "+    return delta / 500.0"},
+];
+
+/* ──────────────────────────  state  ────────────────────────── */
+
+let TAB = "traces";
+let SEL_RUN = RUNS[0].id;
+let TURN_IDX = 0;
+let SEL_FILE = "environments/nethack/nethack.py";
+
+/* ──────────────────────────  render  ────────────────────────── */
+
+function el(tag, attrs={}, ...children) {
+  const e = document.createElement(tag);
+  for (const k in attrs) {
+    if (k === "class") e.className = attrs[k];
+    else if (k === "html") e.innerHTML = attrs[k];
+    else if (k.startsWith("on")) e[k] = attrs[k];
+    else e.setAttribute(k, attrs[k]);
+  }
+  for (const c of children) {
+    if (c == null) continue;
+    e.append(c.nodeType ? c : document.createTextNode(c));
+  }
+  return e;
+}
+
+function colorizeMap(line) {
+  // crude per-char coloring for the observer view
+  return line.split("").map(ch => {
+    if (ch === "@") return `<span class="you">@</span>`;
+    if ("dfr".includes(ch)) return `<span class="mon">${ch}</span>`;
+    if (ch === ">" || ch === "<") return `<span class="stair">${ch}</span>`;
+    if ("-|".includes(ch)) return `<span class="wall">${ch}</span>`;
+    if ("$)[!".includes(ch)) return `<span class="item">${ch}</span>`;
+    return ch;
+  }).join("");
+}
+
+function renderRail() {
+  const r = document.getElementById("rail");
+  r.innerHTML = "";
+  if (TAB === "launch") {
+    r.append(el("h3", {}, "Recent launches"));
+    for (const run of RUNS) {
+      const pill = run.status === "running"
+        ? el("span", {class: "pill warn"}, "● running")
+        : el("span", {class: "pill"}, "✓ done");
+      const row = el("div", {class: "row"},
+        pill,
+        el("div", {}, run.label),
+        el("div", {class: "sub"}, `${run.model} · ${run.rollouts} rollouts`));
+      r.append(row);
+    }
+  } else if (TAB === "edit") {
+    r.append(el("h3", {}, "Workspace"));
+    for (const node of TREE) {
+      if (node.dir) {
+        r.append(el("div", {class: "row", style: "color: var(--fg-dim); cursor: default; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;"}, node.dir));
+      } else {
+        const active = ("environments/nethack/" + node.file === SEL_FILE || "nethack_core/" + node.file === SEL_FILE || "experiments/" + node.file === SEL_FILE);
+        const row = el("div", {class: "row" + (active ? " active" : ""),
+          onclick: () => { SEL_FILE = guessPath(node.file); renderPane(); renderRail(); }},
+          el("div", {class: "mono", style: "font-size: 12px;"}, node.file),
+          el("div", {class: "sub"}, node.desc));
+        r.append(row);
+      }
+    }
+  } else { // traces
+    r.append(el("h3", {}, "Runs"));
+    for (const run of RUNS) {
+      const active = run.id === SEL_RUN;
+      const row = el("div", {class: "row" + (active ? " active" : ""),
+        onclick: () => { SEL_RUN = run.id; TURN_IDX = 0; renderPane(); renderRail(); }},
+        el("div", {class: "mono", style: "font-size: 12px;"}, run.id.split("/").pop()),
+        el("div", {class: "sub"},
+          `${run.variant} · scout ${run.avg_reward.scout.toFixed(2)} · desc ${run.avg_reward.descent.toFixed(1)} · ${run.avg_turns}t`));
+      r.append(row);
+    }
+  }
+}
+
+function guessPath(file) {
+  if (file.startsWith("configs")) return "environments/nethack/" + file;
+  if (["skills.py","curriculum.py","milestones.py"].includes(file)) return "nethack_core/" + file;
+  if (file.startsWith("exp")) return "experiments/" + file;
+  return "environments/nethack/" + file;
+}
+
+function renderPane() {
+  const p = document.getElementById("pane");
+  p.innerHTML = "";
+  document.querySelectorAll("nav .tab").forEach(b =>
+    b.classList.toggle("active", b.dataset.tab === TAB));
+  if (TAB === "launch") renderLaunch(p);
+  else if (TAB === "edit") renderEdit(p);
+  else renderTraces(p);
+}
+
+function renderLaunch(p) {
+  p.append(el("div", {class: "launch-grid"},
+    el("div", {class: "card"},
+      el("h2", {}, "New eval"),
+      field("Label",     el("input", {value: "wave3_E2_descend_smoke"})),
+      fieldRow(
+        field("Model",   selectEl(["gpt-4.1-mini","claude-haiku-4.5","claude-opus-4-7","gpt-5"])),
+        field("Variant", selectEl(["B1","E1","E2","N"], "E2")),
+      ),
+      fieldRow(
+        field("Tier",    selectEl(["corridor_explore","descend_to_dlvl_3","reach_mines","oracle"], "descend_to_dlvl_3")),
+        field("Max turns", el("input", {value: "200", type: "number"})),
+      ),
+      fieldRow(
+        field("# examples",   el("input", {value: "4",  type: "number"})),
+        field("# rollouts/ex", el("input", {value: "2", type: "number"})),
+      ),
+      field("Tags (comma-sep)", el("input", {value: "wave3, smoke, descend"})),
+      el("div", {style: "display: flex; gap: 8px; margin-top: 8px;"},
+        el("button", {class: "primary"}, "Launch eval"),
+        el("button", {}, "Save as TOML"),
+        el("button", {}, "Dry-run"),
+      ),
+    ),
+    el("div", {class: "card"},
+      el("h2", {}, "Live log — wave3/E2_descend_smoke"),
+      el("div", {class: "log", html:
+`<span class="info">[14:22:11]</span> prime eval jonathanliu/nethack -m gpt-4.1-mini -n 4 -r 2
+<span class="info">[14:22:13]</span> resolved env nethack@0.4.2 (sha 3b6c2f9)
+<span class="info">[14:22:14]</span> tier=descend_to_dlvl_3 variant=E2 max_turns=200
+<span class="info">[14:22:17]</span> spawning 8 rollouts (4 ex × 2 ro)
+<span class="info">[14:22:22]</span> rollout 1/8  seed=11  ▸ trace=...E2_seed11.ndjson
+<span class="info">[14:22:48]</span> rollout 2/8  seed=12  reward.scout=0.12  turns=63
+<span class="info">[14:23:09]</span> rollout 3/8  seed=13  reward.scout=0.34  reward.descent=1.0  turns=87  <span class="good">✓ reached dlvl 3</span>
+<span class="warn">[14:23:30]</span> rollout 4/8  seed=14  <span class="warn">died on turn 41 (killed by jackal)</span>
+<span class="info">[14:23:55]</span> rollout 5/8  seed=15  reward.scout=0.21  turns=72
+<span class="info">[14:24:18]</span> rollout 6/8  seed=16  reward.scout=0.28  reward.descent=1.0  turns=94  <span class="good">✓ reached dlvl 3</span>
+<span class="info">[14:24:40]</span> rollout 7/8  seed=17  ...
+`}),
+      el("div", {class: "footer-hint"}, "Streamed via SSE from /api/launch/{task_id}/log"),
+    )));
+}
+
+function field(label, input) {
+  return el("div", {class: "field"}, el("label", {}, label), input);
+}
+function fieldRow(...fields) {
+  return el("div", {class: "field-row"}, ...fields);
+}
+function selectEl(opts, val) {
+  const s = el("select", {});
+  for (const o of opts) {
+    const opt = el("option", {value: o}, o);
+    if (o === val) opt.selected = true;
+    s.append(opt);
+  }
+  return s;
+}
+
+function renderEdit(p) {
+  p.append(el("div", {class: "edit-grid"},
+    el("div", {class: "filetree"},
+      ...TREE.map(n => n.dir
+        ? el("div", {class: "tnode dir"}, n.dir)
+        : el("div", {class: "tnode" + (guessPath(n.file) === SEL_FILE ? " active" : ""),
+            onclick: () => { SEL_FILE = guessPath(n.file); renderPane(); renderRail(); }},
+            n.file)),
+    ),
+    el("div", {class: "editor"},
+      el("header", {},
+        el("span", {class: "path"}, SAMPLE_FILE.path),
+        el("button", {}, "Save"),
+        el("button", {class: "primary"}, "Save & relaunch"),
+      ),
+      el("textarea", {spellcheck: "false"}, SAMPLE_FILE.content),
+    ),
+    el("div", {class: "diff"},
+      el("header", {}, "Diff vs HEAD — environments/nethack/nethack.py"),
+      el("pre", {html: SAMPLE_DIFF.map(d =>
+        `<span class="${d.type}">${escapeHtml(d.text)}</span>`).join("")}),
+    ),
+  ));
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+}
+
+function renderTraces(p) {
+  const turn = ROLLOUT.turns[TURN_IDX];
+  const total = ROLLOUT.turns.length;
+
+  p.append(el("div", {class: "trace-head"},
+    el("div", {class: "run"}, ROLLOUT.run_id),
+    el("div", {class: "roll"}, `rollout ${ROLLOUT.rollout_idx} / ${ROLLOUT.rollout_total}`),
+    el("div", {class: "scrubber"},
+      el("button", {onclick: () => { TURN_IDX = Math.max(0, TURN_IDX - 1); renderPane(); }}, "◀"),
+      el("input", {type: "range", min: "0", max: String(total - 1), value: String(TURN_IDX),
+        oninput: (e) => { TURN_IDX = parseInt(e.target.value); renderPane(); }}),
+      el("button", {onclick: () => { TURN_IDX = Math.min(total - 1, TURN_IDX + 1); renderPane(); }}, "▶"),
+      el("span", {class: "t"}, `step ${TURN_IDX + 1}/${total}  ·  game turn ${turn.turn}`),
+    ),
+  ));
+
+  const status = turn.status;
+  const hpCls = status.hp / status.max_hp < 0.3 ? "bad" : status.hp / status.max_hp < 0.6 ? "warn" : "";
+  const hungerCls = status.hunger === "Hungry" || status.hunger === "Weak" ? "warn" : "";
+
+  p.append(el("div", {class: "dual"},
+    // observer
+    el("div", {class: "view"},
+      el("header", {},
+        el("span", {class: "tag obs"}, "Observer"),
+        "what a human watching would see",
+      ),
+      el("div", {class: "body"},
+        el("div", {class: "obs-status"},
+          el("span", {class: "k"}, "HP"),       el("span", {class: `v ${hpCls}`}, `${status.hp}/${status.max_hp}`),
+          el("span", {class: "k"}, "AC"),       el("span", {class: "v"}, String(status.ac)),
+          el("span", {class: "k"}, "Dlvl"),     el("span", {class: "v"}, String(status.dlvl)),
+          el("span", {class: "k"}, "$"),        el("span", {class: "v"}, String(status.gold)),
+          el("span", {class: "k"}, "Hunger"),   el("span", {class: `v ${hungerCls}`}, status.hunger),
+          el("span", {class: "k"}, "Turn"),     el("span", {class: "v"}, String(turn.turn)),
+        ),
+        el("div", {class: "map", html: turn.raw_grid.map(colorizeMap).join("\n")}),
+        el("div", {class: "reward-strip"},
+          ...Object.entries(turn.reward).map(([k, v]) =>
+            el("span", {},
+              el("span", {style: "color: var(--fg-dim);"}, k + " "),
+              el("span", {class: "delta " + (v > 0 ? "pos" : "zero")},
+                v > 0 ? "+" + v.toFixed(3) : "0.000"))),
+        ),
+      ),
+    ),
+    // llm view
+    el("div", {class: "view"},
+      el("header", {},
+        el("span", {class: "tag llm"}, "LLM view"),
+        "exact tokens the model received & emitted",
+      ),
+      el("div", {class: "body"},
+        el("div", {class: "turn"},
+          el("div", {class: "role system"}, "system"),
+          el("div", {class: "msg system"},
+            "You are playing NetHack. Each turn you receive a partial view of the dungeon as ASCII glyphs and a status line. Your goal is to descend as deep as possible without dying.  [truncated]"),
+          el("div", {class: "role"}, `user — turn ${turn.turn}`),
+          el("div", {class: "msg"}, turn.rendered_user_message),
+          el("div", {class: "role assistant"}, "assistant"),
+          el("div", {class: "msg"}, turn.assistant_message),
+          ...turn.tool_calls.map(tc =>
+            el("div", {class: "toolcall", style: "margin-top: 8px;"},
+              el("span", {class: "role tool", style: "margin-top: 0;"}, "tool_call"),
+              el("div", {class: "mono"},
+                el("span", {class: "name"}, tc.name),
+                "(" + JSON.stringify(tc.arguments).slice(1, -1).replace(/"/g, "") + ")"))),
+        ),
+      ),
+    ),
+  ));
+
+  p.append(el("div", {class: "footer-hint"},
+    "Keys: ", el("kbd", {}, "←"), " ", el("kbd", {}, "→"), " step turn · ",
+    el("kbd", {}, "⇧←"), " ", el("kbd", {}, "⇧→"), " jump 10 · ",
+    el("kbd", {}, "j"), " ", el("kbd", {}, "k"), " next/prev rollout · ",
+    el("kbd", {}, "o"), " observer focus · ", el("kbd", {}, "l"), " llm focus"));
+}
+
+/* ──────────────────────────  init  ────────────────────────── */
+
+document.querySelectorAll("nav .tab").forEach(b => {
+  b.onclick = () => { TAB = b.dataset.tab; renderRail(); renderPane(); };
+});
+document.addEventListener("keydown", (e) => {
+  if (TAB !== "traces") return;
+  if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+  if (e.key === "ArrowRight") { TURN_IDX = Math.min(ROLLOUT.turns.length - 1, TURN_IDX + (e.shiftKey ? 10 : 1)); renderPane(); }
+  if (e.key === "ArrowLeft")  { TURN_IDX = Math.max(0, TURN_IDX - (e.shiftKey ? 10 : 1)); renderPane(); }
+});
+renderRail();
+renderPane();
+</script>
+</body>
+</html>
