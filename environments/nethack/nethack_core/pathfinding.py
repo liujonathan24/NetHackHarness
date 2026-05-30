@@ -66,6 +66,51 @@ def is_unknown(ch_byte: int) -> bool:
     return ch_byte == ord(" ")
 
 
+# NLE glyph index for "solid stone / dark void". Both seen rock AND truly-
+# unseen tiles share this glyph in chars (both render as space). The way to
+# tell them apart is *geometric*: if the candidate space is surrounded on
+# multiple sides by a wall (`-` / `|`) AND has no space neighbor of its own
+# on the far side, NLE has effectively revealed it as "rock outside the
+# room" — there is nothing reachable behind it. A truly-unseen tile has at
+# least one space neighbor on the far side (the rest of the unexplored map).
+_WALL_CHARS: frozenset[int] = frozenset(ord(c) for c in ("|", "-"))
+
+
+def is_truly_unseen(chars: np.ndarray, ux: int, uy: int) -> bool:
+    """Is the space-tile at (ux, uy) genuinely unexplored (vs. seen stone)?
+
+    Heuristic predicate (5 lines, no NLE-version coupling):
+      * If the tile is not a space, it isn't "unknown" — return False.
+      * Otherwise count how many of its 8 neighbors are either walls
+        (`|`/`-`) or out-of-bounds. If the tile is bordered by 3+ walls
+        and has no other space neighbor, treat it as seen stone — the
+        room geometry on this side is fully revealed; nothing is hidden.
+      * Else, treat it as truly unseen (a candidate frontier neighbor).
+    """
+    h, w = chars.shape
+    if not (0 <= ux < w and 0 <= uy < h):
+        return False
+    if int(chars[uy, ux]) != ord(" "):
+        return False
+    wall_or_edge = 0
+    space_neighbors = 0
+    for dx, dy, _ in _NEIGHBOR_DIRS:
+        nx, ny = ux + dx, uy + dy
+        if not (0 <= nx < w and 0 <= ny < h):
+            wall_or_edge += 1
+            continue
+        nc = int(chars[ny, nx])
+        if nc in _WALL_CHARS:
+            wall_or_edge += 1
+        elif nc == ord(" "):
+            space_neighbors += 1
+    # Seen-stone: bordered by walls/edge on 3+ sides AND no further void
+    # behind us. Nothing can be hidden there.
+    if wall_or_edge >= 3 and space_neighbors == 0:
+        return False
+    return True
+
+
 # ---------- A* ----------
 
 # 8 compass directions: (dx, dy, NLE_action_enum).
@@ -162,29 +207,55 @@ def _reconstruct_path(
 
 # ---------- frontier-based autoexplore ----------
 
-def find_frontiers(chars: np.ndarray) -> list[tuple[int, int]]:
+def find_frontiers(
+    chars: np.ndarray,
+    blacklist: Optional[set[tuple[int, int]]] = None,
+    strict: bool = True,
+) -> list[tuple[int, int]]:
     """
     Return all walkable tiles that are adjacent to an unknown / unseen tile.
     These are the targets autoexplore picks from.
+
+    Args:
+        chars: NLE chars grid (h, w) uint8.
+        blacklist: optional set of (x, y) tiles to exclude — used by the
+            visited-frontier memory in nethack.py to skip frontiers the
+            agent has already approached without revealing new tiles.
+        strict: if True (default), use `is_truly_unseen` to discriminate
+            seen-stone (walled-off rock) from genuinely-unexplored void.
+            Pass strict=False to recover legacy (memoryless, glyph-blind)
+            behavior — the harness uses this only for fallback paths.
     """
     h, w = chars.shape
+    bl = blacklist or frozenset()
     out: list[tuple[int, int]] = []
     for y in range(h):
         for x in range(w):
+            if (x, y) in bl:
+                continue
             if not is_walkable(int(chars[y, x])):
                 continue
             for dx, dy, _ in _NEIGHBOR_DIRS:
                 nx, ny = x + dx, y + dy
                 if not (0 <= nx < w and 0 <= ny < h):
                     continue
-                if is_unknown(int(chars[ny, nx])):
-                    out.append((x, y))
-                    break
+                nc = int(chars[ny, nx])
+                if strict:
+                    if is_truly_unseen(chars, nx, ny):
+                        out.append((x, y))
+                        break
+                else:
+                    if is_unknown(nc):
+                        out.append((x, y))
+                        break
     return out
 
 
 def nearest_frontier(
-    chars: np.ndarray, start: tuple[int, int]
+    chars: np.ndarray,
+    start: tuple[int, int],
+    blacklist: Optional[set[tuple[int, int]]] = None,
+    strict: bool = True,
 ) -> Optional[tuple[tuple[int, int], list[int]]]:
     """
     Find the closest reachable frontier from `start` and return (target, path).
@@ -203,16 +274,23 @@ def nearest_frontier(
     # collections.deque pops left in O(1); plain list.pop(0) is O(n) and
     # explodes for large maps. Switch.
     from collections import deque
+    bl = blacklist or frozenset()
     visited = {start}
     queue: deque = deque([(start, [])])
     while queue:
         (cx, cy), path = queue.popleft()
         # Frontier check on-the-fly: walkable + at least one space neighbor.
-        if (cx, cy) != start and is_walkable(int(chars[cy, cx])):
+        if (cx, cy) != start and (cx, cy) not in bl and is_walkable(int(chars[cy, cx])):
             for ddx, ddy, _ in _NEIGHBOR_DIRS:
                 nx2, ny2 = cx + ddx, cy + ddy
-                if 0 <= nx2 < w and 0 <= ny2 < h and is_unknown(int(chars[ny2, nx2])):
-                    return (cx, cy), path
+                if not (0 <= nx2 < w and 0 <= ny2 < h):
+                    continue
+                if strict:
+                    if is_truly_unseen(chars, nx2, ny2):
+                        return (cx, cy), path
+                else:
+                    if is_unknown(int(chars[ny2, nx2])):
+                        return (cx, cy), path
         for dx, dy, action in _NEIGHBOR_DIRS:
             nx, ny = cx + dx, cy + dy
             if (nx, ny) in visited:

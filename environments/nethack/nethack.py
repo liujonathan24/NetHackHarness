@@ -1077,6 +1077,20 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         # extract_visible_features stops finding the tile — without memory,
         # the agent oscillates on/off the stairs without realizing to descend.
         state["_seen_stairs_down"] = set()
+        # Wave-2 Track B: visited-frontier memory. Tracks (level_key, (x,y)) →
+        # consecutive turns the agent has been within 1 step of this frontier
+        # without scout_delta > 0. When the count hits FRONTIER_STUCK_TURNS,
+        # the frontier is blacklisted on its level. Blacklist resets on level
+        # change (we key by max_dlvl_reached at sighting time). Cleared by
+        # `_update_frontier_blacklist` each turn.
+        state["_frontier_approach_count"] = {}  # (dlvl, x, y) -> int
+        state["_frontier_blacklist"] = {}       # dlvl -> set[(x, y)]
+        state["_frontier_prev_dlvl"] = 1
+        # Deadlock-breaker flag (Track C reads this; we only set it). Becomes
+        # True when all reachable frontiers on the current level are
+        # blacklisted AND scout_delta has been 0 for >= NEEDS_HIDDEN_TURNS.
+        state["_needs_hidden_passage"] = False
+        state["_zero_scout_streak"] = 0
         # Wave-2: descent-salience flag drives _descent_status_block. Enabled for
         # the descent-focused variants (ND/FD) discovered after the wave-1
         # diagnosis showed failures = "never reveal `>`, wander, starve".
@@ -1441,6 +1455,12 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
             # the last.)
             state["descent_count"] = state.get("descent_count", 0) + (new_dlvl - state["max_dlvl_reached"])
             state["max_dlvl_reached"] = new_dlvl  # update AFTER computing the level delta
+
+        # Wave-2 Track B: update visited-frontier memory + deadlock flag.
+        try:
+            _update_frontier_blacklist(state)
+        except Exception:
+            pass
 
         state["turn_count"] = state.get("turn_count", 0) + 1
         if self.belief_state_interval > 0 and state["turn_count"] > 0 and state["turn_count"] % self.belief_state_interval == 0:
@@ -2354,6 +2374,86 @@ def _iterate_visible_tiles(obs):
     for y in range(chars.shape[0]):
         for x in range(chars.shape[1]):
             yield (x, y), bytes([int(chars[y, x])])
+
+
+# ----- Wave-2 Track B: visited-frontier memory + deadlock-breaker -----
+#
+# Knobs (kept module-level so tests can monkeypatch):
+FRONTIER_STUCK_TURNS = 3      # adjacency turns w/o new tiles before blacklist
+FRONTIER_APPROACH_RADIUS = 1  # Chebyshev distance counting as "approached"
+NEEDS_HIDDEN_TURNS = 5        # zero-scout streak that triggers needs-hidden
+
+
+def _update_frontier_blacklist(state: dict) -> None:
+    """Per-turn maintenance of the visited-frontier memory.
+
+    Rules:
+      * Reset blacklist + counters when max_dlvl_reached changes (per-level
+        memory is what we want — a "stuck" frontier on L1 isn't stuck on L2).
+      * Walk all current-level frontiers. For each frontier within
+        FRONTIER_APPROACH_RADIUS of the player, increment its consecutive
+        no-progress count iff `scout_delta == 0` this turn. Any turn that
+        revealed new tiles resets all counts (we're making progress somehow).
+      * When a frontier's count hits FRONTIER_STUCK_TURNS, add it to the
+        per-level blacklist.
+      * Set `_needs_hidden_passage` when every reachable frontier is
+        blacklisted AND we've had `_zero_scout_streak >= NEEDS_HIDDEN_TURNS`.
+        Cleared when scout_delta > 0 (the search/kick worked).
+
+    Track C reads `state["_needs_hidden_passage"]`; we only set it here.
+    """
+    from nethack_core.pathfinding import find_frontiers
+    raw = state.get("raw_obs")
+    if raw is None or not hasattr(raw, "chars") or not hasattr(raw, "blstats"):
+        return
+    chars = raw.chars
+    blstats = raw.blstats
+    px, py = int(blstats[0]), int(blstats[1])
+    cur_dlvl = int(state.get("max_dlvl_reached", 1))
+    prev_dlvl = state.get("_frontier_prev_dlvl", cur_dlvl)
+    if cur_dlvl != prev_dlvl:
+        # Level changed — clear per-level state and exit.
+        state["_frontier_approach_count"] = {}
+        state["_frontier_blacklist"].pop(prev_dlvl, None)
+        state["_frontier_prev_dlvl"] = cur_dlvl
+        state["_needs_hidden_passage"] = False
+        state["_zero_scout_streak"] = 0
+        return
+    scout_delta = int(state.get("scout_delta", 0) or 0)
+    if scout_delta > 0:
+        # Real progress — wipe counters AND clear hidden-passage flag.
+        state["_frontier_approach_count"] = {}
+        state["_needs_hidden_passage"] = False
+        state["_zero_scout_streak"] = 0
+        return
+    state["_zero_scout_streak"] = int(state.get("_zero_scout_streak", 0)) + 1
+    blacklist_for_lvl = state["_frontier_blacklist"].setdefault(cur_dlvl, set())
+    # Use legacy (loose) predicate for blacklist accounting so we don't miss
+    # nominal frontiers — strict predicate culls them at pick time anyway.
+    frontiers = find_frontiers(chars, blacklist=None, strict=False)
+    approach = state["_frontier_approach_count"]
+    for fx, fy in frontiers:
+        if (fx, fy) in blacklist_for_lvl:
+            continue
+        cheb = max(abs(fx - px), abs(fy - py))
+        if cheb <= FRONTIER_APPROACH_RADIUS:
+            key = (cur_dlvl, fx, fy)
+            approach[key] = approach.get(key, 0) + 1
+            if approach[key] >= FRONTIER_STUCK_TURNS:
+                blacklist_for_lvl.add((fx, fy))
+    # Recompute reachable-frontier set (strict + blacklisted).
+    open_frontiers = find_frontiers(chars, blacklist=blacklist_for_lvl, strict=True)
+    if not open_frontiers and state["_zero_scout_streak"] >= NEEDS_HIDDEN_TURNS:
+        state["_needs_hidden_passage"] = True
+    # Expose the current-level blacklist on the underlying NLE env so the
+    # in-skill autoexplore picker can consume it without needing the full
+    # verifiers state dict (which it doesn't have access to).
+    try:
+        env_obj = state.get("env")
+        if env_obj is not None:
+            env_obj.underlying.unwrapped._frontier_blacklist_current = set(blacklist_for_lvl)
+    except Exception:
+        pass
 
 
 # ---------- rewards ----------
