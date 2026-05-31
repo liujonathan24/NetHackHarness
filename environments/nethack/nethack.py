@@ -25,6 +25,8 @@ from nethack_core.observations import shape as shape_observation
 from nethack_core.skills import registry as skill_registry, list_skills
 from nethack_core.curriculum import get_tier, list_tiers, TierName
 
+from environments.nethack import harness_overlay as _harness_overlay
+
 
 # ---------- verifiers 0.1.14 compat shim ----------
 #
@@ -2746,8 +2748,16 @@ def load_environment(
             (default 5). Ignored unless continual=True.
     """
     explicit_seeds = kwargs.pop("explicit_seeds", None)
+    # NETHACK_HARNESS overlay: mutates SYSTEM_PROMPT (consumed by _build_task_dataset
+    # below) plus returns a HarnessConfig used to filter tools / re-weight rewards.
+    # No-op when the env var is unset → bit-identical default behavior.
+    import sys as _sys
+    _overlay_cfg = _harness_overlay.apply_overlay(_sys.modules[__name__])
     dataset = _build_task_dataset(tier, n_examples, seed, explicit_seeds=explicit_seeds)
-    rubric = vf.Rubric(funcs=[scout_reward, descent_reward, success_reward, ascension_reward])
+    _reward_funcs = _harness_overlay.apply_reward_weights(
+        [scout_reward, descent_reward, success_reward, ascension_reward], _overlay_cfg,
+    )
+    rubric = vf.Rubric(funcs=_reward_funcs)
 
     if interface == "skill":
         tool_callables = _build_skill_adapter_callables(skill_set=kwargs.pop("skill_set", "full"))
@@ -2755,6 +2765,7 @@ def load_environment(
         # registered sequences of existing skill calls (resolved in env_response).
         if variant == "CH":
             tool_callables.append(_make_run_macro_adapter())
+        tool_callables = _harness_overlay.filter_tool_callables(tool_callables, _overlay_cfg)
     elif interface == "code":
         tool_callables = [_code_tool_adapter()]
     else:

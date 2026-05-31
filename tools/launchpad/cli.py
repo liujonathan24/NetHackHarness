@@ -6,10 +6,32 @@ each one to the corresponding `core.*` module per CONTRACTS.md.
 
 from __future__ import annotations
 
+import json as _json
+import os as _os
 from pathlib import Path
 from typing import Optional
 
 import typer
+
+
+def _default_results_root() -> Path:
+    """Project results root used for `runs ls/show`.
+
+    Honors $LAUNCHPAD_RESULTS_ROOT; otherwise points at the in-repo
+    `experiments/results/` directory (resolved relative to this file so the
+    command works from any cwd, in dev or installed).
+    """
+    env = _os.environ.get("LAUNCHPAD_RESULTS_ROOT")
+    if env:
+        return Path(env).expanduser().resolve()
+    # `core.runs._walk_eval` itself appends "experiments/results/" — so we
+    # return the project root. Walk upward from cwd looking for it; fall
+    # back to cwd if not found (caller can override with $LAUNCHPAD_RESULTS_ROOT).
+    here = Path.cwd().resolve()
+    for candidate in (here, *here.parents):
+        if (candidate / "experiments" / "results").is_dir():
+            return candidate
+    return here
 
 app = typer.Typer(
     name="launchpad",
@@ -94,7 +116,23 @@ def cmd_runs_ls(
     json_out: bool = typer.Option(False, "--json"),
 ) -> None:
     """List runs. See core.runs.list_runs."""
-    raise NotImplementedError("cli.cmd_runs_ls — wire to core.runs.list_runs")
+    from tools.launchpad.core import runs as _runs
+
+    root = _default_results_root()
+    summaries = _runs.list_runs(root=root, kind=kind, tag=tag, limit=limit)
+    if json_out:
+        typer.echo(_json.dumps([s.model_dump() for s in summaries], indent=2, default=str))
+        return
+    if not summaries:
+        typer.echo(f"(no runs found under {root})")
+        return
+    # Plain text table — keep dependency-light so this works in dumb terminals.
+    header = f"{'KIND':<6} {'STATUS':<8} {'LABEL':<48} {'ROLLOUTS':>8}  RUN_ID"
+    typer.echo(header)
+    typer.echo("-" * len(header))
+    for s in summaries:
+        label = (s.label or "")[:48]
+        typer.echo(f"{s.kind:<6} {s.status:<8} {label:<48} {s.n_rollouts:>8}  {s.run_id}")
 
 
 @runs_app.command("show")
@@ -145,7 +183,17 @@ app.add_typer(harness_app, name="harness")
 @harness_app.command("ls")
 def cmd_harness_ls() -> None:
     """List harnesses. See core.harness.list_harnesses."""
-    raise NotImplementedError("cli.cmd_harness_ls — wire to core.harness.list_harnesses")
+    from tools.launchpad.core import harness as _harness
+
+    cfgs = _harness.list_harnesses()
+    if not cfgs:
+        typer.echo("(no harnesses found)")
+        return
+    typer.echo(f"{'NAME':<24} {'EXTENDS':<16} SYSTEM_PROMPT_MODE")
+    for cfg in cfgs:
+        extends = cfg.extends or "-"
+        mode = cfg.system_prompt.mode
+        typer.echo(f"{cfg.name:<24} {extends:<16} {mode}")
 
 
 @harness_app.command("new")
@@ -175,7 +223,12 @@ def cmd_harness_preview(
     state: Optional[Path] = typer.Option(None, "--state"),
 ) -> None:
     """Render the turn-0 LLM view. See core.harness.preview_harness."""
-    raise NotImplementedError("cli.cmd_harness_preview — wire to core.harness.preview_harness")
+    from tools.launchpad.core import harness as _harness
+
+    state_payload: dict | None = None
+    if state is not None:
+        state_payload = _json.loads(Path(state).read_text())
+    typer.echo(_harness.preview_harness(name, state=state_payload))
 
 
 @harness_app.command("validate")
