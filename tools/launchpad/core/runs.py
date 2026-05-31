@@ -360,15 +360,19 @@ def latest_run(root: Path, kind: str | None = None) -> RunSummary:
 
 
 def iter_trace_files(summary: RunSummary) -> Iterable[Path]:
-    """Yield ``*.ndjson`` trace files for ``summary`` in stable (sorted) order.
+    """Yield trace files for ``summary`` in stable (sorted) order.
 
-    Empty iterable if ``summary.trace_dir`` is None or missing on disk.
+    Prefers per-rollout ``*.ndjson`` (new runs) when ``summary.trace_dir`` is set
+    and populated; falls back to the legacy samples JSON path on disk
+    (one file per run; each sample becomes a synthetic rollout).
     """
-    if not summary.trace_dir:
-        return
-    p = Path(summary.trace_dir)
-    if not p.is_dir():
-        return
-    for entry in sorted(p.glob("*.ndjson")):
-        if entry.is_file():
-            yield entry
+    if summary.trace_dir:
+        p = Path(summary.trace_dir)
+        if p.is_dir():
+            ndjsons = [e for e in sorted(p.glob("*.ndjson")) if e.is_file()]
+            if ndjsons:
+                yield from ndjsons
+                return
+    legacy = Path(summary.source_path) if summary.source_path else None
+    if legacy and legacy.is_file() and legacy.suffix == ".json":
+        yield legacy

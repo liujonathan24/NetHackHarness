@@ -211,6 +211,7 @@ class TracesScreen(Screen):
         self._runs: list[RunSummary] = []
         self._selected_run: RunSummary | None = None
         self._rollout_files: list[Path] = []
+        self._rollout_entries: list[tuple[Path, int]] = []
         self._selected_rollout_idx: int = -1
         self._turns: list[TraceTurn] = []
         self._current_idx: int = 0
@@ -295,11 +296,16 @@ class TracesScreen(Screen):
     def _render_rollouts_list(self) -> None:
         lv = self.query_one("#rollouts-list", ListView)
         lv.clear()
-        if not self._rollout_files:
+        if not self._rollout_entries:
             lv.append(ListItem(Label("(no rollouts)")))
             return
-        for i, p in enumerate(self._rollout_files):
-            lv.append(ListItem(Label(f"rollout {i + 1}/{len(self._rollout_files)} · {p.name}")))
+        total = len(self._rollout_entries)
+        for i, (p, sample_idx) in enumerate(self._rollout_entries):
+            if p.suffix == ".json":
+                label = f"rollout {i + 1}/{total} · sample {sample_idx} (legacy)"
+            else:
+                label = f"rollout {i + 1}/{total} · {p.name}"
+            lv.append(ListItem(Label(label)))
 
     # ----------------------------------------------------------- list events
     @on(ListView.Selected, "#runs-list")
@@ -308,11 +314,21 @@ class TracesScreen(Screen):
         if idx is None or idx < 0 or idx >= len(self._runs):
             return
         self._selected_run = self._runs[idx]
-        self._rollout_files = list(runs_mod.iter_trace_files(self._selected_run))
+        files = list(runs_mod.iter_trace_files(self._selected_run))
+        # Expand legacy samples JSON into one entry per sample.
+        from tools.launchpad.core.legacy_trace import count_samples, is_legacy_samples_file
+        self._rollout_entries: list[tuple[Path, int]] = []
+        for p in files:
+            if p.suffix == ".json" and is_legacy_samples_file(p):
+                n = count_samples(p)
+                for i in range(n):
+                    self._rollout_entries.append((p, i))
+            else:
+                self._rollout_entries.append((p, 0))
+        self._rollout_files = [e[0] for e in self._rollout_entries]
         self._render_rollouts_list()
         self._update_header()
-        if self._rollout_files:
-            # Auto-select first rollout.
+        if self._rollout_entries:
             self.query_one("#rollouts-list", ListView).index = 0
             self._select_rollout(0)
         else:
@@ -332,11 +348,12 @@ class TracesScreen(Screen):
         self._cancel_live()
         if self._loader_task and not self._loader_task.done():
             self._loader_task.cancel()
-        self._loader_task = asyncio.create_task(self._load_turns(self._rollout_files[idx]))
+        path, sample_idx = self._rollout_entries[idx]
+        self._loader_task = asyncio.create_task(self._load_turns(path, sample_idx))
 
-    async def _load_turns(self, path: Path) -> None:
+    async def _load_turns(self, path: Path, sample_idx: int = 0) -> None:
         try:
-            turns = await asyncio.to_thread(traces_mod.read_trace, path)
+            turns = await asyncio.to_thread(traces_mod.read_trace, path, sample_idx)
         except FileNotFoundError:
             turns = []
         except Exception:  # pragma: no cover - defensive

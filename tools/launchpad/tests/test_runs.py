@@ -148,9 +148,10 @@ def test_get_run_compare_runs_latest_iter_traces(populated_root: Path, tmp_path:
     latest = runs_mod.latest_run(populated_root, kind="eval")
     assert latest.label == "E1_seed22_bbb"
 
-    # iter_trace_files: no trace dir -> empty.
+    # iter_trace_files: no trace dir -> falls back to source_path JSON (legacy).
     summary = by_label
-    assert list(runs_mod.iter_trace_files(summary)) == []
+    fallback = list(runs_mod.iter_trace_files(summary))
+    assert fallback == [Path(summary.source_path)] if summary.source_path else fallback == []
 
     # iter_trace_files: with a real dir, yields *.ndjson sorted.
     trace_dir = tmp_path / "fake_traces"

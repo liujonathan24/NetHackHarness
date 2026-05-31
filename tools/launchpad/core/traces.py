@@ -176,16 +176,28 @@ def _parse_line(line: str, lineno: int, source: str) -> TraceTurn | None:
 # ---------------------------------------------------------------------------
 
 
-def read_trace(path: Path) -> list[TraceTurn]:
-    """Read one `<run_id>.ndjson` file into a list of TraceTurn.
+def read_trace(path: Path, sample_idx: int = 0) -> list[TraceTurn]:
+    """Read a trace file into a list of TraceTurn.
 
-    Malformed lines are skipped (logged via `warnings.warn`).
+    Dispatches by file shape:
+      - ``*.ndjson``                       -> NDJSON-per-turn reader (new runs)
+      - ``*.json`` with top-level samples  -> legacy synthesizer
+                                              (one sample at a time; pick via sample_idx)
+
+    Malformed NDJSON lines are skipped (logged via `warnings.warn`).
 
     Raises:
         FileNotFoundError: if `path` doesn't exist.
     """
     if not path.exists():
         raise FileNotFoundError(path)
+    if path.suffix == ".json":
+        from tools.launchpad.core.legacy_trace import (
+            is_legacy_samples_file,
+            read_legacy_samples,
+        )
+        if is_legacy_samples_file(path):
+            return read_legacy_samples(path, sample_idx=sample_idx)
     key = _cache_key(path)
     if key is None:
         raise FileNotFoundError(path)
