@@ -50,6 +50,16 @@ def test_item_entity_has_class():
     assert items and items[0].obj_class is not None
 
 
+def test_stairs_classified_with_coords():
+    g = np.full((21, 79), N.GLYPH_CMAP_OFF, np.int32)
+    tty = np.full((24, 80), ord(" "), np.uint8)
+    tty[6, 47] = ord(">")  # down stairs; tty row = glyph row + 1
+    m = build_map_model(_obs_with(g, tty_chars=tty))
+    stairs = [e for e in m.entities if e.kind == "stair"]
+    assert stairs and (stairs[0].x, stairs[0].y) == (47, 5)
+    assert "DOWN" in stairs[0].detail
+
+
 def test_trap_entity_surfaced():
     g = np.full((21, 79), N.GLYPH_CMAP_OFF, np.int32)
     trap = next(gid for gid in range(N.GLYPH_CMAP_OFF, N.GLYPH_CMAP_OFF + 200)

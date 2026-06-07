@@ -36,3 +36,11 @@ def test_kind_accessors():
     mv = MapView(_model())
     assert [e.kind for e in mv.monsters] == ["monster"]
     assert [e.kind for e in mv.stairs] == ["stair"]
+
+
+def test_read_only_entities_copy():
+    # nh.map.entities returns a copy; mutating it must not affect the map.
+    mv = MapView(_model())
+    ents = mv.entities
+    ents.clear()
+    assert len(mv.entities) == 2
