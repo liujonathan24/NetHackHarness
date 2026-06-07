@@ -116,7 +116,11 @@ class SkillRegistry:
                 pass  # leave as-is; the skill will surface a friendlier error
         try:
             result = fn(env, obs, **kwargs)
-        except (TypeError, AttributeError) as e:
+        except (TypeError, AttributeError, ValueError) as e:
+            # ValueError covers a skill doing int()/float() on a malformed model
+            # arg (e.g. a small model leaking XML tool syntax: times="17\n</parameter").
+            # Surface a friendly invalid-action message and re-prompt rather than
+            # letting the exception crash the whole rollout/eval.
             return SkillResult(actions=[], feedback=f"Skill {name} call failed: {e}. Schema: {self._schemas.get(name, {})}", interrupted=True)
         if ignored:
             extra = f"[ignored unknown args: {sorted(ignored)}]"
