@@ -489,7 +489,8 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
             from nethack_harness.tools.skills import SkillResult
             source = skill_args.get("source", "")
             cm_result = run_user_code(
-                source, env, state["structured_obs"], journal=state.get("journal")
+                source, env, state["structured_obs"], journal=state.get("journal"),
+                raw_obs=state.get("raw_obs"),
             )
             stdout = cm_result.stdout or ""
             err = f"\n[code error: {cm_result.error}]" if cm_result.error else ""
