@@ -1,0 +1,17 @@
+workflow: full
+phase: build
+build_mode: null
+build_pause: null
+isolation: null
+verify_mode: null
+base_ref: 1988ee5e147363b06173f20ca4290896cd309ddb
+design_doc: docs/superpowers/specs/2026-06-07-structured-map-observation-design.md
+plan: null
+verify_result: pending
+verification_report: null
+branch_status: pending
+created_at: 2026-06-07
+verified_at: null
+archived: false
+handoff_context: openspec/changes/structured-map-observation/.comet/handoff/design-context.json
+handoff_hash: 9772c64d2452a78062ff44174e3962c466b356f47fb5e97ea433f1fb2d0cdd28

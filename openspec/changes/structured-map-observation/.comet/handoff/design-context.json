@@ -1,0 +1,16 @@
+{
+  "change": "structured-map-observation",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "generated_by": "comet-handoff.sh",
+  "context_hash": "9772c64d2452a78062ff44174e3962c466b356f47fb5e97ea433f1fb2d0cdd28",
+  "files": [
+    { "path": "openspec/changes/structured-map-observation/proposal.md", "sha256": "00b4bb3bacea2c1093af8445c7a7299f088ede537f6f5eb40e55595c7a8dec0f" },
+    { "path": "openspec/changes/structured-map-observation/design.md", "sha256": "915238ac3c82fc3f619b132632e6af649d1511285ae38ae2e9035a1b310a3860" },
+    { "path": "openspec/changes/structured-map-observation/tasks.md", "sha256": "fcac4a2f51be8cc949c65d3a75da9e0d24ebdef177584000dabf8987fd887cb3" },
+    { "path": "openspec/changes/structured-map-observation/specs/canonical-map-model/spec.md", "sha256": "ca9fb3017456214342287b24c74128dcf752887edceb40e9a9d45a21887b23d6" },
+    { "path": "openspec/changes/structured-map-observation/specs/code-interpretable-map/spec.md", "sha256": "4ea9614901dc730ccb30db7df93fdbba5baa823ddc1d1e95293a639cf8e686d5" },
+    { "path": "openspec/changes/structured-map-observation/specs/structured-map-observation/spec.md", "sha256": "c7733308bcaa95fc1beb5e3f08a418b75d43eee08bd7265a3a564910658f737c" }
+  ]
+}
