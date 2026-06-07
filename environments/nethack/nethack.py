@@ -181,6 +181,10 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         # objective and record a lesson note (no NLE step consumed when the
         # agent calls pin_objective/add_note). See docs/PROMPTING_SURVEY.md.
         variant: str = "B1",
+        # Detail level for the structured-map variants (JSON/TOON): "full"
+        # emits rich entity attrs + RLE grid; "minimal" trims to kind/coord/desc.
+        # Threaded onto state["map_detail"] for the per-turn template to read.
+        map_detail: str = "full",
         refine_interval: int = 20,
         # Variant R (CPP/GPP summarize-and-reset): when True, get_prompt_messages
         # hard-drops every user/assistant turn that landed before the most-recent
@@ -228,6 +232,7 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         self.belief_state_interval = belief_state_interval
         self.journal_render_max_chars = journal_render_max_chars
         self.variant = variant
+        self.map_detail = map_detail
         # The prompt recipe. Holds the four parts (obs/system/template/tools)
         # plus the per-turn and history hooks; the rollout loop dispatches
         # through it instead of branching on `variant`.
@@ -289,6 +294,7 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         state["descent_count"] = 0
         state["raw_obs"] = obs
         state["structured_obs"] = shape_observation(obs, character)
+        state["map_detail"] = self.map_detail
         # Track every (x, y) at which `>` was seen on the visible map. Needed
         # because once the player steps ONTO `>`, the @ overlay hides it and
         # extract_visible_features stops finding the tile — without memory,
@@ -483,7 +489,8 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
             from nethack_harness.tools.skills import SkillResult
             source = skill_args.get("source", "")
             cm_result = run_user_code(
-                source, env, state["structured_obs"], journal=state.get("journal")
+                source, env, state["structured_obs"], journal=state.get("journal"),
+                raw_obs=state.get("raw_obs"),
             )
             stdout = cm_result.stdout or ""
             err = f"\n[code error: {cm_result.error}]" if cm_result.error else ""

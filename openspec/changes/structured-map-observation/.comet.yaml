@@ -1,17 +1,19 @@
 workflow: full
-phase: build
+phase: verify
 build_mode: subagent-driven-development
 build_pause: null
 isolation: branch
-verify_mode: null
+verify_mode: full
 base_ref: 1988ee5e147363b06173f20ca4290896cd309ddb
 design_doc: docs/superpowers/specs/2026-06-07-structured-map-observation-design.md
 plan: docs/superpowers/plans/2026-06-07-structured-map-observation.md
 verify_result: pending
-verification_report: null
+verification_report: docs/superpowers/reports/2026-06-07-structured-map-observation-verify.md
 branch_status: pending
 created_at: 2026-06-07
 verified_at: null
 archived: false
 handoff_context: openspec/changes/structured-map-observation/.comet/handoff/design-context.json
 handoff_hash: 9772c64d2452a78062ff44174e3962c466b356f47fb5e97ea433f1fb2d0cdd28
+verify_command: cd environments/nethack && python -m pytest ../../tests/test_map_model.py ../../tests/test_map_encoders.py ../../tests/test_map_variants.py ../../tests/test_nh_map.py ../../tests/test_obs_compaction.py ../../tests/test_balrog.py ../../tests/test_image_variants.py ../../tests/test_code_mode.py -p no:cacheprovider -q
+build_command: cd environments/nethack && python -m pytest ../../tests/test_map_model.py ../../tests/test_map_encoders.py ../../tests/test_map_variants.py ../../tests/test_nh_map.py ../../tests/test_obs_compaction.py ../../tests/test_balrog.py ../../tests/test_image_variants.py ../../tests/test_code_mode.py -p no:cacheprovider -q
