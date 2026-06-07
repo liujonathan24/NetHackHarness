@@ -29,11 +29,36 @@ def _decode_png(b64: str) -> Image.Image:
     return Image.open(io.BytesIO(base64.b64decode(b64)))
 
 
+def test_module_does_not_bind_optional_deps_at_module_level():
+    # Lazy-import guarantee: minihack / PIL are imported INSIDE functions, never
+    # bound at module scope, so the module imports cleanly where they're absent.
+    assert "minihack" not in vars(image_render)
+    assert "Image" not in vars(image_render)
+    assert "GlyphMapper" not in vars(image_render)
+
+
 def test_glyphs_to_png_b64_is_1264x336():
     b64 = image_render.glyphs_to_png_b64(_blank_obs())
     img = _decode_png(b64)
     assert img.format == "PNG"
     assert img.size == (1264, 336)  # (width, height)
+
+
+def test_tty_path_strict_raises_without_pil(monkeypatch):
+    # Strict: the tty path raises when PIL is unavailable — it does NOT fall back
+    # to the glyph path. Mirrors the glyph-path strict test.
+    import builtins
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "PIL" or name.startswith("PIL."):
+            raise ImportError("forced: no PIL")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    image_render._reset_caches_for_test()
+    with pytest.raises((ImportError, RuntimeError)):
+        image_render.tty_to_png_b64(_blank_obs())
 
 
 def test_tty_to_png_b64_returns_valid_png():
