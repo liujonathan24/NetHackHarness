@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import random
 import re
+from pathlib import Path
 from typing import Any, Optional
 
 import verifiers as vf
@@ -60,8 +61,41 @@ def _continual_reset(state: dict, env, env_self) -> None:
     state["_seen_stairs_down"] = set()
 
 
+def _capture_user_content(content, out_dir, *, run_id: str, turn: int):
+    """Return a trace-safe copy of the per-turn user content.
+
+    Strings pass through. For a multimodal list, each image_url data URI is
+    decoded and written to ``<out_dir>/images/<run_id>_<turn>_<idx>.png`` and the
+    entry is rewritten to reference the relative path instead of the inline
+    base64, so the exact image the model saw is replayable without bloating the
+    NDJSON.
+    """
+    if isinstance(content, str):
+        return content
+    import base64 as _b64
+    images_dir = Path(out_dir) / "images"
+    out = []
+    idx = 0
+    for entry in content:
+        if entry.get("type") == "image_url":
+            url = (entry.get("image_url") or {}).get("url", "")
+            if url.startswith("data:") and "base64," in url:
+                images_dir.mkdir(parents=True, exist_ok=True)
+                b64 = url.split("base64,", 1)[1]
+                fname = f"{run_id}_{turn}_{idx}.png"
+                (images_dir / fname).write_bytes(_b64.b64decode(b64))
+                out.append({"type": "image_url", "image_url": {"path": f"images/{fname}"}})
+                idx += 1
+            else:
+                out.append(entry)
+        else:
+            out.append(entry)
+    return out
+
+
 def _write_trace_entry(env_self, state: dict, assistant_msg, tool_calls,
-                       action_indices, total_reward: float, obs_text: str) -> None:
+                       action_indices, total_reward: float, obs_text: str,
+                       obs_content=None) -> None:
     """Write one NDJSON line per env_response turn. Best-effort; never raises.
 
     Captures everything needed by the replay viewer to render the game as
@@ -129,6 +163,9 @@ def _write_trace_entry(env_self, state: dict, assistant_msg, tool_calls,
             "max_dlvl_reached": state.get("max_dlvl_reached"),
             "continual_life": state.get("_continual_life", 1),
             "rendered_user_message": obs_text,
+            "rendered_user_content": _capture_user_content(
+                obs_content if obs_content is not None else obs_text,
+                out_dir, run_id=run_id, turn=state.get("turn_count", 0)),
             "assistant_message": assist_content,
             "tool_calls": tc_serial,
             "action_indices": list(action_indices) if action_indices else [],

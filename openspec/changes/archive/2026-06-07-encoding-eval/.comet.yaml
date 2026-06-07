@@ -1,0 +1,19 @@
+workflow: full
+phase: archive
+build_mode: subagent-driven-development
+build_pause: null
+isolation: branch
+verify_mode: full
+base_ref: ead22d848664dadbdfd6e4aae4807636f2d7a093
+design_doc: docs/superpowers/specs/2026-06-07-encoding-eval-design.md
+plan: docs/superpowers/plans/2026-06-07-encoding-eval.md
+verify_result: pass
+verification_report: docs/superpowers/reports/2026-06-07-encoding-eval-verify.md
+branch_status: handled
+created_at: 2026-06-07
+verified_at: 2026-06-07
+archived: true
+handoff_context: openspec/changes/encoding-eval/.comet/handoff/design-context.json
+handoff_hash: c710e38e364d7650825be9f2161b1852fd2ad09aa0c8919deaeadf9a7e1aaa95
+verify_command: cd environments/nethack && python -m pytest ../../tests/test_encoding_eval_aggregate.py ../../tests/test_replay_capture.py ../../tests/test_encoding_eval_replay.py ../../tests/test_encoding_eval_run.py ../../tests/test_obs_compaction.py ../../tests/test_integration.py -p no:cacheprovider -q -k "not test_success_reward_zero_then_one"
+build_command: cd environments/nethack && python -m pytest ../../tests/test_encoding_eval_aggregate.py ../../tests/test_replay_capture.py ../../tests/test_encoding_eval_replay.py ../../tests/test_encoding_eval_run.py ../../tests/test_obs_compaction.py ../../tests/test_integration.py -p no:cacheprovider -q -k "not test_success_reward_zero_then_one"

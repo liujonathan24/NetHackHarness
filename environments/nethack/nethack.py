@@ -897,7 +897,7 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         # is unset; never raises.
         _write_trace_entry(
             self, state, assistant_msg, tool_calls,
-            action_indices, total_reward, content_to_text(content),
+            action_indices, total_reward, content_to_text(content), obs_content=content,
         )
         return [vf.UserMessage(role="user", content=content)]
 
