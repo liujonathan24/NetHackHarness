@@ -168,6 +168,32 @@ def _image_template(render_name):
     return _render
 
 
+def _structured_map_template(fmt):
+    """Per-turn template emitting a structured-text map (JSON or TOON).
+
+    ``fmt`` is "json" or "toon". The map_detail level is read from
+    ``state["map_detail"]`` (default "full"). The status/inventory block is
+    appended via the canonical formatter with the ASCII map gated off.
+    """
+
+    def _render(structured, journal, state, *, compact, journal_max_chars):
+        from nethack_core.map_model import build_map_model
+        from nethack_harness.prompt.map_encoders import json_encode, toon_encode
+
+        detail = state.get("map_detail", "full")
+        model = build_map_model(state["raw_obs"])
+        enc = json_encode if fmt == "json" else toon_encode
+        map_text = enc(model, detail=detail)
+        status = format_observation_as_chat(
+            structured, journal, state, compact=compact,
+            journal_max_chars=journal_max_chars,
+            include_map=False, include_local=False,
+        )
+        return f"=== MAP ({fmt.upper()}) ===\n{map_text}\n\n{status}"
+
+    return _render
+
+
 # ---------- cross-cutting hooks (verbatim from the legacy env_response) ----------
 
 
@@ -275,6 +301,10 @@ def _build_registry(system_prompt: str) -> dict:
                          turn_template=_image_template("glyph")),
         "IMG_TTY": canonical("IMG_TTY", obs=ObsSpec(mode="img"),
                              turn_template=_image_template("tty")),
+        # Structured-text map: JSON or in-repo TOON, built from the canonical
+        # map model; map_detail (full/minimal) rides on state["map_detail"].
+        "JSON": canonical("JSON", turn_template=_structured_map_template("json")),
+        "TOON": canonical("TOON", turn_template=_structured_map_template("toon")),
         # Continual-harness adaptation: periodic self-refinement directive.
         "P": canonical("P", turn_hooks=(_p_refinement_hook,)),
         # Full Continual Harness: refiner + sub-agents + system inject + run_macro.
