@@ -2,6 +2,7 @@
 change: encoding-eval
 design-doc: docs/superpowers/specs/2026-06-07-encoding-eval-design.md
 base-ref: 64d086551a75c4300323103f2e47603450cf0a5e
+archived-with: 2026-06-07-encoding-eval
 ---
 
 # Encoding-eval Implementation Plan
@@ -14,6 +15,7 @@ base-ref: 64d086551a75c4300323103f2e47603450cf0a5e
 
 **Tech Stack:** Python, pytest. Reuses `tools/eval_instrument.py`, `nethack_harness/prompt/balrog.py`, `legacy/replay.py`.
 
+archived-with: 2026-06-07-encoding-eval
 ---
 
 ## Environment & test invocation (read first)
@@ -44,6 +46,7 @@ base-ref: 64d086551a75c4300323103f2e47603450cf0a5e
 - Create: `environments/nethack/configs/eval/qwen-3-5-vl.toml`
 - Tests: `tests/test_encoding_eval_aggregate.py`, `tests/test_encoding_eval_run.py`, `tests/test_replay_capture.py`, `tests/test_encoding_eval_replay.py`
 
+archived-with: 2026-06-07-encoding-eval
 ---
 
 ## Task 1: Aggregation layer (pure)
@@ -190,6 +193,7 @@ git add -- tools/encoding_eval/__init__.py tools/encoding_eval/aggregate.py test
 git commit -m "feat(encoding-eval): pure aggregation layer reusing eval_instrument + balrog"
 ```
 
+archived-with: 2026-06-07-encoding-eval
 ---
 
 ## Task 2: Replay capture (trace extension + image PNGs)
@@ -316,6 +320,7 @@ git add -- environments/nethack/nethack_harness/helpers.py environments/nethack/
 git commit -m "feat(encoding-eval): capture full multimodal content + image PNGs in the trace"
 ```
 
+archived-with: 2026-06-07-encoding-eval
 ---
 
 ## Task 3: Minimal replay renderer + integration seam
@@ -447,6 +452,7 @@ git add -- tools/encoding_eval/replay.py tests/test_encoding_eval_replay.py
 git commit -m "feat(encoding-eval): minimal dual-form replay renderer + Group B seam"
 ```
 
+archived-with: 2026-06-07-encoding-eval
 ---
 
 ## Task 4: Matrix orchestration (injectable runner seam)
@@ -549,6 +555,7 @@ git add -- tools/encoding_eval/run.py tests/test_encoding_eval_run.py
 git commit -m "feat(encoding-eval): matrix orchestration with injectable runner seam"
 ```
 
+archived-with: 2026-06-07-encoding-eval
 ---
 
 ## Task 5: VLM config + verification + tasks.md
@@ -598,6 +605,7 @@ git add -- environments/nethack/configs/eval/qwen-3-5-vl.toml tools/encoding_eva
 git commit -m "feat(encoding-eval): VLM config + operational run note; mark tasks complete"
 ```
 
+archived-with: 2026-06-07-encoding-eval
 ---
 
 ## Self-review notes
