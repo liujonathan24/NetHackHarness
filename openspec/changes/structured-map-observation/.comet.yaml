@@ -8,7 +8,7 @@ base_ref: 1988ee5e147363b06173f20ca4290896cd309ddb
 design_doc: docs/superpowers/specs/2026-06-07-structured-map-observation-design.md
 plan: docs/superpowers/plans/2026-06-07-structured-map-observation.md
 verify_result: pending
-verification_report: null
+verification_report: docs/superpowers/reports/2026-06-07-structured-map-observation-verify.md
 branch_status: pending
 created_at: 2026-06-07
 verified_at: null
