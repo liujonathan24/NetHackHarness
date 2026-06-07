@@ -29,7 +29,12 @@ def compose_user_content(obs: Content, prefix_parts: list) -> Content:
 
 
 def content_to_text(obs: Content) -> str:
-    """Extract the text form of a content value (for the trace writer)."""
+    """Extract the text form of a content value (for the trace writer).
+
+    For a multimodal list, join ALL text blocks (e.g. a leading prefix block plus
+    the status/inventory block) so the trace keeps the full textual content; image
+    entries are elided. A plain string is returned as-is.
+    """
     if isinstance(obs, str):
         return obs
-    return next((p["text"] for p in obs if p.get("type") == "text"), "")
+    return "\n".join(p["text"] for p in obs if p.get("type") == "text")

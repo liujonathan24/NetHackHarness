@@ -73,3 +73,18 @@ def test_img_template_emits_multimodal_list(make_structured_obs):
     assert "=== MAP ===" not in content[1]["text"]
     assert "=== ADJACENT ===" not in content[1]["text"]
     assert "=== STATUS ===" in content[1]["text"]
+
+
+def test_img_tty_template_uses_tty_path(make_structured_obs):
+    # IMG_TTY renders via the tty-text path; same multimodal shape + text gating.
+    spec = VARIANT_REGISTRY["IMG_TTY"]
+    state = {"raw_obs": _Obs()}
+    content = spec.turn_template(
+        make_structured_obs(), None, state, compact=True, journal_max_chars=2000
+    )
+    assert isinstance(content, list)
+    assert content[0]["type"] == "image_url"
+    assert content[0]["image_url"]["url"].startswith("data:image/png;base64,")
+    assert content[1]["type"] == "text"
+    assert "=== MAP ===" not in content[1]["text"]
+    assert "=== STATUS ===" in content[1]["text"]

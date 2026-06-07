@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from nethack_harness.prompt.content import compose_user_content
+from nethack_harness.prompt.content import compose_user_content, content_to_text
 
 
 def test_str_with_prefix_matches_legacy_join():
@@ -24,3 +24,16 @@ def test_list_without_prefix_unchanged():
     obs = [{"type": "image_url", "image_url": {"url": "data:..."}},
            {"type": "text", "text": "STATUS"}]
     assert compose_user_content(obs, []) == obs
+
+
+def test_content_to_text_string_passthrough():
+    assert content_to_text("OBS") == "OBS"
+
+
+def test_content_to_text_joins_all_text_blocks():
+    # A composed list with a leading prefix block + the status block: the trace
+    # text must keep BOTH (image entry elided).
+    obs = [{"type": "text", "text": "[a]\n[b]"},
+           {"type": "image_url", "image_url": {"url": "data:..."}},
+           {"type": "text", "text": "STATUS"}]
+    assert content_to_text(obs) == "[a]\n[b]\nSTATUS"
