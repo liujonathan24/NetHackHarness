@@ -1,12 +1,12 @@
 workflow: full
 phase: build
-build_mode: null
+build_mode: subagent-driven-development
 build_pause: null
-isolation: null
+isolation: branch
 verify_mode: null
 base_ref: ead22d848664dadbdfd6e4aae4807636f2d7a093
 design_doc: docs/superpowers/specs/2026-06-07-encoding-eval-design.md
-plan: null
+plan: docs/superpowers/plans/2026-06-07-encoding-eval.md
 verify_result: pending
 verification_report: null
 branch_status: pending
