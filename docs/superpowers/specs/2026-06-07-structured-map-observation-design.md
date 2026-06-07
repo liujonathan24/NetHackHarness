@@ -2,6 +2,8 @@
 comet_change: structured-map-observation
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-06-07-structured-map-observation
+status: final
 ---
 
 # Structured-map observation (Group A) — technical design
