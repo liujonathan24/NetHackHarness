@@ -106,13 +106,45 @@ class CodeModeResult:
     actions_taken: list[int] = field(default_factory=list)
 
 
+class MapView:
+    """Read-only structural view of the map for code-mode agents."""
+    def __init__(self, model):
+        self._m = model
+
+    @property
+    def player(self):
+        return self._m.player
+
+    @property
+    def entities(self):
+        return list(self._m.entities)
+
+    def at(self, x, y):
+        for e in self._m.entities:
+            if e.x == x and e.y == y:
+                return e
+        return None
+
+    def _of(self, kind):
+        return [e for e in self._m.entities if e.kind == kind]
+
+    @property
+    def monsters(self):
+        return self._of("monster")
+
+    @property
+    def stairs(self):
+        return self._of("stair")
+
+
 class _NhNamespace:
     """The `nh` object the executor sees. Wraps an env + skill registry."""
 
     def __init__(self, env, structured_obs, journal=None, action_log: Optional[list[int]] = None,
-                 sub_lm: Optional["SubLM"] = None):
+                 sub_lm: Optional["SubLM"] = None, raw_obs=None):
         self._env = env
         self._obs = structured_obs
+        self._raw_obs = raw_obs
         self._journal = journal
         self._log = action_log if action_log is not None else []
         self._sub_lm = sub_lm or _default_sub_lm()
@@ -130,6 +162,17 @@ class _NhNamespace:
     @property
     def map_view(self) -> str:
         return self._obs.map_view if self._obs is not None else ""
+
+    @property
+    def map(self) -> Optional["MapView"]:
+        """Read-only structured map (entities w/ coords, player, terrain).
+
+        Built lazily from the raw NLE obs threaded through run_user_code.
+        Returns None when no raw obs is available."""
+        if self._raw_obs is None:
+            return None
+        from nethack_core.map_model import build_map_model
+        return MapView(build_map_model(self._raw_obs))
 
     @property
     def character(self) -> dict:
@@ -228,6 +271,7 @@ def run_user_code(
     structured_obs,
     journal=None,
     timeout_seconds: int = 5,
+    raw_obs=None,
 ) -> CodeModeResult:
     """
     Validate and execute `source` against a controlled namespace.
@@ -240,7 +284,7 @@ def run_user_code(
     except CodeModeError as e:
         return CodeModeResult(stdout="", error=str(e))
 
-    nh = _NhNamespace(env, structured_obs, journal)
+    nh = _NhNamespace(env, structured_obs, journal, raw_obs=raw_obs)
     import io
     import contextlib
 
