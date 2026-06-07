@@ -90,6 +90,11 @@ def build_map_model(raw_obs: Any) -> MapModel:
                 label = _FEATURE_GLYPHS.get(ch)
                 entities.append(Entity("item", g, gx, gy,
                                        description=label or "object", obj_class=label))
+            elif N.glyph_is_trap(g):
+                # Surface the trap LOCATION (decision-critical). The specific
+                # trap type lives in the cmap layer and is left for a later
+                # enhancement; the coordinate is the load-bearing signal.
+                entities.append(Entity("trap", g, gx, gy, description="trap"))
 
     # Features (stairs/doors/altars/...) from the tty layer with coordinates.
     for ty in range(1, min(22, tty.shape[0])):

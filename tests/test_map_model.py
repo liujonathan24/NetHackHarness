@@ -50,6 +50,16 @@ def test_item_entity_has_class():
     assert items and items[0].obj_class is not None
 
 
+def test_trap_entity_surfaced():
+    g = np.full((21, 79), N.GLYPH_CMAP_OFF, np.int32)
+    trap = next(gid for gid in range(N.GLYPH_CMAP_OFF, N.GLYPH_CMAP_OFF + 200)
+                if N.glyph_is_trap(gid))
+    g[7, 8] = trap
+    m = build_map_model(_obs_with(g))
+    traps = [e for e in m.entities if e.kind == "trap"]
+    assert traps and (traps[0].x, traps[0].y) == (8, 7)
+
+
 def test_grid_is_rle_string():
     g = np.full((21, 79), N.GLYPH_CMAP_OFF, np.int32)
     m = build_map_model(_obs_with(g))
