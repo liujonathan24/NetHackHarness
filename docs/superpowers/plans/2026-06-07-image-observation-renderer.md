@@ -2,6 +2,7 @@
 change: image-observation-renderer
 design-doc: docs/superpowers/specs/2026-06-07-image-observation-renderer-design.md
 base-ref: c218d6223651415a875b8158dabacb5612309d87
+archived-with: 2026-06-07-image-observation-renderer
 ---
 
 # Image-observation renderer Implementation Plan
@@ -14,6 +15,7 @@ base-ref: c218d6223651415a875b8158dabacb5612309d87
 
 **Tech Stack:** Python, NLE 1.3.0, MiniHack `GlyphMapper`, PIL 10.0.1, numpy, pytest.
 
+archived-with: 2026-06-07-image-observation-renderer
 ---
 
 ## Environment & test invocation (read first)
@@ -64,6 +66,7 @@ base-ref: c218d6223651415a875b8158dabacb5612309d87
   `tests/test_compose_user_content.py`
 - Test (touch/verify): `tests/test_obs_compaction.py`, `tests/test_balrog.py`
 
+archived-with: 2026-06-07-image-observation-renderer
 ---
 
 ## Task 1: Image renderer module
@@ -274,6 +277,7 @@ git add environments/nethack/nethack_harness/prompt/image_render.py tests/test_i
 git commit -m "feat(image-obs): add strict glyph/tty PNG renderer (image_render.py)"
 ```
 
+archived-with: 2026-06-07-image-observation-renderer
 ---
 
 ## Task 2: include_map / include_local gates on the text formatter
@@ -390,6 +394,7 @@ git add environments/nethack/nethack_harness/prompt/rendering.py tests/test_imag
 git commit -m "feat(image-obs): add include_map/include_local gates to format_observation_as_chat"
 ```
 
+archived-with: 2026-06-07-image-observation-renderer
 ---
 
 ## Task 3: IMG / IMG_TTY variants
@@ -504,6 +509,7 @@ git add environments/nethack/nethack_harness/prompt/prompt_spec.py tests/test_im
 git commit -m "feat(image-obs): register IMG and IMG_TTY multimodal variants"
 ```
 
+archived-with: 2026-06-07-image-observation-renderer
 ---
 
 ## Task 4: env_response multimodal generalization
@@ -661,6 +667,7 @@ git add environments/nethack/nethack.py tests/test_compose_user_content.py
 git commit -m "feat(image-obs): generalize env_response to wrap str|list content"
 ```
 
+archived-with: 2026-06-07-image-observation-renderer
 ---
 
 ## Task 5: Full verification + tasks.md sync
@@ -707,6 +714,7 @@ git add openspec/changes/image-observation-renderer/tasks.md
 git commit -m "chore(image-obs): mark tasks complete; verify feature green against baseline"
 ```
 
+archived-with: 2026-06-07-image-observation-renderer
 ---
 
 ## Self-review notes

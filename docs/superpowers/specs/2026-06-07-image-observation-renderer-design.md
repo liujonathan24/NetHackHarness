@@ -2,6 +2,8 @@
 comet_change: image-observation-renderer
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-06-07-image-observation-renderer
+status: final
 ---
 
 # Image-observation renderer — technical design
