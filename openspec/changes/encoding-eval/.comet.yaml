@@ -1,0 +1,17 @@
+workflow: full
+phase: build
+build_mode: null
+build_pause: null
+isolation: null
+verify_mode: null
+base_ref: ead22d848664dadbdfd6e4aae4807636f2d7a093
+design_doc: docs/superpowers/specs/2026-06-07-encoding-eval-design.md
+plan: null
+verify_result: pending
+verification_report: null
+branch_status: pending
+created_at: 2026-06-07
+verified_at: null
+archived: false
+handoff_context: openspec/changes/encoding-eval/.comet/handoff/design-context.json
+handoff_hash: c710e38e364d7650825be9f2161b1852fd2ad09aa0c8919deaeadf9a7e1aaa95

@@ -1,0 +1,14 @@
+{
+  "change": "encoding-eval",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "generated_by": "comet-handoff.sh",
+  "context_hash": "c710e38e364d7650825be9f2161b1852fd2ad09aa0c8919deaeadf9a7e1aaa95",
+  "files": [
+    { "path": "openspec/changes/encoding-eval/proposal.md", "sha256": "c55f4de9de78febaa1cea5612037438e0766a56850b6f873809e98ce8cd8edb8" },
+    { "path": "openspec/changes/encoding-eval/design.md", "sha256": "d0011d25b8a2aaf5ca93ece5e9aaa19152fe780a5f4cbf730624f33bf1d65fa2" },
+    { "path": "openspec/changes/encoding-eval/tasks.md", "sha256": "ccc484e3e50c3f4d26921a8c6330bbb1a35b3a0400511da84a9bc84fba783337" },
+    { "path": "openspec/changes/encoding-eval/specs/encoding-eval/spec.md", "sha256": "77fdaa512a5984a02d9c7fa7c2013d2ad9ae45caa9e1819948325e1979c28aae" }
+  ]
+}
