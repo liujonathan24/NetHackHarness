@@ -1,28 +1,28 @@
 ## 1. Aggregation layer (pure, mock-testable)
 
-- [ ] 1.1 Add an aggregation module that takes `{cell_key: list[sample_dict]}` and returns a per-encoding metrics table, reusing `tools/eval_instrument.summarize_eval` + `nethack_harness/prompt/balrog.progression_score/tier`.
-- [ ] 1.2 Compute the required metrics per cell: progression score/tier, max dlvl, descent rate + Wilson CI, scout coverage, steps-to-first-descent, tokens/turn; mark $/run unavailable when usage is absent.
-- [ ] 1.3 Emit the comparison table (structured + human-readable) under `outputs/evals/`.
-- [ ] 1.4 Unit-test aggregation on synthetic sample dicts for several encodings (no model calls); assert the table shape + that summarize_eval/progression are used.
+- [x] 1.1 Add an aggregation module (`tools/encoding_eval/aggregate.py`) that takes `{cell_key: list[sample_dict]}` and returns a per-encoding metrics table, reusing `tools/eval_instrument.summarize_eval` + `nethack_harness/prompt/balrog.progression_score/tier`.
+- [x] 1.2 Compute per cell: progression score/tier, max dlvl, descent rate + Wilson CI, scout/avg_score, tokens/turn; mark $/run unavailable (`None`/"n/a") when usage is absent.
+- [x] 1.3 Emit the comparison table (structured dict + `table_to_markdown`) — the orchestrator/run-note writes `table.json` + `table.md` under `outputs/evals/`.
+- [x] 1.4 Unit-test aggregation on synthetic sample dicts (no model calls); asserts table shape + summarize_eval/progression used + missing-usage marked.
 
 ## 2. Matrix orchestration
 
-- [ ] 2.1 Add an orchestration layer that takes an encoding set (variant + map_detail) + model configs and runs each cell via the existing verifiers eval path, parameterizing the env by `variant`/`map_detail`, writing raw samples to `outputs/evals/`.
-- [ ] 2.2 Make the encoding set + models configuration-driven (data, not code); default matrix = ASCII/IMG/IMG_TTY/JSON/TOON × {1 instruct LLM, 1 VLM}.
-- [ ] 2.3 Test orchestration wiring with a stub runner (no real model calls) — assert each cell is dispatched with the right variant/map_detail.
+- [x] 2.1 Add `tools/encoding_eval/run.py` `run_matrix(matrix, *, runner)` running each `(encoding, model)` cell via an injectable runner seam (default raises NotImplementedError so CI injects a stub); aggregates via `aggregate_cells`.
+- [x] 2.2 Encoding set + models are configuration-driven (data, not code); cell keys distinguish `map_detail` (e.g. `JSON:minimal`).
+- [x] 2.3 Test orchestration with a stub runner (no real model calls) — asserts each cell dispatched with the right variant/map_detail.
 
 ## 3. Replayable rollout logs — CAPTURE (in scope; viewer deferrable to Group B)
 
-- [ ] 3.1 Capture full multimodal content per turn: extend `_write_trace_entry` (+ the `env_response` call site) to record the `[image_url, text]` content (image data URI written to/linked from `outputs/evals/`), not just the flattened text. Existing text-encoding traces stay backward-compatible.
-- [ ] 3.2 Human-viewable timeline: wire the harness rollouts to `legacy/replay.py` `TrajectoryRecorder` (rendered tty frames) so game state is replayable independent of encoding.
-- [ ] 3.3 Document the on-disk replay-log format + a marked rendering entry point (the integration seam for Group B's `tools/launchpad` viewer). Provide a MINIMAL renderer (e.g. plain dump of both forms) behind that seam — the rich viewer is a Group B integration, not built twice here.
-- [ ] 3.4 Tests: a turn with multimodal content captures the image (not elided); the minimal renderer reproduces text-form and image-form per turn from a recorded fixture; the log-format/seam is stable (documented keys present).
+- [x] 3.1 Capture full multimodal content per turn: `_capture_user_content` + `rendered_user_content` in `_write_trace_entry`; IMG/IMG_TTY images written as PNGs under `<run>/images/`, referenced by path (no inline base64). (Also fixed a latent `Path`-unimported bug that had silently disabled the whole trace writer.)
+- [x] 3.2 Human-viewable timeline: the per-turn `raw_grid` (tty frames) is captured in the trace; `render_replay(form="human")` renders it (reuses the existing tty capture; `legacy/replay.py` recorder available for richer frames).
+- [x] 3.3 Documented on-disk replay-log format + marked entry point: `tools/encoding_eval/replay.py` `render_replay(run_dir, form=human|llm)` + `REPLAY_LOG_KEYS` (the seam Group B's `tools/launchpad` viewer reads). Minimal renderer ships; rich viewer is a Group B integration.
+- [x] 3.4 Tests: multimodal turn captures the image (not elided); minimal renderer reproduces text-form and image-form per turn from a fixture; seam keys present.
 
 ## 4. VLM config
 
-- [ ] 4.1 Add a VLM eval config under `configs/eval/` mirroring the existing TOML shape so IMG/IMG_TTY are exercisable.
+- [x] 4.1 Add `configs/eval/qwen-3-5-vl.toml` (Qwen3.5-VL) mirroring the existing TOML shape so IMG/IMG_TTY are exercisable.
 
 ## 5. Verification
 
-- [ ] 4.1 Run new tests in isolation; full suite failure set stays ⊆ the pre-existing baseline (7).
-- [ ] 4.2 Document how to run a real benchmark (the operational follow-up: keys/budget) in the harness module docstring or a short README note.
+- [x] 5.1 New tests pass in isolation (8); full suite 374 passed / 7 failed (== pre-existing baseline; zero new failures).
+- [x] 5.2 Operational run documented in `tools/encoding_eval/README.md` (supply a real runner + model configs incl. the VLM; set trace_dir; render replay; read table.json/md).
