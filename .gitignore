@@ -12,3 +12,15 @@ tools/.dashboard_cache/
 
 # agent worktrees
 .claude/worktrees/
+
+# node / npm tooling (not part of the Python project)
+node_modules/
+package.json
+package-lock.json
+skills-lock.json
+
+# local agent tooling installs (comet / openspec skills + commands)
+.claude/skills/
+.claude/commands/
+.claude/scheduled_tasks.lock
+.claude/scheduled_tasks.json

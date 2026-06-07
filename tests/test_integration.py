@@ -27,7 +27,7 @@ from nethack import (
     success_reward,
     scout_reward,
 )
-from nethack_core.journal import Journal
+from nethack_harness.memory.journal import Journal
 
 
 def _run(coro):

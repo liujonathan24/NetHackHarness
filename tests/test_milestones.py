@@ -14,7 +14,7 @@ from dataclasses import dataclass
 import numpy as np
 import pytest
 
-from nethack_core.milestones import (
+from nethack_harness.curriculum.milestones import (
     DUNGEON_MAIN,
     DUNGEON_MINES,
     DUNGEON_SOKOBAN,

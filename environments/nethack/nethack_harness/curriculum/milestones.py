@@ -1,5 +1,5 @@
 """
-nethack_core.milestones
+nethack_harness.curriculum.milestones
 =======================
 
 Termination predicates for the Pokemon-route-style curriculum.

@@ -1,5 +1,5 @@
 """
-nethack_core.wiki
+nethack_harness.tools.wiki
 =================
 
 A small NetHack wiki retrieval layer. Two access patterns:

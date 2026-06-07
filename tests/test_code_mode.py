@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from nethack_core.code_mode import (
+from nethack_harness.tools.code_mode import (
     CodeModeError,
     run_user_code,
     validate_source,
@@ -107,7 +107,7 @@ def test_run_user_code_safe_builtins_only():
 
 
 def test_run_user_code_journal_writes():
-    from nethack_core.journal import Journal
+    from nethack_harness.memory.journal import Journal
     j = Journal()
     result = run_user_code(
         "nh.add_note('reminder', 'wear gloves'); print(nh.recall('reminder'))",
@@ -174,7 +174,7 @@ def test_sub_lm_plan_returns_horizon_steps():
 
 
 def test_sub_lm_recall_uses_journal_context():
-    from nethack_core.journal import Journal
+    from nethack_harness.memory.journal import Journal
     j = Journal()
     j.add_note("altar", "saw a chaotic altar on dlvl 4")
     src = "print(nh.recall_lm('altar location'))"
@@ -186,7 +186,7 @@ def test_sub_lm_recall_uses_journal_context():
 
 def test_sub_lm_swap_via_subclass():
     """Verify the SubLM contract: a custom backend is honored."""
-    from nethack_core.code_mode import SubLM, _NhNamespace, run_user_code
+    from nethack_harness.tools.code_mode import SubLM, _NhNamespace, run_user_code
 
     class _Echo(SubLM):
         def summarize(self, text, query=None):

@@ -1,5 +1,5 @@
 """
-nethack_core.replay
+legacy.replay
 ===================
 
 Cheap trajectory record/replay. Because NLE doesn't natively support copy()
@@ -22,7 +22,7 @@ from dataclasses import dataclass, asdict, field
 from pathlib import Path
 from typing import Any, Optional
 
-from .env import NetHackCoreEnv
+from nethack_core.env import NetHackCoreEnv
 
 
 @dataclass
@@ -82,7 +82,7 @@ def _frame_from_obs(obs, reward: float, action: Optional[int] = None,
                     journal: Optional[dict] = None) -> TrajectoryFrame:
     """Build a TrajectoryFrame from a raw CoreObservation."""
     # Lazy import to avoid a cycle.
-    from .observations import parse_inventory, parse_status
+    from nethack_core.observations import parse_inventory, parse_status
 
     tty = "\n".join("".join(chr(c) for c in row).rstrip() for row in obs.tty_chars)
     msg = bytes(obs.message).split(b"\x00", 1)[0].decode("ascii", errors="replace").strip()

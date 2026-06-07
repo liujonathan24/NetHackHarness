@@ -1,5 +1,5 @@
 """
-nethack_core.skills
+nethack_harness.tools.skills
 ===================
 
 NetPlay-style skill mode. Each skill is a callable that takes the current
@@ -22,10 +22,10 @@ from typing import Callable, Iterable, Literal, Optional
 
 from nle import nethack
 
-from .env import NetHackCoreEnv
-from .journal import Journal
-from .observations import StructuredObservation, InventoryItem
-from .pathfinding import a_star, nearest_frontier, player_xy
+from nethack_core.env import NetHackCoreEnv
+from nethack_harness.memory.journal import Journal
+from nethack_core.observations import StructuredObservation, InventoryItem
+from nethack_harness.navigation.pathfinding import a_star, nearest_frontier, player_xy
 
 
 Direction = Literal["N", "NE", "E", "SE", "S", "SW", "W", "NW", "."]
@@ -227,7 +227,7 @@ def move(env: NetHackCoreEnv, obs: StructuredObservation, direction: str, run: b
             nx, ny = cx + dx, cy + dy
             if not (0 <= nx < w and 0 <= ny < h): break
             tile = int(chars[ny, nx])
-            from .pathfinding import is_walkable
+            from nethack_harness.navigation.pathfinding import is_walkable
             if not is_walkable(tile): break
             path.append(step)
             cx, cy = nx, ny
@@ -851,7 +851,7 @@ def autoexplore(env: NetHackCoreEnv, obs: StructuredObservation, max_steps: int 
         target, _path = result
         up_xy = _stairs_up_xy(chars)
         if up_xy is not None and target == up_xy:
-            from .pathfinding import find_frontiers, a_star
+            from nethack_harness.navigation.pathfinding import find_frontiers, a_star
             alts = [
                 f for f in find_frontiers(chars)
                 if int(chars[f[1], f[0]]) != ord('<') and f != start
@@ -879,7 +879,7 @@ def autoexplore(env: NetHackCoreEnv, obs: StructuredObservation, max_steps: int 
         # only one walkable cardinal neighbor. Path to the closest one and
         # queue 20 `search` actions there. NetHack `s` is action enum index
         # for search; appending many of them lets us search in one tool call.
-        from .pathfinding import a_star
+        from nethack_harness.navigation.pathfinding import a_star
         try:
             h, w = chars.shape
             dead_ends = []
@@ -970,8 +970,8 @@ def autoexplore(env: NetHackCoreEnv, obs: StructuredObservation, max_steps: int 
             # Short-frontier rerouting: if there's a known door/passage we
             # haven't been through, prefer pathing to it over the tiny
             # frontier. Picks the closest such door by A* path length.
-            from .pathfinding import a_star as _astar2
-            from .observations import extract_visible_features
+            from nethack_harness.navigation.pathfinding import a_star as _astar2
+            from nethack_core.observations import extract_visible_features
             try:
                 nle_env = env.underlying.unwrapped
                 keys = nle_env._observation_keys
@@ -1034,7 +1034,7 @@ def autoexplore(env: NetHackCoreEnv, obs: StructuredObservation, max_steps: int 
 })
 def find_and_descend(env: NetHackCoreEnv, obs: StructuredObservation, max_actions: int = 80) -> SkillResult:
     chars, start = _current_chars_and_player(env)
-    from .pathfinding import a_star, find_frontiers
+    from nethack_harness.navigation.pathfinding import a_star, find_frontiers
     h, w = chars.shape
     # 1) Stairs DOWN visible? Path + descend.
     stair = None
@@ -1060,7 +1060,7 @@ def find_and_descend(env: NetHackCoreEnv, obs: StructuredObservation, max_action
                 feedback=f"`>` visible at {stair}; pathing {len(p)} steps and descending.",
             )
     # 2) Pick a reachable door (open/gap or closed) and path there.
-    from .observations import extract_visible_features
+    from nethack_core.observations import extract_visible_features
     try:
         nle_env = env.underlying.unwrapped
         keys = nle_env._observation_keys

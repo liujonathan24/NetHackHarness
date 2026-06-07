@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from nethack_core.env import NetHackCoreEnv
-from nethack_core.skills import (
+from nethack_harness.tools.skills import (
     SkillResult,
     bootstrap_character,
     list_skills,

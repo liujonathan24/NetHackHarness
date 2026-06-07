@@ -23,7 +23,7 @@ import numpy as np
 
 from nethack_core.env import NetHackCoreEnv
 from nethack_core.observations import shape
-from nethack_core.pathfinding import a_star, nearest_frontier
+from nethack_harness.navigation.pathfinding import a_star, nearest_frontier
 
 
 def _bench(label: str, fn, n: int) -> None:

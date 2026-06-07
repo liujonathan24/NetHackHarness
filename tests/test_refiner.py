@@ -10,8 +10,8 @@ from dataclasses import dataclass
 
 import pytest
 
-from nethack_core.journal import Journal
-from nethack_core.refiner import (
+from nethack_harness.memory.journal import Journal
+from nethack_harness.refiner import (
     MacroStep,
     OfflineRefiner,
     RefinerEdits,
@@ -179,7 +179,7 @@ def test_load_environment_ch_variant_falls_back_to_offline():
             variant="CH",
             refine_interval=2,
         )
-    from nethack_core.refiner import OfflineRefiner
+    from nethack_harness.refiner import OfflineRefiner
     assert isinstance(env.refiner, OfflineRefiner)
     # run_macro tool must be exposed to the agent under variant=CH.
     tool_names = {getattr(t, "__name__", "") for t in env.tools}

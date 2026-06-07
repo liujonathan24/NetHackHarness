@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from nethack_core.curriculum import (
+from nethack_harness.curriculum.curriculum import (
     TIERS,
     TierSpec,
     get_tier,

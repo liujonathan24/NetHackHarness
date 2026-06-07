@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from nethack_core.wiki import WikiIndex, WikiPage, get_index, reload_default_index, set_index
+from nethack_harness.tools.wiki import WikiIndex, WikiPage, get_index, reload_default_index, set_index
 
 
 def test_default_index_has_seed_pages():

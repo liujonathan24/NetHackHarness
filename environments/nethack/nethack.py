@@ -23,7 +23,13 @@ from nethack_core.observations import shape as shape_observation
 from nethack_harness.tools.skills import registry as skill_registry, list_skills
 from nethack_harness.curriculum.curriculum import get_tier, list_tiers, TierName
 
-from environments.nethack import harness_overlay as _harness_overlay
+try:
+    from environments.nethack import harness_overlay as _harness_overlay
+except ModuleNotFoundError:
+    # Fallback when imported from the package directory (e.g. tests run with
+    # cwd=environments/nethack) rather than the repo root, where the
+    # `environments.nethack` namespace package resolves.
+    import harness_overlay as _harness_overlay
 
 
 # ---------- verifiers 0.1.14 compat shim ----------

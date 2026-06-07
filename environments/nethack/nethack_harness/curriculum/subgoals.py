@@ -1,4 +1,4 @@
-"""nethack_core.subgoals
+"""nethack_harness.curriculum.subgoals
 ========================
 
 Dynamic subgoal curriculum: instead of hard-coded milestones (mine_town,

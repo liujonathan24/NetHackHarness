@@ -1,5 +1,5 @@
 """
-nethack_core.curriculum
+nethack_harness.curriculum.curriculum
 =======================
 
 Smooth difficulty ramp from empty room to full NLE.

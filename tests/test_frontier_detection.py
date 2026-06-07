@@ -39,7 +39,7 @@ def _grid_from_ascii(lines: list[str]) -> np.ndarray:
 def test_seen_stone_is_not_a_frontier_neighbor():
     """A walled-in corner space (3 wall neighbors, no further void) must NOT
     flag the adjacent floor as a frontier under the strict predicate."""
-    from nethack_core.pathfinding import find_frontiers, is_truly_unseen
+    from nethack_harness.navigation.pathfinding import find_frontiers, is_truly_unseen
 
     # Floor cell with the only unknown neighbor being a single space wedged
     # between three walls — that space is "seen stone", not unexplored.
@@ -78,7 +78,7 @@ def test_seen_stone_is_not_a_frontier_neighbor():
 def test_truly_unseen_void_is_a_frontier_neighbor():
     """A space tile with another space neighbor (open void) must remain a
     frontier under strict mode."""
-    from nethack_core.pathfinding import find_frontiers, is_truly_unseen
+    from nethack_harness.navigation.pathfinding import find_frontiers, is_truly_unseen
 
     # Room opens to the east into uncharted void.
     grid = _grid_from_ascii([
@@ -94,7 +94,7 @@ def test_truly_unseen_void_is_a_frontier_neighbor():
 # ---------- (b) blacklist excludes frontier ----------
 
 def test_blacklist_excludes_frontier_from_nearest():
-    from nethack_core.pathfinding import nearest_frontier
+    from nethack_harness.navigation.pathfinding import nearest_frontier
 
     # Corridor with two frontiers: one near, one far. Blacklist the near one
     # and confirm nearest_frontier picks the far one (or None if unreachable).

@@ -1,5 +1,5 @@
 """
-nethack_core.puffer_env
+legacy.puffer_env
 =======================
 
 A PufferLib-shaped adapter over NetHackCoreEnv.
@@ -29,7 +29,7 @@ PufferLib install path (NOT done automatically because of raylib):
 Usage with PufferLib:
 
     from pufferlib.environments.gymnasium import GymnasiumEnvironment
-    from nethack_core.puffer_env import make_for_puffer
+    from legacy.puffer_env import make_for_puffer
 
     env = make_for_puffer("solo_combat")
     puffer_env = GymnasiumEnvironment(env)
@@ -42,8 +42,8 @@ from typing import Optional
 import gymnasium as gym
 import numpy as np
 
-from .curriculum import TierName, get_tier
-from .env import CoreObservation, NetHackCoreEnv
+from nethack_harness.curriculum.curriculum import TierName, get_tier
+from nethack_core.env import CoreObservation, NetHackCoreEnv
 
 
 class _GymDictWrapper(gym.Env):

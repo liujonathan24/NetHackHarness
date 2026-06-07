@@ -1,5 +1,5 @@
 """
-nethack_core.code_mode
+nethack_harness.tools.code_mode
 ======================
 
 Glyphbox-style code execution as a single tool. Lets the agent issue Python

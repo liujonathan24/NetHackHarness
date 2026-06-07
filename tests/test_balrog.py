@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from nethack_core.balrog import progression_score, progression_tier
+from nethack_harness.prompt.balrog import progression_score, progression_tier
 
 
 def test_spawn_is_zero():

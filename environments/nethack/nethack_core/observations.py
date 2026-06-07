@@ -220,7 +220,7 @@ def parse_status(blstats: np.ndarray) -> dict[str, int]:
 # ---------- character (role/race/alignment) ----------
 
 # These are populated once at reset time by invoking #attributes through the env
-# and parsing the resulting menu. See nethack_core.skills.bootstrap_character().
+# and parsing the resulting menu. See nethack_harness.tools.skills.bootstrap_character().
 # We keep this as a structured dict so downstream code can use it without
 # re-parsing on every step.
 

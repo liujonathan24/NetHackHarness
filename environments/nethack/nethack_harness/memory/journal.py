@@ -1,5 +1,5 @@
 """
-nethack_core.journal
+nethack_harness.memory.journal
 ====================
 
 A structured note store the agent uses as long-horizon memory.

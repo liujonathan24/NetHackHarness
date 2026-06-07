@@ -6,7 +6,7 @@ Run with: uv run pytest tests/test_journal.py -v
 
 from __future__ import annotations
 
-from nethack_core.journal import Journal
+from nethack_harness.memory.journal import Journal
 
 
 def test_journal_starts_empty():
@@ -130,7 +130,7 @@ def test_render_uncapped_for_small_journals():
 
 def test_recall_finds_pinned_objective():
     """v0.0.55: recall includes the pinned objective under key 'objective'."""
-    from nethack_core.journal import Journal
+    from nethack_harness.memory.journal import Journal
     j = Journal()
     j.pin_objective("Reach dungeon level 2 by finding stairs DOWN")
     hits = j.recall("objective")
@@ -145,7 +145,7 @@ def test_recall_finds_pinned_objective():
 
 
 def test_recall_empty_query_returns_objective_plus_notes():
-    from nethack_core.journal import Journal
+    from nethack_harness.memory.journal import Journal
     j = Journal()
     j.pin_objective("Find the amulet")
     j.add_note("loc1", "Mines entrance at dlvl 3")

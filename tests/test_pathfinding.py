@@ -12,7 +12,7 @@ import pytest
 
 from nle import nethack
 
-from nethack_core.pathfinding import (
+from nethack_harness.navigation.pathfinding import (
     a_star,
     find_frontiers,
     is_walkable,

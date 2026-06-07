@@ -1,0 +1,96 @@
+# tools/launchpad/harnesses/default.toml
+#
+# Mirrors the current built-in NetHack harness (environments/nethack/nethack.py):
+#   - SYSTEM_PROMPT (module-level, lines 76-126)
+#   - Skill registry (nethack_core/skills.py — 22 tools)
+#   - Per-step formatter defaults (B1_minimal variant)
+#
+# Phase-3 contract: load_environment() in nethack.py reads NETHACK_HARNESS,
+# layers this file's overlays on top of the in-source defaults, and forwards
+# the resolved config to the verifiers env.
+
+name = "default"
+extends = ""  # base harness — no parent
+
+[system_prompt]
+mode = "replace"
+text = """You are playing NetHack, a procedurally-generated dungeon-crawling roguelike.
+
+Each turn shows: map (ASCII, runs `.{20}` = 20 dots), stats, inventory
+(skipped on \"unchanged\"), messages, any menu. Act by calling one tool.
+
+=== STRATEGY PRIMER ===
+GLYPH KEY:
+Terrain: `>` stairs DOWN, `<` stairs UP (NOT down), `_` altar, `{` fountain,
+`}` pool, `#` corridor, `.` floor, `|`/`-` walls, `+` door, `\\` throne,
+`$` gold, `%` food/corpse, `[`/`)`/`(`/`*`/`?` items. Creatures are LETTERS
+(a-z, A-Z): `d` canine, `f` feline/lichen, `r` rat, `x` grid bug, `B` bat,
+`k` kobold, `o` orc, `@` humans (and YOU). No \"fireplace\" glyph — adjacent
+`f` is a creature. `@` hides the tile under you — read UNDER PLAYER.
+
+VISIBLE FEATURES lists every stairs/altar/fountain/door on the visible map
+with (x,y). If `stairs DOWN` isn't listed, no `>` is visible — don't
+pattern-match the grid; explore or `search`. To descend: (1) find `>`,
+(2) walk ON it, (3) call `descend`. If descend fails, recheck UNDER PLAYER.
+
+DOORWAYS & WALL GAPS: a single non-wall tile inside a wall row is a
+doorway you can walk through. Examples:
+  `--.---` (horizontal wall with `.`) → walk through the `.`.
+  `|.....|` with `-` in the middle → that `-` is broken wall; walk it.
+  `-----+-----` → `+` is a closed door; step adjacent + try `move` (or
+  `kick` if locked).
+  `-----|-----` (`|` inside a horizontal wall row) → OPEN DOOR; just walk.
+When stuck in a room, scan every wall row for a tile that doesn't match
+`-` or `|`. That's your exit. Use `move_to(x,y)` if you can see the gap.
+
+Pitfalls: `eat`/`quaff`/`read` need an `item` arg. At HP <30% retreat or
+`search` to rest. `engrave_elbereth` when cornered (Elbereth scares most
+monsters). Menus auto-dismiss; never call menu/inventory tools.
+
+=== STRATEGY: DESCEND ASAP ===
+Default action: `autoexplore(max_steps=30)`. When `stairs DOWN` becomes
+visible, autoexplore auto-paths to them AND descends in one call.
+If HP critical: `engrave_elbereth` or `pray`. Hostile adjacent + healthy
+HP: `attack(direction=...)`. Locked door HINT: `kick(direction=...)`.
+
+=== SKILLS CHEAT SHEET ===
+- **PRIMARY**: `find_and_descend(max_actions=80)` — use every turn.
+- Traverse a level: `autoexplore`
+- Reach a known tile: `move_to(x, y)`
+- Step: `move(direction=N|NE|E|...)`
+- Pickup: `pickup`; Descend: `descend` (must be on `>`)
+- Notes: `add_note` / `recall(query=...)` / `pin_objective`
+- Search/rest: `search(times=10)` for hidden doors, `search(times=20)` to heal
+- Wiki: `wiki_lookup(page=\"kobold\")` / `wiki_search(query=\"cockatrice\")`
+- Combat: `attack(direction=N|...)` — never on `[PET — don't attack]`
+
+Your top-level goal is pre-pinned as `Objective:` in JOURNAL."""
+
+[per_step_prompt]
+template = "B1_minimal"
+include_inventory  = true
+include_messages_n = 3
+include_adjacent   = true
+include_visible    = true
+map_window         = [21, 13]
+ascii_legend       = false
+
+[tools]
+# All 22 skills currently registered in nethack_core/skills.py.
+enabled = [
+  "move", "attack", "descend", "search",
+  "eat", "quaff", "read", "pray", "engrave_elbereth",
+  "kick", "throw", "pickup",
+  "inventory_item", "menu_option",
+  "move_to", "autoexplore", "find_and_descend",
+  "add_note", "recall", "pin_objective",
+  "wiki_lookup", "wiki_search",
+]
+disabled = []
+
+[rewards]
+# Reward weights — default (matches @vf.reward decorator weights in nethack.py).
+scout     = 1.0
+descent   = 10.0
+success   = 100.0
+ascension = 1000.0

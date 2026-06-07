@@ -108,7 +108,7 @@ def test_format_compact_is_smaller_than_raw():
 
 def test_journal_diff_only_unchanged_on_repeat():
     """Journal block emits '(unchanged since last turn)' when keys+objective haven't changed."""
-    from nethack_core.journal import Journal
+    from nethack_harness.memory.journal import Journal
     j = Journal()
     j.pin_objective("explore")
     j.add_note("strategy", "head east")
@@ -126,7 +126,7 @@ def test_journal_diff_only_unchanged_on_repeat():
 
 def test_journal_diff_refires_on_new_note():
     """Adding a note must invalidate the journal-diff cache."""
-    from nethack_core.journal import Journal
+    from nethack_harness.memory.journal import Journal
     j = Journal()
     j.pin_objective("explore")
     j.add_note("a", "x")

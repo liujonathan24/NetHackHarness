@@ -31,9 +31,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from nethack_core.env import NetHackCoreEnv
-from nethack_core.journal import Journal
-from nethack_core.replay import TrajectoryRecorder
-from nethack_core.skills import autoexplore, bootstrap_character
+from nethack_harness.memory.journal import Journal
+from legacy.replay import TrajectoryRecorder
+from nethack_harness.tools.skills import autoexplore, bootstrap_character
 
 
 def main() -> None:

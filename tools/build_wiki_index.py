@@ -6,7 +6,7 @@ Usage:
     python tools/build_wiki_index.py --out wiki/snapshot.json --topics monsters_seed
 
 Then load:
-    from nethack_core.wiki import WikiIndex, set_index
+    from nethack_harness.tools.wiki import WikiIndex, set_index
     set_index(WikiIndex.from_json("wiki/snapshot.json"))
 
 The default scrape pulls a curated 30-page seed list (high-utility monster +

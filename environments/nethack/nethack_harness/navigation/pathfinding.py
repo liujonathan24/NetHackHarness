@@ -1,5 +1,5 @@
 """
-nethack_core.pathfinding
+nethack_harness.navigation.pathfinding
 ========================
 
 A* over the NetHack glyph grid + frontier-based autoexplore. Powers
@@ -31,7 +31,7 @@ import numpy as np
 
 from nle import nethack
 
-from .env import CoreObservation
+from nethack_core.env import CoreObservation
 
 
 # ---------- walkability ----------

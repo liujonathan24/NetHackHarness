@@ -4,7 +4,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from nethack_core.subgoals import (
+from nethack_harness.curriculum.subgoals import (
     OfflineSubgoalProposer,
     SubgoalSpec,
     compile_predicate,
@@ -105,7 +105,7 @@ def test_load_environment_accepts_custom_proposer():
     import asyncio
 
     from nethack import load_environment
-    from nethack_core.subgoals import SubgoalProposer, SubgoalSpec
+    from nethack_harness.curriculum.subgoals import SubgoalProposer, SubgoalSpec
 
     class _AlwaysAltar(SubgoalProposer):
         def propose(self, role, obs=None, max_dlvl=5):

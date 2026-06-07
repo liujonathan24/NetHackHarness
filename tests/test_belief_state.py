@@ -9,8 +9,8 @@ import asyncio
 import verifiers as vf
 
 from nethack import BELIEF_STATE_INTERVAL, _maybe_belief_state_summary, load_environment
-from nethack_core.code_mode import OfflineSubLM, SubLM
-from nethack_core.journal import Journal
+from nethack_harness.tools.code_mode import OfflineSubLM, SubLM
+from nethack_harness.memory.journal import Journal
 
 
 def _run(coro):

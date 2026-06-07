@@ -10,16 +10,16 @@ import pytest
 CORE_MODULES = [
     "nethack_core.env",
     "nethack_core.observations",
-    "nethack_core.skills",
-    "nethack_core.journal",
-    "nethack_core.pathfinding",
-    "nethack_core.milestones",
-    "nethack_core.curriculum",
-    "nethack_core.replay",
-    "nethack_core.wiki",
-    "nethack_core.code_mode",
-    "nethack_core.subgoals",
-    "nethack_core.puffer_env",
+    "nethack_harness.tools.skills",
+    "nethack_harness.memory.journal",
+    "nethack_harness.navigation.pathfinding",
+    "nethack_harness.curriculum.milestones",
+    "nethack_harness.curriculum.curriculum",
+    "legacy.replay",
+    "nethack_harness.tools.wiki",
+    "nethack_harness.tools.code_mode",
+    "nethack_harness.curriculum.subgoals",
+    "legacy.puffer_env",
 ]
 
 ENV_MODULES = [
@@ -33,7 +33,7 @@ def test_import(name):
 
 
 def test_expected_skills_registered():
-    from nethack_core.skills import list_skills
+    from nethack_harness.tools.skills import list_skills
 
     expected = {
         "move", "attack", "descend", "search", "pickup",
@@ -49,7 +49,7 @@ def test_expected_skills_registered():
 
 
 def test_expected_tiers_present():
-    from nethack_core.curriculum import list_tiers
+    from nethack_harness.curriculum.curriculum import list_tiers
 
     expected = {
         "empty_room", "solo_combat", "multi_combat",
@@ -83,7 +83,7 @@ def test_unknown_interface_raises():
 def test_offline_subgoal_proposer_swappable():
     """Pluggable: load_environment(subgoal_proposer=) is honored."""
     from nethack import load_environment
-    from nethack_core.subgoals import OfflineSubgoalProposer
+    from nethack_harness.curriculum.subgoals import OfflineSubgoalProposer
 
     env = load_environment(tier="corridor_explore", n_examples=1, max_turns=2,
                             subgoal_proposer=OfflineSubgoalProposer())
@@ -121,14 +121,21 @@ def test_default_compaction_knobs_are_sensible():
     assert env.journal_render_max_chars == 2000
 
 
-def test_nethack_core_init_exposes_submodules():
-    """nethack_core.__init__ should expose all 12 submodules + 3 core types."""
+def test_nethack_core_is_extraction_only():
+    """nethack_core is now the extraction substrate only: env + observations.
+
+    Everything else (skills, prompt, curriculum, navigation, memory) moved into
+    the nethack_harness package; replay/puffer_env are parked in legacy/.
+    """
     import nethack_core
-    for sub in ("balrog", "code_mode", "curriculum", "journal", "milestones",
-                "observations", "pathfinding", "puffer_env", "replay",
-                "skills", "subgoals", "wiki"):
-        assert hasattr(nethack_core, sub), f"missing submodule: {sub}"
+    assert hasattr(nethack_core, "observations"), "observations should be exposed"
     for typ in ("CoreObservation", "EpisodeMetadata", "NetHackCoreEnv"):
         assert hasattr(nethack_core, typ), f"missing type: {typ}"
-    assert hasattr(nethack_core, "__all__")
-    assert len(nethack_core.__all__) >= 15
+    # The non-extraction modules must NOT hang off nethack_core anymore.
+    for moved in ("skills", "curriculum", "pathfinding", "journal", "milestones"):
+        assert not hasattr(nethack_core, moved), f"{moved} should have moved to nethack_harness"
+    # And they should be importable from their new homes.
+    from nethack_harness.tools.skills import registry  # noqa: F401
+    from nethack_harness.curriculum.curriculum import get_tier  # noqa: F401
+    from nethack_harness.navigation.pathfinding import find_frontiers  # noqa: F401
+    from nethack_harness.memory.journal import Journal  # noqa: F401

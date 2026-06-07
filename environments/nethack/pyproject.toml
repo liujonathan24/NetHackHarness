@@ -29,8 +29,8 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build]
-include = ["nethack.py", "nethack_core/**/*.py", "wiki/*.json", "README.md"]
+include = ["nethack.py", "nethack_harness/**/*.py", "nethack_core/**/*.py", "wiki/*.json", "README.md"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["nethack_core"]
+packages = ["nethack_core", "nethack_harness"]
 force-include = { "nethack.py" = "nethack.py", "wiki/snapshot.json" = "wiki/snapshot.json" }

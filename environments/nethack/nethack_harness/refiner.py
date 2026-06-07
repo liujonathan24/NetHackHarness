@@ -1,5 +1,5 @@
 """
-nethack_core.refiner
+nethack_harness.refiner
 ====================
 
 Continual-Harness Refiner (arXiv:2605.09998).
@@ -413,7 +413,7 @@ def apply_edits(state: dict, edits: RefinerEdits) -> dict:
         # Validate skill names against the live registry to refuse macros
         # that compose unknown / mis-spelled skill names.
         try:
-            from nethack_core.skills import registry as _reg
+            from nethack_harness.tools.skills import registry as _reg
             valid = set(_reg.all_schemas().keys())
         except Exception:
             valid = set()

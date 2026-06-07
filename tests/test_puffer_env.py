@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 from nethack_core.env import NetHackCoreEnv
-from nethack_core.puffer_env import make_for_puffer, to_gym_dict_env
+from legacy.puffer_env import make_for_puffer, to_gym_dict_env
 
 
 def test_wrapper_exposes_dict_observation_and_discrete_action_space():
