@@ -2,6 +2,7 @@
 change: structured-map-observation
 design-doc: docs/superpowers/specs/2026-06-07-structured-map-observation-design.md
 base-ref: c1eb386282296164a32c219f5ae7e079df729d08
+archived-with: 2026-06-07-structured-map-observation
 ---
 
 # Structured-map observation (Group A) Implementation Plan
@@ -14,6 +15,7 @@ base-ref: c1eb386282296164a32c219f5ae7e079df729d08
 
 **Tech Stack:** Python, NLE 1.3.0 (`nle.nethack` glyph classifiers), numpy, pytest.
 
+archived-with: 2026-06-07-structured-map-observation
 ---
 
 ## Environment & test invocation (read first)
@@ -49,6 +51,7 @@ base-ref: c1eb386282296164a32c219f5ae7e079df729d08
 - Modify: `environments/nethack/nethack_harness/tools/code_mode.py` (`nh.map`)
 - Tests: `tests/test_map_model.py`, `tests/test_map_encoders.py`, `tests/test_map_variants.py`, `tests/test_nh_map.py`
 
+archived-with: 2026-06-07-structured-map-observation
 ---
 
 ## Task 1: Canonical map model
@@ -256,6 +259,7 @@ git add -- environments/nethack/nethack_core/map_model.py tests/test_map_model.p
 git commit -m "feat(structured-map): rich canonical MapModel from NLE glyphs"
 ```
 
+archived-with: 2026-06-07-structured-map-observation
 ---
 
 ## Task 2: JSON + TOON encoders
@@ -406,6 +410,7 @@ git add -- environments/nethack/nethack_harness/prompt/map_encoders.py tests/tes
 git commit -m "feat(structured-map): JSON + in-repo TOON encoders with detail flag"
 ```
 
+archived-with: 2026-06-07-structured-map-observation
 ---
 
 ## Task 3: JSON / TOON variants + map_detail flag
@@ -541,6 +546,7 @@ git add -- environments/nethack/nethack_harness/prompt/prompt_spec.py environmen
 git commit -m "feat(structured-map): JSON/TOON variants + map_detail flag"
 ```
 
+archived-with: 2026-06-07-structured-map-observation
 ---
 
 ## Task 4: nh.map code-interpretable object
@@ -663,6 +669,7 @@ git add -- environments/nethack/nethack_harness/tools/code_mode.py tests/test_nh
 git commit -m "feat(structured-map): nh.map read-only code object"
 ```
 
+archived-with: 2026-06-07-structured-map-observation
 ---
 
 ## Task 5: Verification + tasks.md sync
@@ -692,6 +699,7 @@ git add -- openspec/changes/structured-map-observation/tasks.md
 git commit -m "chore(structured-map): mark tasks complete; verified ⊆ baseline"
 ```
 
+archived-with: 2026-06-07-structured-map-observation
 ---
 
 ## Self-review notes
