@@ -14,10 +14,15 @@ dependencies = [
     "gymnasium>=0.29",
     "numpy>=1.24",
     "datasets>=2.14",
+    # Image-observation stack (IMG / IMG_TTY variants). In base deps so hosted
+    # installs (pip, no uv.sources) get them; local dev still uses the git
+    # minihack pin below. minihack's own deps (nle/gymnasium/numpy) are unpinned
+    # and don't conflict.
+    "pillow>=10",
+    "minihack>=1.0.2",
 ]
 
 [project.optional-dependencies]
-minihack = ["minihack"]
 wiki     = ["chromadb>=0.4", "sentence-transformers>=2.2"]
 dev      = ["pytest", "pytest-asyncio", "ruff", "mypy"]
 
