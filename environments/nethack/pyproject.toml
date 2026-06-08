@@ -2,7 +2,7 @@
 name = "nethack"
 description = "Training-grade NetHack environment for LM agents with skill-based tools, milestone curriculum, replay capture, and journal memory."
 tags = ["games", "long-horizon", "tool-use", "procgen", "train", "eval"]
-version = "0.0.65"
+version = "0.0.66"
 requires-python = ">=3.10,<3.14"
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -14,10 +14,15 @@ dependencies = [
     "gymnasium>=0.29",
     "numpy>=1.24",
     "datasets>=2.14",
+    # Image-observation stack (IMG / IMG_TTY variants). In base deps so hosted
+    # installs (pip, no uv.sources) get them; local dev still uses the git
+    # minihack pin below. minihack's own deps (nle/gymnasium/numpy) are unpinned
+    # and don't conflict.
+    "pillow>=10",
+    "minihack>=1.0.2",
 ]
 
 [project.optional-dependencies]
-minihack = ["minihack"]
 wiki     = ["chromadb>=0.4", "sentence-transformers>=2.2"]
 dev      = ["pytest", "pytest-asyncio", "ruff", "mypy"]
 
