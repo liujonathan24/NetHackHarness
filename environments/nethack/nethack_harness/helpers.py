@@ -847,6 +847,23 @@ def _build_skill_adapter_callables(skill_set: str = "full") -> list:
             params = schema.get("parameters", {}) or {}
             out.append(_make_skill_adapter(name, schema.get("description", ""), params))
         return out
+    elif skill_set == "netplay":
+        # NetPlay (Jeurissen, CoG 2024): a skill-only action surface with NO
+        # low-level `move(direction=...)` primitive — the agent acts through
+        # high-level pathfinding (move_to/autoexplore/find_and_descend) plus
+        # interactions. The standardized action set for cross-encoding
+        # benchmarks (hold actions fixed, vary the observation).
+        keep = {"move_to", "autoexplore", "find_and_descend", "attack",
+                "descend", "search", "pickup", "engrave_elbereth", "pray",
+                "eat", "quaff", "read", "kick", "add_note", "recall",
+                "pin_objective", "wiki_lookup", "wiki_search"}
+        out = []
+        for name, schema in skill_registry.all_schemas().items():
+            if name in _HARNESS_OWNED: continue
+            if name not in keep: continue
+            params = schema.get("parameters", {}) or {}
+            out.append(_make_skill_adapter(name, schema.get("description", ""), params))
+        return out
     elif skill_set == "move":
         # `move(direction=...)` + survival, but NO move_to, NO autoexplore,
         # NO find_and_descend. Single-step movement only, agent reasons
