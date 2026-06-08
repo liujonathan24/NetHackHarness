@@ -1,12 +1,12 @@
 workflow: full
 phase: build
-build_mode: null
+build_mode: subagent-driven-development
 build_pause: null
-isolation: null
+isolation: branch
 verify_mode: null
 base_ref: bbed5cc59e0afd309d7c3bd44ae0fcf00ea0afc7
 design_doc: docs/superpowers/specs/2026-06-07-pysc2-interface-design.md
-plan: null
+plan: docs/superpowers/plans/2026-06-07-pysc2-interface.md
 verify_result: pending
 verification_report: null
 branch_status: pending
