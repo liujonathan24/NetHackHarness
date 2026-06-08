@@ -158,11 +158,20 @@ def _make_handler(server: RolloutViewServer):
     from pathlib import Path
     from urllib.parse import urlparse, parse_qs
 
+    from urllib.parse import quote
+
     class _Handler(BaseHTTPRequestHandler):
         def _send(self, body: str, status: int = 200):
             data = body.encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def _send_bytes(self, data: bytes, ctype: str, status: int = 200):
+            self.send_response(status)
+            self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
@@ -179,7 +188,25 @@ def _make_handler(server: RolloutViewServer):
                 d = (q.get("dir") or [None])[0]
                 if not d:
                     return self._send("<h1>400 — missing ?dir</h1>", 400)
-                self._send(render_run(_load_turns(d), live=False, title=Path(d).name))
+                run_dir = Path(d).resolve()
+                # Map a turn's relative image ref (`images/x.png`) to the /file
+                # route so recorded-run images actually load over HTTP.
+                img_src = (lambda ref, _rd=run_dir:
+                           "/file?path=" + quote(str((_rd / ref).resolve())))
+                self._send(render_run(_load_turns(d), live=False,
+                                      title=Path(d).name, img_src=img_src))
+            elif path == "/file":
+                p = (q.get("path") or [None])[0]
+                if not p:
+                    return self._send("<h1>400</h1>", 400)
+                fp = Path(p).resolve()
+                # Security: only serve files under the runs root.
+                root = server.runs_root.resolve()
+                if root not in fp.parents or not fp.is_file():
+                    return self._send("<h1>403</h1>", 403)
+                import mimetypes
+                ctype = mimetypes.guess_type(str(fp))[0] or "application/octet-stream"
+                self._send_bytes(fp.read_bytes(), ctype)
             elif path == "/live":
                 variant = (q.get("variant") or ["B1"])[0]
                 server.live = LiveStepper(server.make_interface(), variant=variant)
