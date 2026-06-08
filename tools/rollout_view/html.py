@@ -27,9 +27,12 @@ header strong { color: var(--gold); }
 .cols .llm h4 { margin: 0 0 .4em; color: var(--pink); font-weight: 600; }
 .cols pre { white-space: pre-wrap; word-break: break-word; background: var(--bg);
   border: 1px solid var(--line); padding: .8em; border-radius: 4px; margin: 0; overflow-x: auto; }
-.cols img.obs { width: 100%; border: 1px solid var(--line); border-radius: 4px; background: #000;
-  image-rendering: pixelated; cursor: zoom-in; }
-.imgwrap .zoomhint { color: var(--dim); font-size: 13px; margin-top: .2em; }
+/* obs image gets its own full-width row so the wide (79x21) map renders big,
+   upscaled with crisp pixels — no crop, absolute positions preserved. */
+.obsrow { margin-bottom: 1.1em; }
+.obsrow img.obs { width: 100%; image-rendering: pixelated; cursor: zoom-in;
+  border: 1px solid var(--line); border-radius: 4px; background: #000; }
+.obsrow .zoomhint { color: var(--dim); font-size: 13px; margin-top: .2em; }
 /* click-to-zoom lightbox: crisp pixel scaling, fills the screen */
 #lightbox { position: fixed; inset: 0; z-index: 200; display: none; cursor: zoom-out;
   background: rgba(8,8,12,.94); align-items: center; justify-content: center; padding: 2vmin; }
@@ -85,10 +88,12 @@ document.addEventListener('keydown', (e) => {
 """
 
 
-def _llm_blocks(content, img_src=None) -> str:
+def _split_content(content, img_src=None):
+    """Split rendered user content into (obs-image HTML, text HTML). Images go to
+    a full-width row above the columns; text stays in the LLM column."""
     if isinstance(content, str):
-        return f"<pre>{_html.escape(content)}</pre>"
-    out = []
+        return "", f"<pre>{_html.escape(content)}</pre>"
+    imgs, text = [], []
     for e in content:
         if e.get("type") == "image_url":
             raw = (e.get("image_url") or {}).get("path") or (e.get("image_url") or {}).get("url", "")
@@ -96,24 +101,27 @@ def _llm_blocks(content, img_src=None) -> str:
             # ref is a relative path (`images/x.png`) the server must resolve; for
             # live sessions it's an inline `data:` URI used as-is.
             src = img_src(raw) if (img_src and raw and not raw.startswith("data:")) else raw
-            out.append(f'<div class="imgwrap"><img class="obs" src="{_html.escape(src)}" '
-                       f'alt="obs image"><div class="zoomhint">click image to zoom</div></div>')
+            imgs.append(f'<img class="obs" src="{_html.escape(src)}" alt="obs image">')
         elif e.get("type") == "text":
-            out.append(f"<pre>{_html.escape(e.get('text', ''))}</pre>")
-    return "\n".join(out)
+            text.append(f"<pre>{_html.escape(e.get('text', ''))}</pre>")
+    return "\n".join(imgs), "\n".join(text)
 
 
 def render_turn(turn: dict, *, img_src=None) -> str:
-    """One turn as a hidden two-column section (game-state | LLM-input). The
-    game-state column shows the raw ASCII map verbatim (it legitimately contains
-    map glyphs like '<'/'>'); only the LLM-input text is escaped. `img_src(ref)`
-    optionally maps a stored image ref to a loadable URL. The viewer JS toggles
-    `.active` to show exactly one section at a time."""
+    """One turn as a hidden section: a full-width obs-image row (when present) over
+    two columns (game-state | LLM-input text). The game-state column shows the raw
+    ASCII map verbatim (it legitimately contains map glyphs like '<'/'>'); only the
+    LLM-input text is escaped. `img_src(ref)` optionally maps a stored image ref to
+    a loadable URL. The viewer JS toggles `.active` to show one section at a time."""
     game = "\n".join(turn.get("raw_grid") or [])
-    llm = _llm_blocks(turn.get("rendered_user_content", turn.get("rendered_user_message", "")), img_src)
-    return (f'<section class="turn"><div class="cols" style="display:flex;gap:1.5em">'
+    imgs, text = _split_content(
+        turn.get("rendered_user_content", turn.get("rendered_user_message", "")), img_src)
+    obsrow = (f'<div class="obsrow">{imgs}'
+              f'<div class="zoomhint">click image to zoom &middot; full {79}&times;{21} map</div></div>'
+              if imgs else "")
+    return (f'<section class="turn">{obsrow}<div class="cols" style="display:flex;gap:1.5em">'
             f'<div class="game"><h4>game state · turn {turn.get("turn")}</h4><pre>{game}</pre></div>'
-            f'<div class="llm"><h4>LLM input</h4>{llm}</div></div></section>')
+            f'<div class="llm"><h4>LLM input</h4>{text}</div></div></section>')
 
 
 def render_run(turns: list, *, live: bool = False, title: str = "rollout", img_src=None) -> str:
