@@ -1,0 +1,19 @@
+workflow: full
+phase: archive
+build_mode: subagent-driven-development
+build_pause: null
+isolation: branch
+verify_mode: full
+base_ref: bbed5cc59e0afd309d7c3bd44ae0fcf00ea0afc7
+design_doc: docs/superpowers/specs/2026-06-07-pysc2-interface-design.md
+plan: docs/superpowers/plans/2026-06-07-pysc2-interface.md
+verify_result: pass
+verification_report: docs/superpowers/reports/2026-06-07-pysc2-interface-verify.md
+branch_status: handled
+created_at: 2026-06-07
+verified_at: 2026-06-07
+archived: true
+handoff_context: openspec/changes/pysc2-interface/.comet/handoff/design-context.json
+handoff_hash: 34a89efb1e6432812dbd822c609d5d6ee6ac8d570202ff0a148556ff97c68dd7
+verify_command: cd environments/nethack && python -m pytest ../../tests/test_interface_import.py ../../tests/test_interface_observation.py ../../tests/test_interface_actions.py ../../tests/test_interface_env.py ../../tests/test_rollout_view_html.py ../../tests/test_rollout_view_open.py ../../tests/test_live_stepper.py -p no:cacheprovider -q
+build_command: cd environments/nethack && python -m pytest ../../tests/test_interface_import.py ../../tests/test_interface_observation.py ../../tests/test_interface_actions.py ../../tests/test_interface_env.py ../../tests/test_rollout_view_html.py ../../tests/test_rollout_view_open.py ../../tests/test_live_stepper.py -p no:cacheprovider -q

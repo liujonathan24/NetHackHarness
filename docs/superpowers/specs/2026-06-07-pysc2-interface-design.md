@@ -2,6 +2,8 @@
 comet_change: pysc2-interface
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-06-07-pysc2-interface
+status: final
 ---
 
 # pysc2-interface + rollout views — technical design
