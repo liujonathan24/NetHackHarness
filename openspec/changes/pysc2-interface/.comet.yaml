@@ -8,7 +8,7 @@ base_ref: bbed5cc59e0afd309d7c3bd44ae0fcf00ea0afc7
 design_doc: docs/superpowers/specs/2026-06-07-pysc2-interface-design.md
 plan: docs/superpowers/plans/2026-06-07-pysc2-interface.md
 verify_result: pending
-verification_report: null
+verification_report: docs/superpowers/reports/2026-06-07-pysc2-interface-verify.md
 branch_status: pending
 created_at: 2026-06-07
 verified_at: null
