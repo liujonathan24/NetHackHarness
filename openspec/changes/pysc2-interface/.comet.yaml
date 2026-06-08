@@ -1,0 +1,17 @@
+workflow: full
+phase: build
+build_mode: null
+build_pause: null
+isolation: null
+verify_mode: null
+base_ref: bbed5cc59e0afd309d7c3bd44ae0fcf00ea0afc7
+design_doc: docs/superpowers/specs/2026-06-07-pysc2-interface-design.md
+plan: null
+verify_result: pending
+verification_report: null
+branch_status: pending
+created_at: 2026-06-07
+verified_at: null
+archived: false
+handoff_context: openspec/changes/pysc2-interface/.comet/handoff/design-context.json
+handoff_hash: 34a89efb1e6432812dbd822c609d5d6ee6ac8d570202ff0a148556ff97c68dd7

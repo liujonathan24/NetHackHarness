@@ -111,6 +111,7 @@ from nethack_harness.helpers import (
     _ch_inject_system,
     _ch_save_bootstrap,
     _compact_chat_history,
+    _sanitize_assistant_content,
     _STATUS_SIG_RE,
     _compacted_status_signature,
     _dedupe_compacted_runs,
@@ -902,7 +903,19 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         return [vf.UserMessage(role="user", content=content)]
 
     async def is_completed(self, state: vf.State) -> bool:
-        return bool(state.get("terminated"))
+        # Game-over (death/ascension/NLE truncation) ends the rollout.
+        if bool(state.get("terminated")):
+            return True
+        # Also honor the verifiers per-rollout LM-turn cap (`max_turns`). Without
+        # this, the override silently bypassed the base class's
+        # `max_turns_reached`, so `max_turns` was a no-op and rollout length was
+        # governed solely by the tier's `max_episode_steps` (in-game NLE steps).
+        # OR-ing it in makes `max_turns` an effective per-rollout LM-call cap.
+        if getattr(self, "max_turns", -1) and self.max_turns > 0:
+            if await self.max_turns_reached(state):
+                state["is_truncated"] = True
+                return True
+        return False
 
     async def get_prompt_messages(self, state: vf.State):
         """Override the verifiers default to compact older user-message content
@@ -927,6 +940,13 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         # macro list to the system message). Empty for most variants.
         for transform in self.spec.history_transforms:
             messages = transform(self, messages, state)
+        # Strict OpenAI-compatible endpoints (e.g. Prime Inference / Qwen3.5)
+        # reject a request whose history contains an assistant message with
+        # content=None and no tool_calls -- which is exactly what a "thinking"
+        # model emits when a turn is pure reasoning_content (HTTP 422:
+        # "content is required unless an assistant message includes tool_calls").
+        # Coerce such messages to a non-null content so the rollout can proceed.
+        messages = _sanitize_assistant_content(messages)
         return messages
 
     def update_tool_args(self, tool_args: dict, messages, state) -> dict:

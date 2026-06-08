@@ -445,6 +445,41 @@ def _replace_content(m, new_content: str):
         return vf.UserMessage(role=_msg_role(m), content=new_content)
 
 
+def _msg_get(m, key, default=None):
+    if isinstance(m, dict):
+        return m.get(key, default)
+    return getattr(m, key, default)
+
+
+def _sanitize_assistant_content(messages: list) -> list:
+    """Coerce any assistant message with null/empty content and no tool_calls
+    to a non-null string so strict OpenAI-compatible endpoints accept the
+    history.
+
+    A "thinking" model (e.g. Qwen3.5) can emit a turn that is pure
+    ``reasoning_content`` with ``content=None`` and ``tool_calls=None``. When
+    that message is re-sent as history, Prime Inference returns HTTP 422:
+    "content is required unless an assistant message includes tool_calls or
+    function_call". We replace the null content with the message's
+    ``reasoning_content`` (so no signal is lost) or a single space placeholder.
+    Messages that already carry content or tool_calls are returned untouched.
+    """
+    out = []
+    for m in messages:
+        if _msg_role(m) == "assistant":
+            content = _msg_get(m, "content", None)
+            tool_calls = _msg_get(m, "tool_calls", None)
+            func_call = _msg_get(m, "function_call", None)
+            empty = content is None or (isinstance(content, str) and content.strip() == "")
+            if empty and not tool_calls and not func_call:
+                reasoning = _msg_get(m, "reasoning_content", None)
+                replacement = reasoning if isinstance(reasoning, str) and reasoning.strip() else " "
+                out.append(_replace_content(m, replacement))
+                continue
+        out.append(m)
+    return out
+
+
 def _one_line_summary(content: str, turn_distance: int) -> str:
     """Squash a full obs_text into one line. Heuristics:
        - Keep the STATUS line ("HP: x/y AC: z Dlvl: d Turn: t ...") if present.
