@@ -9,7 +9,7 @@ dependencies = [
 ]
 
 [tool.uv.workspace]
-members = ["nethack_core", "environments/nethack", "tools/launchpad"]
+members = ["nethack_core", "environments/nethack", "tools/launchpad", "nethack_interface"]
 
 [tool.uv.sources]
 nethack-core = { workspace = true }
