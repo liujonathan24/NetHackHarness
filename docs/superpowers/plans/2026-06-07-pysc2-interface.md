@@ -2,6 +2,7 @@
 change: pysc2-interface
 design-doc: docs/superpowers/specs/2026-06-07-pysc2-interface-design.md
 base-ref: 54a7238ce0d611de274e43dcb975b0788fd1fcdc
+archived-with: 2026-06-07-pysc2-interface
 ---
 
 # pysc2-interface + rollout views Implementation Plan
@@ -14,6 +15,7 @@ base-ref: 54a7238ce0d611de274e43dcb975b0788fd1fcdc
 
 **Tech Stack:** Python, pytest. Reuses `nethack_core` (map_model/observations/env), `nethack_harness.tools.skills`, the encoding-eval trace seam, `tools/launchpad`. Live server: stdlib `http.server` (no new deps).
 
+archived-with: 2026-06-07-pysc2-interface
 ---
 
 ## Environment & test invocation (read first)
@@ -36,6 +38,7 @@ base-ref: 54a7238ce0d611de274e43dcb975b0788fd1fcdc
 - Modify: repo-root `pyproject.toml` (workspace member), `tools/launchpad` (open-HTML affordance — minimal)
 - Tests: `tests/test_interface_observation.py`, `tests/test_interface_actions.py`, `tests/test_interface_env.py`, `tests/test_rollout_view_html.py`, `tests/test_live_stepper.py`
 
+archived-with: 2026-06-07-pysc2-interface
 ---
 
 ## Task 1: nethack_interface package scaffold
@@ -91,6 +94,7 @@ Repo-root `pyproject.toml`: add `"nethack_interface"` to `[tool.uv.workspace] me
 
 - [ ] **Step 5: Commit** `nethack_interface/pyproject.toml nethack_interface/__init__.py pyproject.toml tests/test_interface_import.py` — `feat(interface): nethack_interface package scaffold`.
 
+archived-with: 2026-06-07-pysc2-interface
 ---
 
 ## Task 2: Typed Observation + spec
@@ -164,6 +168,7 @@ def observation_spec() -> dict:
 - [ ] **Step 4: Run → PASS** (2 passed).
 - [ ] **Step 5: Commit** `nethack_interface/observation.py tests/test_interface_observation.py` — `feat(interface): typed Observation + spec`.
 
+archived-with: 2026-06-07-pysc2-interface
 ---
 
 ## Task 3: ActionSpec (from registry) + raw escape hatch
@@ -224,6 +229,7 @@ def action_spec() -> dict:
 - [ ] **Step 4: Run → PASS** (2 passed). If the import path of `registry`/`_schemas` differs, read `nethack_harness/tools/skills.py` and adapt — keep the test intent (spec sourced from the registry).
 - [ ] **Step 5: Commit** `nethack_interface/actions.py tests/test_interface_actions.py` — `feat(interface): ActionSpec from skill registry + raw escape hatch`.
 
+archived-with: 2026-06-07-pysc2-interface
 ---
 
 ## Task 4: NetHackInterface env wrapper
@@ -298,6 +304,7 @@ class NetHackInterface:
 - [ ] **Step 4: Run → PASS.** Then `python -c "import nethack_interface; print('ok')"` (the `__init__` re-exports now resolve).
 - [ ] **Step 5: Commit** `nethack_interface/env.py nethack_interface/__init__.py tests/test_interface_env.py` — `feat(interface): NetHackInterface env wrapper (typed step via skill dispatch + raw)`.
 
+archived-with: 2026-06-07-pysc2-interface
 ---
 
 ## Task 5: Shared HTML rollout-view core + replay export
@@ -402,6 +409,7 @@ def export_replay_html(run_dir, out_name: str = "replay.html") -> Path:
 - [ ] **Step 4: Run → PASS** (2 passed).
 - [ ] **Step 5: Commit** `tools/rollout_view/__init__.py tools/rollout_view/html.py tools/rollout_view/replay_export.py tests/test_rollout_view_html.py` — `feat(rollout-view): shared HTML core + static replay export`.
 
+archived-with: 2026-06-07-pysc2-interface
 ---
 
 ## Task 6: Live rollout stepper (localhost server)
@@ -434,6 +442,7 @@ def test_manual_step_advances_one_turn(make_core_env):   # reuse env fixture
 
 - [ ] **Step 5: Commit** `tools/rollout_view/live_server.py tests/test_live_stepper.py` — `feat(rollout-view): live rollout stepper (localhost, manual + model modes)`.
 
+archived-with: 2026-06-07-pysc2-interface
 ---
 
 ## Task 7: Launchpad open-HTML affordance + verification
@@ -442,6 +451,7 @@ def test_manual_step_advances_one_turn(make_core_env):   # reuse env fixture
 - [ ] 7.2 New tests pass in isolation; full suite failures ⊆ baseline 7.
 - [ ] 7.3 `nethack_interface` imports cleanly + is a resolvable workspace member (`python -c "import nethack_interface"`). Check off `openspec/changes/pysc2-interface/tasks.md`. Commit.
 
+archived-with: 2026-06-07-pysc2-interface
 ---
 
 ## Self-review notes
