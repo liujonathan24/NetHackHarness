@@ -120,14 +120,48 @@ class LiveStepper:
 
 # ---------------------------------------------------------------------------
 # Thin HTTP layer (not the test target).
+#
+# One entry page (`/`) lists recorded runs and offers a live-session launcher.
+# `/run?dir=X` opens the single-window slider viewer over a recorded run;
+# `/live?variant=V` starts a live session (same viewer, with a Step control);
+# POST `/step` advances the live session one turn and returns the new turn as an
+# HTML fragment the page appends in place (no full reload).
 # ---------------------------------------------------------------------------
 
 
-def _make_handler(stepper: LiveStepper):
+def _load_turns(run_dir) -> list:
+    import json
+    from pathlib import Path
+
+    turns: list = []
+    for f in sorted(Path(run_dir).glob("*.ndjson")):
+        turns += [json.loads(line) for line in f.read_text().splitlines() if line.strip()]
+    return turns
+
+
+class RolloutViewServer:
+    """Server state: where recorded runs live, how to build a fresh interface for
+    a live session, and the currently-active live stepper (if any)."""
+
+    def __init__(self, *, runs_root, make_interface, variants=None):
+        from pathlib import Path
+
+        self.runs_root = Path(runs_root)
+        self.make_interface = make_interface  # () -> NetHackInterface (fresh)
+        from tools.rollout_view.index import DEFAULT_VARIANTS
+        self.variants = tuple(variants or DEFAULT_VARIANTS)
+        self.live: Optional[LiveStepper] = None
+
+
+def _make_handler(server: RolloutViewServer):
     from http.server import BaseHTTPRequestHandler
+    from pathlib import Path
+    from urllib.parse import urlparse, parse_qs
+
+    from urllib.parse import quote
 
     class _Handler(BaseHTTPRequestHandler):
-        def _send_html(self, body: str, status: int = 200):
+        def _send(self, body: str, status: int = 200):
             data = body.encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -135,60 +169,69 @@ def _make_handler(stepper: LiveStepper):
             self.end_headers()
             self.wfile.write(data)
 
+        def _send_bytes(self, data: bytes, ctype: str, status: int = 200):
+            self.send_response(status)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
         def do_GET(self):
-            if self.path.rstrip("/") in ("", "/") or self.path.startswith("/?"):
-                controls = (
-                    '<form method="post" action="/step">'
-                    '<button type="submit">step one turn</button></form>'
-                )
-                self._send_html(render_run(stepper.history).replace(
-                    "<body>", f"<body>{controls}", 1))
+            u = urlparse(self.path)
+            path = u.path.rstrip("/") or "/"
+            q = parse_qs(u.query)
+            if path == "/":
+                from tools.rollout_view.index import discover_runs, render_index
+                runs = discover_runs(server.runs_root)
+                self._send(render_index(runs, variants=server.variants, root=server.runs_root))
+            elif path == "/run":
+                d = (q.get("dir") or [None])[0]
+                if not d:
+                    return self._send("<h1>400 — missing ?dir</h1>", 400)
+                run_dir = Path(d).resolve()
+                # Map a turn's relative image ref (`images/x.png`) to the /file
+                # route so recorded-run images actually load over HTTP.
+                img_src = (lambda ref, _rd=run_dir:
+                           "/file?path=" + quote(str((_rd / ref).resolve())))
+                self._send(render_run(_load_turns(d), live=False,
+                                      title=Path(d).name, img_src=img_src))
+            elif path == "/file":
+                p = (q.get("path") or [None])[0]
+                if not p:
+                    return self._send("<h1>400</h1>", 400)
+                fp = Path(p).resolve()
+                # Security: only serve files under the runs root.
+                root = server.runs_root.resolve()
+                if root not in fp.parents or not fp.is_file():
+                    return self._send("<h1>403</h1>", 403)
+                import mimetypes
+                ctype = mimetypes.guess_type(str(fp))[0] or "application/octet-stream"
+                self._send_bytes(fp.read_bytes(), ctype)
+            elif path == "/live":
+                variant = (q.get("variant") or ["B1"])[0]
+                server.live = LiveStepper(server.make_interface(), variant=variant)
+                self._send(render_run(server.live.history, live=True, title=f"live · {variant}"))
             else:
-                self._send_html("<h1>404</h1>", status=404)
+                self._send("<h1>404</h1>", 404)
 
         def do_POST(self):
             if self.path.rstrip("/") == "/step":
+                if server.live is None:
+                    return self._send("<pre>no live session — start one from /</pre>", 409)
+                from nethack_interface import RawAction
                 try:
-                    from nethack_interface import RawAction
-
-                    if stepper.policy is None:
-                        stepper.step_once(RawAction(0))
-                    else:
-                        stepper.step_once()
+                    turn = (server.live.step_once(RawAction(0)) if server.live.policy is None
+                            else server.live.step_once())
                 except Exception as e:
-                    self._send_html(f"<pre>step error: {e}</pre>", status=500)
-                    return
-                # Redirect back to the run view.
-                self.send_response(303)
-                self.send_header("Location", "/")
-                self.end_headers()
+                    return self._send(f"<pre>step error: {e}</pre>", 500)
+                self._send(render_turn(turn))  # fragment; the page appends it
             else:
-                self._send_html("<h1>404</h1>", status=404)
+                self._send("<h1>404</h1>", 404)
 
         def log_message(self, *args):  # quiet by default
             pass
 
     return _Handler
-
-
-def serve(stepper: LiveStepper, port: int = 8765, host: str = "127.0.0.1"):
-    """Serve the live stepper over HTTP, bound to localhost by default.
-
-    Blocks until interrupted. GET ``/`` renders the run history; POST ``/step``
-    advances one turn.
-    """
-    from http.server import HTTPServer
-
-    httpd = HTTPServer((host, port), _make_handler(stepper))
-    print(f"live rollout stepper on http://{host}:{port}/ "
-          f"(variant={stepper.variant}, "
-          f"mode={'model' if stepper.policy else 'manual'})")
-    try:
-        httpd.serve_forever()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        httpd.server_close()
 
 
 def _build_default_interface():
@@ -200,18 +243,38 @@ def _build_default_interface():
     return NetHackInterface(env)
 
 
+def serve(*, runs_root, make_interface=None, port: int = 8765,
+          host: str = "127.0.0.1", variants=None):
+    """Serve the rollout-view UI (index + run viewer + live stepper) on localhost.
+
+    Blocks until interrupted. `runs_root` is scanned for recorded runs;
+    `make_interface()` builds a fresh `NetHackInterface` per live session.
+    """
+    from http.server import HTTPServer
+
+    if make_interface is None:
+        make_interface = _build_default_interface
+    server = RolloutViewServer(runs_root=runs_root, make_interface=make_interface, variants=variants)
+    httpd = HTTPServer((host, port), _make_handler(server))
+    print(f"rollout views on http://{host}:{port}/  (runs: {server.runs_root})")
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        httpd.server_close()
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Live NetHack rollout stepper (localhost; manual by default)."
+        description="Rollout views: browse recorded runs + step a live rollout (localhost)."
     )
-    parser.add_argument("--variant", default="B1",
-                        help="prompt variant to render (default: B1)")
+    parser.add_argument("--runs-root", default="environments/nethack/outputs/evals",
+                        help="directory scanned for recorded runs (default: %(default)s)")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--host", default="127.0.0.1")
     args = parser.parse_args(argv)
-
-    stepper = LiveStepper(_build_default_interface(), variant=args.variant)
-    serve(stepper, port=args.port, host=args.host)
+    serve(runs_root=args.runs_root, port=args.port, host=args.host)
 
 
 if __name__ == "__main__":  # pragma: no cover
