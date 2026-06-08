@@ -13,6 +13,23 @@ from nethack_core.observations import InventoryItem, StructuredObservation
 
 
 @pytest.fixture
+def make_core_env():
+    """Factory for a real `NetHackCoreEnv` (NetHackScore-v0), mirroring how the
+    existing tests (e.g. tests/test_skills.py) construct one. The env refuses to
+    reset without explicit seeds (reproducibility by construction), so the
+    factory seeds it before handing it back. Returns a callable so each test
+    gets a fresh, seeded env instance."""
+    from nethack_core.env import NetHackCoreEnv
+
+    def _make():
+        env = NetHackCoreEnv(task_name="NetHackScore-v0")
+        env.seed(core=42, disp=42)
+        return env
+
+    return _make
+
+
+@pytest.fixture
 def make_structured_obs():
     def _make() -> StructuredObservation:
         return StructuredObservation(
