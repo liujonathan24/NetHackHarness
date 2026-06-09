@@ -1,0 +1,15 @@
+workflow: full
+phase: build
+build_mode: subagent-driven-development
+build_pause: null
+isolation: worktree
+verify_mode: null
+base_ref: ef93086f79b6bbdbf9a45de1a331852b055b3af5
+design_doc: docs/netplay-vs-our-harness.md
+plan: docs/superpowers/plans/2026-06-08-explore-level-search.md
+verify_result: pending
+verification_report: null
+branch_status: pending
+created_at: 2026-06-08
+verified_at: null
+archived: false
