@@ -1331,39 +1331,44 @@ def explore_and_descend(env: NetHackCoreEnv, obs: StructuredObservation,
         return None
 
     def search_target(chars, start, floor):
-        """Best walkable tile to stand on and search for a hidden passage: a tile
-        whose adjacent wall borders unexplored stone (a dead-end, room perimeter,
-        or door-beside-stone), least-searched first. Mirrors NetPlay's search_room
-        / explore_level search mask."""
+        """Best walkable tile to stand on and search for a hidden passage — NetPlay's
+        compute_search_mask: a tile whose adjacent wall borders unexplored stone,
+        scored by door-walled-by-stone + dead-end shape, minus search_count². Returns
+        ((x,y), path) for the least-searched / most-promising / nearest tile, or None
+        once every candidate has been searched to its per-tile cap (level fully searched)."""
         h, w = chars.shape
         best = None; best_key = None
         for yy in range(h):
             for xx in range(w):
                 if int(chars[yy, xx]) not in (ord('.'), ord('>'), ord('<')):
                     continue  # must stand on a walkable tile
-                # How much unexplored stone is reachable from here by searching?
-                # Count walls/dark adjacent that border unexplored ' '.
-                score = 0
+                prio = 0
+                nopen = 0
                 for dx, dy in ((0, -1), (1, 0), (0, 1), (-1, 0)):
                     nx, ny = xx + dx, yy + dy
                     if not (0 <= nx < w and 0 <= ny < h):
                         continue
                     nc = int(chars[ny, nx])
-                    if nc == ord(' '):
-                        score += 2          # directly adjacent unexplored (dead-end)
-                    elif nc == ord('|'):    # a wall — does stone lie just beyond it?
+                    if nc in (ord('.'), ord('>'), ord('<')):
+                        nopen += 1
+                    elif nc == ord(' '):
+                        prio += 3            # adjacent unexplored — search reveals it
+                    elif nc == ord('|'):     # a wall — unexplored stone just beyond it?
                         bx, by = xx + 2 * dx, yy + 2 * dy
                         if 0 <= bx < w and 0 <= by < h and int(chars[by, bx]) == ord(' '):
-                            score += 1
-                if score == 0:
+                            prio += 1
+                if nopen <= 1:
+                    prio += 2                # dead-end: prime hidden-passage spot
+                if prio == 0:
                     continue
                 sc = search_count.get((floor, xx, yy), 0)
-                if sc >= 10:  # exhausted this spot
+                if sc >= 12:                 # this spot is exhausted
                     continue
                 p = a_star(chars, start, (xx, yy)) if (xx, yy) != start else []
                 if (xx, yy) != start and not p:
                     continue
-                key = (sc, -score, len(p) if p else 0)  # least-searched, most-promising, nearest
+                # NetPlay: most-promising (high prio) and least-searched first, then nearest
+                key = (sc * sc - prio * 100, len(p) if p else 0)
                 if best_key is None or key < best_key:
                     best_key = key; best = ((xx, yy), p)
         return best
@@ -1400,8 +1405,6 @@ def explore_and_descend(env: NetHackCoreEnv, obs: StructuredObservation,
     floors = 0
     level_idx = 0
     down_stair = None           # remembered `>` position (hidden under `@` on arrival)
-    search_actions = 0          # bound total searching so we don't starve to death
-    search_budget = max(120, max_game_steps // 4)
     _ks = nle_env._observation_keys
     _bl0 = nle_env.last_observation[_ks.index("blstats")]
     start_hp = int(_bl0[10])    # HP at call start — bail to the LLM if it drops hard
@@ -1499,8 +1502,6 @@ def explore_and_descend(env: NetHackCoreEnv, obs: StructuredObservation,
             if now != start:
                 continue
         # 3) Nothing to explore/open: search dead-ends / door-stone for hidden passages.
-        if search_actions >= search_budget:
-            break  # spent our search budget — bail before starving
         tgt = search_target(chars, start, floor_id())
         if tgt is None:
             break  # level fully explored + searched, no `>` reachable
@@ -1514,7 +1515,6 @@ def explore_and_descend(env: NetHackCoreEnv, obs: StructuredObservation,
         for _ in range(5):
             if do(SEARCH):
                 break
-            search_actions += 1
         search_count[(floor_id(), tx, ty)] = search_count.get((floor_id(), tx, ty), 0) + 5
 
     if state["steps"] == 0:
