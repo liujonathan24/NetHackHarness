@@ -2,6 +2,7 @@
 change: explore-level-search
 design-doc: docs/netplay-vs-our-harness.md
 base-ref: ef93086f79b6bbdbf9a45de1a331852b055b3af5
+archived-with: 2026-06-09-explore-level-search
 ---
 
 # explore-level-search Implementation Plan
@@ -14,6 +15,7 @@ base-ref: ef93086f79b6bbdbf9a45de1a331852b055b3af5
 
 **Tech Stack:** Python, pytest, NLE (`blstats` indices), the existing `a_star`/`_glyph_clean_chars`.
 
+archived-with: 2026-06-09-explore-level-search
 ---
 
 ## Environment & test invocation (read first)
@@ -36,6 +38,7 @@ base-ref: ef93086f79b6bbdbf9a45de1a331852b055b3af5
 - `level_idx` is a per-call counter (0 at call start, `+= 1` on each descend within the call) — it RESETS to 0 every call, so `search_count` keyed by it mis-attributes across calls.
 - Helpers available in-scope: `a_star`, `find_frontiers`, `obs_map()` (returns `(clean_chars, (x,y))`), `walk(path)` (one step), `do(action_idx)`, `SEARCH` (action index).
 
+archived-with: 2026-06-09-explore-level-search
 ---
 
 ## Task 1: Key persistent search state by the actual floor
@@ -90,6 +93,7 @@ Change the `search_target` signature + its `search_count` lookups from `level_id
 
 - [ ] **Step 5: Commit** `git add -- environments/nethack/nethack_harness/tools/skills.py tests/test_explore_search.py` — `fix(explore): key persistent search_count by actual floor (dnum,dlevel)`.
 
+archived-with: 2026-06-09-explore-level-search
 ---
 
 ## Task 2: Remove the early-bail + prioritize search targets
@@ -183,6 +187,7 @@ def test_complete_search_descends_more_seeds_than_capped_baseline():
 
 - [ ] **Step 5: Commit** `git add -- environments/nethack/nethack_harness/tools/skills.py tests/test_explore_search.py` — `feat(explore): complete prioritized hidden-passage search (no early bail)`.
 
+archived-with: 2026-06-09-explore-level-search
 ---
 
 ## Task 3: Verify — descent improves, no regressions
@@ -212,6 +217,7 @@ Expected: mean noticeably above the ~1.6 baseline (more seeds descend ≥1 floor
 
 - [ ] **Step 4** Check off `openspec/changes/explore-level-search/tasks.md`. Commit `git add -- openspec/changes/explore-level-search/tasks.md` — `chore(comet): explore-level-search tasks complete`.
 
+archived-with: 2026-06-09-explore-level-search
 ---
 
 ## Self-review

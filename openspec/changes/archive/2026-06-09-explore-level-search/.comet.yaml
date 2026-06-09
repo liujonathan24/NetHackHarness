@@ -1,5 +1,5 @@
 workflow: full
-phase: verify
+phase: archive
 build_mode: subagent-driven-development
 build_pause: null
 isolation: worktree
@@ -9,9 +9,9 @@ design_doc: docs/netplay-vs-our-harness.md
 plan: docs/superpowers/plans/2026-06-08-explore-level-search.md
 build_command: (cd environments/nethack && python -c "import nethack_harness.tools.skills, nethack_core.env")
 verify_command: (cd environments/nethack && python -m pytest ../../tests/test_explore_search.py -p no:cacheprovider -q --no-header)
-verify_result: pending
-verification_report: null
-branch_status: pending
+verify_result: pass
+verification_report: docs/superpowers/reports/2026-06-09-explore-level-search-verify.md
+branch_status: handled
 created_at: 2026-06-08
-verified_at: null
-archived: false
+verified_at: 2026-06-09
+archived: true

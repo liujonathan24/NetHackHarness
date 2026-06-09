@@ -1,3 +1,8 @@
+---
+archived-with: 2026-06-09-explore-level-search
+status: final
+status: final
+---
 # NetPlay's harness vs ours — architecture + full pseudocode
 
 A side-by-side of how **NetPlay** (Jeurissen et al., *Playing NetHack with LLMs*,
