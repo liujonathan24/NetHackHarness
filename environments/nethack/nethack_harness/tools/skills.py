@@ -1285,6 +1285,10 @@ def explore_and_descend(env: NetHackCoreEnv, obs: StructuredObservation,
         try: setattr(nle_env, "_explore_search_count", search_count)
         except Exception: pass
 
+    def floor_id():
+        bl = nle_env.last_observation[_ks.index("blstats")]
+        return (int(bl[23]), int(bl[24]))  # (DNUM, DLEVEL) — unique per floor
+
     state = {"r": 0.0, "term": False, "trunc": False, "steps": 0, "obs": None}
     _ttci = nle_env._observation_keys.index("tty_chars")
 
@@ -1326,7 +1330,7 @@ def explore_and_descend(env: NetHackCoreEnv, obs: StructuredObservation,
                     return (xx, yy)
         return None
 
-    def search_target(chars, start, level_idx):
+    def search_target(chars, start, floor):
         """Best walkable tile to stand on and search for a hidden passage: a tile
         whose adjacent wall borders unexplored stone (a dead-end, room perimeter,
         or door-beside-stone), least-searched first. Mirrors NetPlay's search_room
@@ -1353,7 +1357,7 @@ def explore_and_descend(env: NetHackCoreEnv, obs: StructuredObservation,
                             score += 1
                 if score == 0:
                     continue
-                sc = search_count.get((level_idx, xx, yy), 0)
+                sc = search_count.get((floor, xx, yy), 0)
                 if sc >= 10:  # exhausted this spot
                     continue
                 p = a_star(chars, start, (xx, yy)) if (xx, yy) != start else []
@@ -1497,7 +1501,7 @@ def explore_and_descend(env: NetHackCoreEnv, obs: StructuredObservation,
         # 3) Nothing to explore/open: search dead-ends / door-stone for hidden passages.
         if search_actions >= search_budget:
             break  # spent our search budget — bail before starving
-        tgt = search_target(chars, start, level_idx)
+        tgt = search_target(chars, start, floor_id())
         if tgt is None:
             break  # level fully explored + searched, no `>` reachable
         (tx, ty), p = tgt
@@ -1511,7 +1515,7 @@ def explore_and_descend(env: NetHackCoreEnv, obs: StructuredObservation,
             if do(SEARCH):
                 break
             search_actions += 1
-        search_count[(level_idx, tx, ty)] = search_count.get((level_idx, tx, ty), 0) + 5
+        search_count[(floor_id(), tx, ty)] = search_count.get((floor_id(), tx, ty), 0) + 5
 
     if state["steps"] == 0:
         return SkillResult(actions=[], feedback="Nothing to explore from here; already descended or blocked.")
