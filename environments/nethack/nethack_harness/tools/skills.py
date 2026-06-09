@@ -1424,11 +1424,13 @@ def explore_and_descend(env: NetHackCoreEnv, obs: StructuredObservation,
         # flee, eat, pray) instead of this skill autopiloting into death.
         _bl = nle_env.last_observation[_ks.index("blstats")]
         hp, hpmax, hunger = int(_bl[10]), int(_bl[11]), int(_bl[21])
-        if hp <= max(1, hpmax // 4) or hp <= start_hp // 2:
-            halt = f"HP low ({hp}/{hpmax}) — returning to you to heal/flee"
+        # Return EARLY (at half HP) so the LLM can heal/flee/pray before it's
+        # critical — dying mid-call is the main thing capping our depth.
+        if hp <= max(2, hpmax // 2):
+            halt = f"HP at {hp}/{hpmax} — returning to you: rest/pray/elbereth/flee before going on"
             break
-        if hunger >= 4:  # Fainting
-            halt = "fainting from hunger — returning to you to eat"
+        if hunger >= 3:  # Weak (eat before Fainting)
+            halt = "getting weak from hunger — returning to you to eat"
             break
         visited.add((level_idx, start))  # every tile we stand on — sweep forward,
                                          # never re-target a frontier we've passed
