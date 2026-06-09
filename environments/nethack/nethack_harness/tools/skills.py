@@ -1419,6 +1419,7 @@ def explore_and_descend(env: NetHackCoreEnv, obs: StructuredObservation,
     _bl0 = nle_env.last_observation[_ks.index("blstats")]
     start_hp = int(_bl0[10])    # HP at call start — bail to the LLM if it drops hard
     halt = None                 # reason we returned control to the agent
+    exhausted = False           # True only if every reachable tile was searched (level done)
     attacks = 0                 # consecutive in-skill melee swings (bail if a monster won't die)
     visited: set = set()  # frontiers already attempted (per level) — avoids oscillating
     opened: set = set()   # (level_idx, x, y) doors we've opened — they render as a wall
@@ -1552,6 +1553,7 @@ def explore_and_descend(env: NetHackCoreEnv, obs: StructuredObservation,
         # 3) Nothing to explore/open: search dead-ends / door-stone for hidden passages.
         tgt = search_target(chars, start, floor_id())
         if tgt is None:
+            exhausted = True
             break  # level fully explored + searched, no `>` reachable
         (tx, ty), p = tgt
         if (tx, ty) != start:
@@ -1569,9 +1571,24 @@ def explore_and_descend(env: NetHackCoreEnv, obs: StructuredObservation,
         return SkillResult(actions=[], feedback="Nothing to explore from here; already descended or blocked.")
     fb = (f"explore_and_descend: descended {floors} floor(s) over {state['steps']} game steps"
           + (f" — {halt}" if halt else "")
-          + (" — stopped (died/level-end)" if state["term"] or state["trunc"] else "")
-          + ("." if (floors or halt) else "; could not reach a down-staircase this call "
-             "(may need `search` for a hidden passage, or `move`/`kick` to get unstuck)."))
+          + (" — stopped (died/level-end)" if state["term"] or state["trunc"] else ""))
+    if floors or halt or state["term"] or state["trunc"]:
+        fb += "."
+    elif exhausted:
+        # Genuinely searched every reachable tile and found no `>` — the staircase is
+        # behind a still-hidden passage or needs going `<` up and around.
+        fb += ("; searched every reachable tile, no down-staircase found yet. Try `search` "
+               "a few more times at a suspicious dead-end, or `move`/`kick` to open new ground, "
+               "then call `explore_and_descend` again.")
+    else:
+        # Hit the per-call step budget mid-explore/search — there is MORE to do and the
+        # search state persists across calls. The biggest descent mistake here is to
+        # hand-search/move manually and get stuck; just re-invoke the skill — it resumes
+        # the complete prioritized search from where it left off and descends when it finds `>`.
+        fb += ("; used my step budget mid-search and did not reach a down-staircase yet. "
+               "Call `explore_and_descend` AGAIN to continue — it resumes the complete "
+               "search for the hidden downstairs from where it stopped. Do NOT hand-search "
+               "tile-by-tile; that is what this skill does for you.")
     return SkillResult(actions=[], feedback=fb, pre_executed=True, pre_reward=state["r"],
                        final_obs=state["obs"], pre_terminated=state["term"],
                        pre_truncated=state["trunc"])

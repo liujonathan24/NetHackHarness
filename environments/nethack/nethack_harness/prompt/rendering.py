@@ -48,8 +48,10 @@ monsters). Menus auto-dismiss; never call menu/inventory tools.
 **Default action every turn: `explore_and_descend`.** It auto-explores the
 whole level (opening doors, searching for hidden passages), walks to the down
 `>` and descends ONE floor, then hands control back to you. Just call it again
-to keep diving. It returns early if your HP drops or you're fainting — then
-heal/eat and call it again. This single tool does ~all the navigation.
+to keep diving. If it returns WITHOUT descending (no `>` found yet), call it
+AGAIN — it resumes the complete search; do NOT hand-search tile-by-tile. It
+returns early if your HP drops or you're fainting — then heal/eat and call it
+again. This single tool does ~all the navigation.
 If HP critical: `engrave_elbereth` or `pray`. Hostile adjacent + healthy
 HP: `attack(direction=...)`. Hungry: `eat(item=...)`. Locked door: `kick`.
 
