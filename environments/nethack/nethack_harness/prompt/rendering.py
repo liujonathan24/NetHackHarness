@@ -45,15 +45,18 @@ Pitfalls: `eat`/`quaff`/`read` need an `item` arg. At HP <30% retreat or
 monsters). Menus auto-dismiss; never call menu/inventory tools.
 
 === STRATEGY: DESCEND ASAP ===
-Default action: `autoexplore(max_steps=30)`. When `stairs DOWN` becomes
-visible, autoexplore auto-paths to them AND descends in one call.
+**Default action every turn: `explore_and_descend`.** It auto-explores the
+whole level (opening doors, searching for hidden passages), walks to the down
+`>` and descends ONE floor, then hands control back to you. Just call it again
+to keep diving. It returns early if your HP drops or you're fainting — then
+heal/eat and call it again. This single tool does ~all the navigation.
 If HP critical: `engrave_elbereth` or `pray`. Hostile adjacent + healthy
-HP: `attack(direction=...)`. Locked door HINT: `kick(direction=...)`.
+HP: `attack(direction=...)`. Hungry: `eat(item=...)`. Locked door: `kick`.
 
 === SKILLS CHEAT SHEET ===
-- **PRIMARY**: `find_and_descend(max_actions=80)` — use every turn.
-- Traverse a level: `autoexplore`
-- Reach a known tile: `move_to(x, y)`
+- **PRIMARY — dive**: `explore_and_descend` — explore the level + descend a
+  floor, then returns to you. Call it every turn to go deeper.
+- Reach a specific visible tile: `move_to(x, y)`
 - Step: `move(direction=N|NE|E|...)`
 - Pickup: `pickup`; Descend: `descend` (must be on `>`)
 - Notes: `add_note` / `recall(query=...)` / `pin_objective`
