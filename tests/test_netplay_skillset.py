@@ -4,9 +4,10 @@ action surface used as the standardized action set for cross-encoding benchmarks
 from nethack_harness.helpers import _build_skill_adapter_callables
 
 NETPLAY_EXPECTED = {
-    "move_to", "autoexplore", "find_and_descend", "attack", "descend", "search",
-    "pickup", "engrave_elbereth", "pray", "eat", "quaff", "read", "kick",
-    "add_note", "recall", "pin_objective", "wiki_lookup", "wiki_search",
+    "move_to", "autoexplore", "find_and_descend", "explore_and_descend",
+    "attack", "descend", "search", "pickup", "engrave_elbereth", "pray", "eat",
+    "quaff", "read", "kick", "add_note", "recall", "pin_objective",
+    "wiki_lookup", "wiki_search",
 }
 
 

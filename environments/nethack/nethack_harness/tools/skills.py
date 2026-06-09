@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Callable, Iterable, Literal, Optional
+from typing import Any, Callable, Iterable, Literal, Optional
 
 from nle import nethack
 
@@ -55,6 +55,15 @@ class SkillResult:
     # For non-NLE skills (journal etc.) `actions` is empty and the side
     # effect is in `journal_op` so the harness can apply it after the call.
     journal_op: Optional[Callable[[Journal], str]] = None
+    # Closed-loop skills (e.g. explore_and_descend) step the env THEMSELVES in
+    # a re-observe loop, so there is nothing left for env_response to execute.
+    # When `pre_executed` is True, env_response skips its step loop and uses the
+    # reward / final obs the skill already produced.
+    pre_executed: bool = False
+    pre_reward: float = 0.0
+    final_obs: Any = None
+    pre_terminated: bool = False
+    pre_truncated: bool = False
 
 
 class SkillRegistry:
@@ -1150,6 +1159,368 @@ def find_and_descend(env: NetHackCoreEnv, obs: StructuredObservation, max_action
         actions=[s_idx] * 25,
         feedback="No frontier/door/dead-end found; searching here 25× (consider `move` to a new corridor).",
     )
+
+
+_EAD_CMAP_LUT = None
+_EAD_CLOSED_CMAPS = None
+
+
+def _ead_cmap_lut():
+    """cmap index -> clean char LUT, from the canonical symdef table (NetPlay's
+    glyph-group idea). open door -> '.', closed door -> '|' (BLOCKED for pathing),
+    walls -> '|', downstairs -> '>', upstairs -> '<', dark/unexplored -> ' '.
+    Also caches the closed-door cmap set. Cached."""
+    global _EAD_CMAP_LUT, _EAD_CLOSED_CMAPS
+    if _EAD_CMAP_LUT is None:
+        import numpy as np
+        import nle.nethack as N
+        lut = np.full(N.MAXPCHARS, ord('|'), np.uint8)  # default: wall/rock/hazard
+        lut[0] = ord(' ')                               # cmap 0 = dark/unexplored
+        closed = set()
+        for i in range(1, N.MAXPCHARS):
+            exp = N.symdef.from_idx(i).explanation
+            if 'closed door' in exp:
+                closed.add(i)
+            if ('staircase down' in exp) or ('ladder down' in exp):
+                lut[i] = ord('>')
+            elif ('staircase up' in exp) or ('ladder up' in exp):
+                lut[i] = ord('<')
+            elif 'closed door' in exp:
+                lut[i] = ord('|')  # BLOCKED for pathing (a_star must not route through
+                                   # a closed door and bump). Detected separately
+                                   # from glyphs for the open-the-door step.
+            elif any(k in exp for k in ('doorway', 'open door', 'floor', 'corridor',
+                                        'dark part of a room', 'staircase', 'ladder',
+                                        'altar', 'sink', 'fountain', 'ice',
+                                        'lowered drawbridge', 'throne')):
+                lut[i] = ord('.')
+        _EAD_CMAP_LUT = lut
+        _EAD_CLOSED_CMAPS = closed
+    return _EAD_CMAP_LUT
+
+
+def _closed_door_positions(glyphs):
+    """List of (x, y) closed-door tiles, from glyphs (vectorized)."""
+    import numpy as np
+    import nle.nethack as N
+    _ead_cmap_lut()  # ensure _EAD_CLOSED_CMAPS is built
+    if not _EAD_CLOSED_CMAPS:
+        return []
+    g = np.asarray(glyphs, dtype=np.int64)
+    iscmap = np.asarray(N.glyph_is_cmap(g), dtype=bool)
+    cm = g - int(N.GLYPH_CMAP_OFF)
+    mask = iscmap & np.isin(cm, list(_EAD_CLOSED_CMAPS))
+    ys, xs = np.nonzero(mask)
+    return [(int(x), int(y)) for y, x in zip(ys, xs)]
+
+
+def _glyph_clean_chars(glyphs):
+    """Unambiguous tty-like grid built from GLYPHS (vectorized): open doors -> '.',
+    closed -> '+', walls -> '|', downstairs -> '>', up -> '<', unexplored -> ' '.
+    The tty char layer renders an open door identically to a wall; glyphs
+    disambiguate (the way NetPlay tracks the map)."""
+    import numpy as np
+    import nle.nethack as N
+    lut = _ead_cmap_lut()
+    g = np.asarray(glyphs, dtype=np.int64)
+    out = np.full(g.shape, ord(' '), np.uint8)
+    iscmap = np.asarray(N.glyph_is_cmap(g), dtype=bool)
+    cm = g - int(N.GLYPH_CMAP_OFF)
+    valid = iscmap & (cm >= 0) & (cm < lut.shape[0])
+    out[valid] = lut[cm[valid]]
+    ent = (np.asarray(N.glyph_is_monster(g), bool)
+           | np.asarray(N.glyph_is_pet(g), bool)
+           | np.asarray(N.glyph_is_object(g), bool))
+    out[ent] = ord('.')  # walkable terrain under a monster / item / pet
+    return out
+
+
+@registry.register("explore_and_descend", schema={
+    "description": (
+        "CLOSED-LOOP mega-skill: automatically explore the ENTIRE current level "
+        "(revealing rooms/corridors, and SEARCHING dead-ends and door-adjacent "
+        "walls for hidden passages), and the instant the down-staircase `>` is "
+        "found, path to it and descend. It steps the game many times in one call, "
+        "re-observing after each move, until it descends a floor (or the level is "
+        "fully explored and searched). This is the single best way to make "
+        "progress deeper into the dungeon — prefer it over autoexplore / "
+        "find_and_descend, which only take one step toward exploration per call."
+    ),
+    "parameters": {
+        "max_floors": {"type": "integer", "default": 1,
+                       "description": "descend at most this many floors before returning"},
+        "max_game_steps": {"type": "integer", "default": 400,
+                           "description": "hard step budget for this call"},
+    },
+})
+def explore_and_descend(env: NetHackCoreEnv, obs: StructuredObservation,
+                        max_floors: int = 1, max_game_steps: int = 400) -> SkillResult:
+    """Explore the current level -> find `>` -> descend ONE floor, then RETURN
+    control to the agent (the LLM decides what to do next: eat, fight, pray,
+    descend again). Also returns early on danger (HP drop) or when out of hunger,
+    so the agent gets a decision break instead of an autopilot run to death.
+    Internally it re-observes every step (NetPlay's explore_level loop) and
+    searches dead-ends / room perimeters for hidden passages."""
+    import numpy as np
+    from nle import nethack as _nh
+    from nethack_harness.navigation.pathfinding import a_star, find_frontiers
+
+    nle_env = env.underlying.unwrapped
+    acts = nle_env.actions
+    e2i = {int(a): i for i, a in enumerate(acts)}
+    MORE = e2i.get(int(_nh.MiscAction.MORE), 0)
+    DOWN = e2i.get(int(_nh.MiscDirection.DOWN), e2i.get(int(ord('>')), 0))
+    SEARCH = e2i.get(int(_nh.Command.SEARCH), int(ord('s')))
+    KICK = e2i.get(int(_nh.Command.KICK), None)
+    DIRS = {(0, -1): e2i.get(int(_nh.CompassDirection.N)),
+            (0, 1): e2i.get(int(_nh.CompassDirection.S)),
+            (1, 0): e2i.get(int(_nh.CompassDirection.E)),
+            (-1, 0): e2i.get(int(_nh.CompassDirection.W))}
+    kicked: dict = {}  # (level_idx, x, y) -> kick attempts (avoid infinite kicking)
+
+    # persistent per-(level,tile) search counts so repeated calls don't re-search
+    search_count = getattr(nle_env, "_explore_search_count", None)
+    if search_count is None:
+        search_count = {}
+        try: setattr(nle_env, "_explore_search_count", search_count)
+        except Exception: pass
+
+    state = {"r": 0.0, "term": False, "trunc": False, "steps": 0, "obs": None}
+    _ttci = nle_env._observation_keys.index("tty_chars")
+
+    def _more_up() -> bool:
+        try:
+            tty = nle_env.last_observation[_ttci]
+            return any(b"--More--" in bytes(int(c) for c in row) for row in tty[:3])
+        except Exception:
+            return False
+
+    def do(idx) -> bool:
+        o, r, t, tr, _ = env.step(idx)
+        state["obs"] = o; state["r"] += float(r)
+        state["term"] = state["term"] or bool(t); state["trunc"] = state["trunc"] or bool(tr)
+        state["steps"] += 1
+        # A --More-- prompt eats the NEXT keypress, which would silently swallow
+        # the agent's moves (it freezes in place). Acknowledge it here.
+        guard = 0
+        while not (state["term"] or state["trunc"]) and guard < 5 and _more_up():
+            o, r2, t2, tr2, _ = env.step(MORE)
+            state["obs"] = o; state["r"] += float(r2); state["steps"] += 1
+            state["term"] = state["term"] or bool(t2); state["trunc"] = state["trunc"] or bool(tr2)
+            guard += 1
+        return bool(state["term"] or state["trunc"]) or state["steps"] >= max_game_steps
+
+    def walk(path) -> bool:
+        """Take ONE step along the path, then return so the caller re-observes and
+        re-pathfinds. Blindly walking a whole precomputed path bumps and freezes
+        the moment anything shifts (a monster, a doorway diagonal NetHack forbids);
+        NetPlay's move_to is likewise one-step-at-a-time."""
+        idxs = _enum_actions_to_indices(env, path[:1])
+        return do(idxs[0]) if idxs else False
+
+    def find_char(chars, target):
+        h, w = chars.shape
+        for yy in range(h):
+            for xx in range(w):
+                if int(chars[yy, xx]) == target:
+                    return (xx, yy)
+        return None
+
+    def search_target(chars, start, level_idx):
+        """Best walkable tile to stand on and search for a hidden passage: a tile
+        whose adjacent wall borders unexplored stone (a dead-end, room perimeter,
+        or door-beside-stone), least-searched first. Mirrors NetPlay's search_room
+        / explore_level search mask."""
+        h, w = chars.shape
+        best = None; best_key = None
+        for yy in range(h):
+            for xx in range(w):
+                if int(chars[yy, xx]) not in (ord('.'), ord('>'), ord('<')):
+                    continue  # must stand on a walkable tile
+                # How much unexplored stone is reachable from here by searching?
+                # Count walls/dark adjacent that border unexplored ' '.
+                score = 0
+                for dx, dy in ((0, -1), (1, 0), (0, 1), (-1, 0)):
+                    nx, ny = xx + dx, yy + dy
+                    if not (0 <= nx < w and 0 <= ny < h):
+                        continue
+                    nc = int(chars[ny, nx])
+                    if nc == ord(' '):
+                        score += 2          # directly adjacent unexplored (dead-end)
+                    elif nc == ord('|'):    # a wall — does stone lie just beyond it?
+                        bx, by = xx + 2 * dx, yy + 2 * dy
+                        if 0 <= bx < w and 0 <= by < h and int(chars[by, bx]) == ord(' '):
+                            score += 1
+                if score == 0:
+                    continue
+                sc = search_count.get((level_idx, xx, yy), 0)
+                if sc >= 10:  # exhausted this spot
+                    continue
+                p = a_star(chars, start, (xx, yy)) if (xx, yy) != start else []
+                if (xx, yy) != start and not p:
+                    continue
+                key = (sc, -score, len(p) if p else 0)  # least-searched, most-promising, nearest
+                if best_key is None or key < best_key:
+                    best_key = key; best = ((xx, yy), p)
+        return best
+
+    def door_kick_target(chars, start, level_idx, doors):
+        """Nearest reachable closed door (glyph-detected positions): the walkable
+        orthogonal tile to stand on, path there, door pos, and move direction."""
+        h, w = chars.shape
+        STAND = (ord('.'), ord('>'), ord('<'))  # walkable approach tiles
+        best = None; best_len = 1 << 30
+        for (xx, yy) in doors:
+            if kicked.get((level_idx, xx, yy), 0) >= 6:
+                continue
+            for dx, dy in DIRS:
+                sx, sy = xx + dx, yy + dy  # tile to stand on (orthogonal)
+                if not (0 <= sx < w and 0 <= sy < h):
+                    continue
+                if int(chars[sy, sx]) not in STAND:
+                    continue
+                p = a_star(chars, start, (sx, sy)) if (sx, sy) != start else []
+                if (sx, sy) != start and not p:
+                    continue
+                plen = len(p) if p else 0
+                if plen < best_len:
+                    best_len = plen
+                    best = ((sx, sy), p, (xx, yy), DIRS.get((xx - sx, yy - sy)))
+        return best
+
+    def cur_doors():
+        uw = env.underlying.unwrapped
+        glyphs = uw.last_observation[uw._observation_keys.index("glyphs")]
+        return _closed_door_positions(glyphs)
+
+    floors = 0
+    level_idx = 0
+    down_stair = None           # remembered `>` position (hidden under `@` on arrival)
+    search_actions = 0          # bound total searching so we don't starve to death
+    search_budget = max(120, max_game_steps // 4)
+    _ks = nle_env._observation_keys
+    _bl0 = nle_env.last_observation[_ks.index("blstats")]
+    start_hp = int(_bl0[10])    # HP at call start — bail to the LLM if it drops hard
+    halt = None                 # reason we returned control to the agent
+    visited: set = set()  # frontiers already attempted (per level) — avoids oscillating
+    opened: set = set()   # (level_idx, x, y) doors we've opened — they render as a wall
+                          # char (`-`/`|`) in the tty, so patch them back to walkable.
+
+    def obs_map():
+        """Glyph-derived unambiguous map + player position. Using glyphs (not tty
+        chars) fixes the open-door-vs-wall ambiguity at the source."""
+        uw = env.underlying.unwrapped
+        ks = uw._observation_keys
+        glyphs = uw.last_observation[ks.index("glyphs")]
+        bl = uw.last_observation[ks.index("blstats")]
+        chars = _glyph_clean_chars(glyphs)
+        px, py = int(bl[0]), int(bl[1])
+        chars[py, px] = ord('.')  # our own tile is always walkable to path from
+        return chars, (px, py)
+
+    while state["steps"] < max_game_steps and floors < max_floors and not state["term"] and not state["trunc"]:
+        chars, start = obs_map()
+        # Hand control back to the agent on danger so the LLM can react (heal,
+        # flee, eat, pray) instead of this skill autopiloting into death.
+        _bl = nle_env.last_observation[_ks.index("blstats")]
+        hp, hpmax, hunger = int(_bl[10]), int(_bl[11]), int(_bl[21])
+        if hp <= max(1, hpmax // 4) or hp <= start_hp // 2:
+            halt = f"HP low ({hp}/{hpmax}) — returning to you to heal/flee"
+            break
+        if hunger >= 4:  # Fainting
+            halt = "fainting from hunger — returning to you to eat"
+            break
+        visited.add((level_idx, start))  # every tile we stand on — sweep forward,
+                                         # never re-target a frontier we've passed
+        seen_stair = find_char(chars, ord('>'))
+        if seen_stair is not None:
+            down_stair = seen_stair  # remember it: when we STAND on it the `@`
+                                     # glyph hides the `>`, so find_char goes blind.
+        if down_stair is not None:
+            if start == down_stair:
+                # standing on the downstair — dismiss any prompt, then descend.
+                do(MORE)
+                do(DOWN)
+                floors += 1
+                level_idx += 1
+                down_stair = None
+                visited.clear()
+                if floors >= max_floors:
+                    break
+                continue
+            p = a_star(chars, start, down_stair)
+            if p:
+                if walk(p):
+                    break
+                continue  # one step toward the stair, then re-observe
+            down_stair = None  # unreachable for now — keep exploring/searching
+        # 1) Explore the nearest OPEN frontier (exclude upstairs and closed doors;
+        #    doors need an orthogonal approach and are handled in step 2).
+        frontiers = [f for f in find_frontiers(chars)
+                     if int(chars[f[1], f[0]]) not in (ord('<'), ord('+'))
+                     and f != start and (level_idx, f) not in visited]
+        best = None; best_p = None; best_len = 1 << 30
+        for f in frontiers:
+            p = a_star(chars, start, f)
+            if p and len(p) < best_len:
+                best_len = len(p); best = f; best_p = p
+        if best is not None:
+            if walk(best_p):
+                break
+            if obs_map()[1] != start:
+                continue  # progressed one step — re-observe + re-pathfind
+            visited.add((level_idx, best))   # bumped/blocked — blacklist this frontier
+            # fall through to door / search handling
+        # 2) Open the nearest reachable closed door: approach an orthogonally
+        #    adjacent tile, then MOVE into the door (NetHack autoopen). If it stays
+        #    shut after a few tries it is locked -> KICK it open.
+        dt = door_kick_target(chars, start, level_idx, cur_doors())
+        if dt is not None:
+            (sx, sy), p, doorpos, _ = dt
+            if p and walk(p):
+                break
+            _, now = obs_map()
+            mdir = DIRS.get((doorpos[0] - now[0], doorpos[1] - now[1]))
+            if mdir is not None:
+                tries = kicked.get((level_idx,) + doorpos, 0)
+                if tries < 4:
+                    do(mdir)                 # autoopen: walk into the door
+                elif KICK is not None:
+                    do(KICK); do(mdir)       # locked -> kick it open
+                kicked[(level_idx,) + doorpos] = tries + 1
+                opened.add((level_idx,) + doorpos)   # treat as walkable next pass
+                continue
+            if now != start:
+                continue
+        # 3) Nothing to explore/open: search dead-ends / door-stone for hidden passages.
+        if search_actions >= search_budget:
+            break  # spent our search budget — bail before starving
+        tgt = search_target(chars, start, level_idx)
+        if tgt is None:
+            break  # level fully explored + searched, no `>` reachable
+        (tx, ty), p = tgt
+        if (tx, ty) != start:
+            if walk(p):
+                break
+            if obs_map()[1] != start:
+                continue  # stepping toward the search tile
+            # could not move toward it — search from here as a fallback
+        for _ in range(5):
+            if do(SEARCH):
+                break
+            search_actions += 1
+        search_count[(level_idx, tx, ty)] = search_count.get((level_idx, tx, ty), 0) + 5
+
+    if state["steps"] == 0:
+        return SkillResult(actions=[], feedback="Nothing to explore from here; already descended or blocked.")
+    fb = (f"explore_and_descend: descended {floors} floor(s) over {state['steps']} game steps"
+          + (f" — {halt}" if halt else "")
+          + (" — stopped (died/level-end)" if state["term"] or state["trunc"] else "")
+          + ("." if (floors or halt) else "; could not reach a down-staircase this call "
+             "(may need `search` for a hidden passage, or `move`/`kick` to get unstuck)."))
+    return SkillResult(actions=[], feedback=fb, pre_executed=True, pre_reward=state["r"],
+                       final_obs=state["obs"], pre_terminated=state["term"],
+                       pre_truncated=state["trunc"])
 
 
 def list_skills() -> list[str]:

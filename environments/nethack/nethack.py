@@ -545,6 +545,14 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         last_obs = state["raw_obs"]
         hp_before = state["structured_obs"].status.get("hitpoints", 0) if state.get("structured_obs") else 0
         halt_reason: Optional[str] = None
+        if getattr(result, "pre_executed", False):
+            # Closed-loop skill (e.g. explore_and_descend) already stepped the env
+            # in its own re-observe loop. Adopt its outcome and skip our step loop.
+            total_reward = result.pre_reward
+            last_obs = result.final_obs if result.final_obs is not None else state["raw_obs"]
+            terminated = bool(result.pre_terminated)
+            truncated = bool(result.pre_truncated)
+            action_indices = []
         for step_i, action in enumerate(action_indices):
             last_obs, r, terminated, truncated, info = env.step(action)
             total_reward += r
