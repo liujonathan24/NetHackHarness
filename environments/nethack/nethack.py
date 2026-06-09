@@ -264,8 +264,13 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
 
     async def setup_state(self, state: vf.State) -> vf.State:
         task: dict = state["task"]
-        tier_name: TierName = task.get("tier", "corridor_explore")
-        seed: int = task.get("seed", random.randint(0, 2**31 - 1))
+        info: dict = state.get("info") or {}
+        # verifiers does not always round-trip the nested "task" dict column, so the
+        # per-example tier can be missing here and silently fall back to the dlvl-2
+        # corridor tier — capping descent at level 2 regardless of the requested tier.
+        # Fall back to the "info" column (which IS preserved) before the default.
+        tier_name: TierName = task.get("tier") or info.get("tier") or "corridor_explore"
+        seed: int = task.get("seed", info.get("seed", random.randint(0, 2**31 - 1)))
         spec = get_tier(tier_name)
 
         env = NetHackCoreEnv(

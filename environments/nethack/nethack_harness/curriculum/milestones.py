@@ -184,7 +184,7 @@ def reach_dlvl_milestone(target_dlvl: int) -> Milestone:
     def check(obs, state: dict) -> bool:
         if state.get(f"milestone_dlvl_{target_dlvl}"):
             return True
-        if _dungeon_number(obs) == DUNGEON_MAIN and int(obs.blstats[_BLSTAT_DLVL]) >= target_dlvl:
+        if _dungeon_number(obs) == DUNGEON_MAIN and int(obs.blstats[_BLSTAT_LEVEL_NUMBER]) >= target_dlvl:
             state[f"milestone_dlvl_{target_dlvl}"] = True
             return True
         return False
