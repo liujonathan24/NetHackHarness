@@ -1276,6 +1276,16 @@ def explore_and_descend(env: NetHackCoreEnv, obs: StructuredObservation,
             (0, 1): e2i.get(int(_nh.CompassDirection.S)),
             (1, 0): e2i.get(int(_nh.CompassDirection.E)),
             (-1, 0): e2i.get(int(_nh.CompassDirection.W))}
+    # All 8 compass directions for melee — a monster can be diagonally adjacent.
+    # Orthogonal first so straight melee is preferred over a diagonal swing.
+    DIRS8 = {(0, -1): e2i.get(int(_nh.CompassDirection.N)),
+             (0, 1): e2i.get(int(_nh.CompassDirection.S)),
+             (1, 0): e2i.get(int(_nh.CompassDirection.E)),
+             (-1, 0): e2i.get(int(_nh.CompassDirection.W)),
+             (1, -1): e2i.get(int(_nh.CompassDirection.NE)),
+             (1, 1): e2i.get(int(_nh.CompassDirection.SE)),
+             (-1, 1): e2i.get(int(_nh.CompassDirection.SW)),
+             (-1, -1): e2i.get(int(_nh.CompassDirection.NW))}
     kicked: dict = {}  # (level_idx, x, y) -> kick attempts (avoid infinite kicking)
 
     # persistent per-(level,tile) search counts so repeated calls don't re-search
@@ -1409,6 +1419,7 @@ def explore_and_descend(env: NetHackCoreEnv, obs: StructuredObservation,
     _bl0 = nle_env.last_observation[_ks.index("blstats")]
     start_hp = int(_bl0[10])    # HP at call start — bail to the LLM if it drops hard
     halt = None                 # reason we returned control to the agent
+    attacks = 0                 # consecutive in-skill melee swings (bail if a monster won't die)
     visited: set = set()  # frontiers already attempted (per level) — avoids oscillating
     opened: set = set()   # (level_idx, x, y) doors we've opened — they render as a wall
                           # char (`-`/`|`) in the tty, so patch them back to walkable.
@@ -1424,6 +1435,27 @@ def explore_and_descend(env: NetHackCoreEnv, obs: StructuredObservation,
         px, py = int(bl[0]), int(bl[1])
         chars[py, px] = ord('.')  # our own tile is always walkable to path from
         return chars, (px, py)
+
+    def adjacent_hostile():
+        """Direction (dx,dy) to an adjacent NON-pet monster, or None. Glyph-derived
+        (the cleaned `chars` erase monsters to '.'), so we read raw glyphs. NetPlay
+        fights weak monsters mid-explore rather than autopiloting past them into a
+        slow death; we only call this when HP is healthy (the half-HP halt fires
+        first) and we're not already beelining to reachable stairs."""
+        uw = env.underlying.unwrapped
+        ks = uw._observation_keys
+        glyphs = uw.last_observation[ks.index("glyphs")]
+        bl = uw.last_observation[ks.index("blstats")]
+        px, py = int(bl[0]), int(bl[1])
+        h, w = glyphs.shape
+        for (dx, dy) in DIRS8:  # orthogonal-first ordering
+            nx, ny = px + dx, py + dy
+            if not (0 <= nx < w and 0 <= ny < h):
+                continue
+            g = int(glyphs[ny, nx])
+            if _nh.glyph_is_monster(g) and not _nh.glyph_is_pet(g):
+                return (dx, dy)
+        return None
 
     while state["steps"] < max_game_steps and floors < max_floors and not state["term"] and not state["trunc"]:
         chars, start = obs_map()
@@ -1463,6 +1495,22 @@ def explore_and_descend(env: NetHackCoreEnv, obs: StructuredObservation,
                     break
                 continue  # one step toward the stair, then re-observe
             down_stair = None  # unreachable for now — keep exploring/searching
+        # 0.5) Fight an adjacent hostile that's blocking exploration. We reach here
+        #    only when there's no reachable downstair (escape-to-stairs is handled
+        #    above) and HP is healthy (the half-HP halt already hands off real
+        #    danger). This clears the weak monsters (rats/newts/kobolds) that were
+        #    whittling HP to the halt threshold mid-explore — NetPlay melees weak
+        #    monsters in-skill rather than autopiloting past them into a slow death.
+        adir = adjacent_hostile()
+        if adir is not None:
+            attacks += 1
+            if attacks > 16:  # stubborn / out-of-depth monster — let the LLM decide
+                halt = "a monster won't go down — returning to you to fight/flee/pray/elbereth"
+                break
+            if do(DIRS8[adir]):   # melee = step into it
+                break
+            continue
+        attacks = 0  # nothing adjacent to fight — reset the swing counter
         # 1) Explore the nearest OPEN frontier (exclude upstairs and closed doors;
         #    doors need an orthogonal approach and are handled in step 2).
         frontiers = [f for f in find_frontiers(chars)
