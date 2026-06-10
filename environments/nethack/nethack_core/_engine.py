@@ -125,6 +125,9 @@ class NleSeedsInit(ctypes.Structure):
     _fields_ = [("seeds", ctypes.c_ulong * 2), ("reseed", ctypes.c_char)]
 
 
+NLE_TUNE_MAX = 64
+
+
 class NleSettings(ctypes.Structure):
     _fields_ = [
         ("hackdir", ctypes.c_char * 256),
@@ -133,6 +136,11 @@ class NleSettings(ctypes.Structure):
         ("wizkit", ctypes.c_char * 256),
         ("spawn_monsters", ctypes.c_int),
         ("ttyrecname", ctypes.c_char * 256),
+        # Difficulty-knob overrides applied before the starting level is built.
+        # Zero-safe: tune_n == 0 means no overrides (vanilla defaults).
+        ("tune_n", ctypes.c_int),
+        ("tune_idx", ctypes.c_int * NLE_TUNE_MAX),
+        ("tune_val", ctypes.c_double * NLE_TUNE_MAX),
     ]
 
 
@@ -299,11 +307,16 @@ class RawEngine:
         except Exception:
             pass
 
-    def start(self, core: int, disp: int) -> "RawEngine":
+    def start(self, core: int, disp: int, tune: dict = None) -> "RawEngine":
         """Start a new game.  Returns self so callers can chain property reads.
 
         Safe to call while a game is already active — tears down the previous
         context first so no C context or temp hackdir is leaked.
+
+        ``tune`` optionally overrides difficulty knobs BEFORE the starting level
+        is generated, so generation-time knobs (e.g. room_density) take effect on
+        the starting floor.  Live knobs may also be set this way or via set_tune()
+        after start().  Unknown knob names raise KeyError.
         """
         # Tear down any prior game before creating a new one.
         self.end()
@@ -323,6 +336,20 @@ class RawEngine:
         settings.wizkit = b""
         settings.spawn_monsters = 1
         settings.ttyrecname = b""
+
+        # Apply start-time difficulty-knob overrides (generation knobs must be
+        # set before the starting level is built). tune_n == 0 => vanilla.
+        if tune:
+            names = tune_names(self._lib)
+            index = {name: i for i, name in enumerate(names)}
+            if len(tune) > NLE_TUNE_MAX:
+                raise ValueError(f"at most {NLE_TUNE_MAX} tune overrides at start")
+            for j, (key, value) in enumerate(tune.items()):
+                if key not in index:
+                    raise KeyError(f"unknown tune knob {key!r}; known: {names}")
+                settings.tune_idx[j] = index[key]
+                settings.tune_val[j] = float(value)
+            settings.tune_n = len(tune)
 
         # Build seeds.
         seeds = NleSeedsInit()

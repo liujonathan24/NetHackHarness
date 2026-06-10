@@ -68,12 +68,19 @@ class EngineEnv:
         return self._pending_seeds
 
     def reset(
-        self, *, seeds: Optional[tuple[int, int]] = None
+        self,
+        *,
+        seeds: Optional[tuple[int, int]] = None,
+        tune: Optional[dict] = None,
     ) -> tuple[CoreObservation, EpisodeMetadata]:
         """Start a fresh game. Seeds must be staged via seed() or passed here.
 
         Refusing to reset without explicit seeds keeps trajectories
         reproducible by construction (mirrors NetHackCoreEnv).
+
+        ``tune`` applies difficulty-knob overrides before the starting level is
+        generated, so generation-time knobs (e.g. room_density) reshape the
+        starting floor. This is the "regenerate with these knobs" path.
         """
         if seeds is not None:
             self._pending_seeds = seeds
@@ -83,7 +90,7 @@ class EngineEnv:
                 "or pass seeds= explicitly."
             )
         core, disp = self._pending_seeds
-        self._engine.start(core, disp)
+        self._engine.start(core, disp, tune=tune)
         self._current_seeds = self._pending_seeds
         self._pending_seeds = None
         meta = EpisodeMetadata(

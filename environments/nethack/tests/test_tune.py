@@ -151,6 +151,7 @@ def test_all_knobs_are_settable_and_safe():
         "monster_difficulty_scale": 6.0,
         "monster_speed_scale": 2.0,
         "xp_gain_scale": 10.0,
+        "room_density": 0.5,
     }
     # Stress every knob in the catalog (fails loudly if a knob is missing here).
     assert set(stress) == set(env.tune_catalog())
