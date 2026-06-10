@@ -505,6 +505,23 @@ class RawEngine:
     def message(self) -> np.ndarray:
         return self._message  # already (256,)
 
+    @property
+    def done(self) -> bool:
+        """True once the current game has ended (death, escape, quit, ...)."""
+        return bool(self._obs.done)
+
+    @property
+    def how_done(self) -> int:
+        """The engine's how_done code for the ended game (valid when done)."""
+        return int(self._obs.how_done)
+
+    @property
+    def in_normal_game(self) -> bool:
+        """True while the engine is in normal play (not a menu/prompt screen)."""
+        return bool(self._obs.in_normal_game[0]) if isinstance(
+            self._obs.in_normal_game, bytes
+        ) else bool(self._obs.in_normal_game)
+
     # ------------------------------------------------------------------
     # Snapshot builder
     # ------------------------------------------------------------------
