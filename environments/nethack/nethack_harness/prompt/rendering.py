@@ -45,21 +45,40 @@ Pitfalls: `eat`/`quaff`/`read` need an `item` arg. At HP <30% retreat or
 monsters). Menus auto-dismiss; never call menu/inventory tools.
 
 === STRATEGY: DESCEND ASAP ===
-Default action: `autoexplore(max_steps=30)`. When `stairs DOWN` becomes
-visible, autoexplore auto-paths to them AND descends in one call.
+**Default action every turn: `explore_and_descend`.** It auto-explores the
+whole level (opening doors, searching for hidden passages), walks to the down
+`>` and descends ONE floor, then hands control back to you. Just call it again
+to keep diving. If it returns WITHOUT descending (no `>` found yet), call it
+AGAIN — it resumes the complete search; do NOT hand-search tile-by-tile. It
+returns early if your HP drops or you're fainting — then heal/eat and call it
+again. This single tool does ~all the navigation.
 If HP critical: `engrave_elbereth` or `pray`. Hostile adjacent + healthy
-HP: `attack(direction=...)`. Locked door HINT: `kick(direction=...)`.
+HP: `attack(direction=...)`. Hungry: `eat(item=...)`. Locked door: `kick`.
+
+=== STAY ALIVE (death is what stops you, not the clock) ===
+Most runs end in DEATH, not time — usually one of:
+- **Starvation.** Don't let Hunger reach Weak/Fainting. `pickup` every food item
+  and corpse you pass; `eat(item=...)` BEFORE you get Weak (fresh corpses of
+  non-poisonous monsters are food). Never keep exploring while Hungry.
+- **Melee swarm at low HP.** A fox/jackal/newt chips you to death. Don't melee at
+  low HP — `engrave_elbereth` (scares most monsters) then `search(times=20)` to
+  rest, or `pray` (once, when HP is critical), or flee toward stairs.
+- **Ranged / approaching threats.** Kill dangerous monsters from a distance with
+  `throw(item=..., direction=...)` (daggers, darts, rocks, spears) instead of
+  letting them reach you. Hit it before it hits you.
 
 === SKILLS CHEAT SHEET ===
-- **PRIMARY**: `find_and_descend(max_actions=80)` — use every turn.
-- Traverse a level: `autoexplore`
-- Reach a known tile: `move_to(x, y)`
+- **PRIMARY — dive**: `explore_and_descend` — explore the level + descend a
+  floor, then returns to you. Call it every turn to go deeper.
+- Reach a specific visible tile: `move_to(x, y)`
 - Step: `move(direction=N|NE|E|...)`
 - Pickup: `pickup`; Descend: `descend` (must be on `>`)
 - Notes: `add_note` / `recall(query=...)` / `pin_objective`
 - Search/rest: `search(times=10)` for hidden doors, `search(times=20)` to heal
 - Wiki: `wiki_lookup(page="kobold")` / `wiki_search(query="cockatrice")`
-- Combat: `attack(direction=N|...)` — never on `[PET — don't attack]`
+- Combat: `attack(direction=N|...)` melee; `throw(item=..., direction=...)` ranged
+  — never on `[PET — don't attack]`
+- Survive: `eat(item=...)` before Weak; `pray`/`engrave_elbereth` at low HP
 
 Your top-level goal is pre-pinned as `Objective:` in JOURNAL."""
 

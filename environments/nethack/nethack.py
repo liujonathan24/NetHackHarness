@@ -264,8 +264,13 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
 
     async def setup_state(self, state: vf.State) -> vf.State:
         task: dict = state["task"]
-        tier_name: TierName = task.get("tier", "corridor_explore")
-        seed: int = task.get("seed", random.randint(0, 2**31 - 1))
+        info: dict = state.get("info") or {}
+        # verifiers does not always round-trip the nested "task" dict column, so the
+        # per-example tier can be missing here and silently fall back to the dlvl-2
+        # corridor tier — capping descent at level 2 regardless of the requested tier.
+        # Fall back to the "info" column (which IS preserved) before the default.
+        tier_name: TierName = task.get("tier") or info.get("tier") or "corridor_explore"
+        seed: int = task.get("seed", info.get("seed", random.randint(0, 2**31 - 1)))
         spec = get_tier(tier_name)
 
         env = NetHackCoreEnv(
@@ -545,6 +550,14 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         last_obs = state["raw_obs"]
         hp_before = state["structured_obs"].status.get("hitpoints", 0) if state.get("structured_obs") else 0
         halt_reason: Optional[str] = None
+        if getattr(result, "pre_executed", False):
+            # Closed-loop skill (e.g. explore_and_descend) already stepped the env
+            # in its own re-observe loop. Adopt its outcome and skip our step loop.
+            total_reward = result.pre_reward
+            last_obs = result.final_obs if result.final_obs is not None else state["raw_obs"]
+            terminated = bool(result.pre_terminated)
+            truncated = bool(result.pre_truncated)
+            action_indices = []
         for step_i, action in enumerate(action_indices):
             last_obs, r, terminated, truncated, info = env.step(action)
             total_reward += r
@@ -660,6 +673,17 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         )
         # Death/ascension detection from the game state, not raw NLE termination flag.
         _detect_terminal_outcome(last_obs, state)
+        # Robust death fallback: the text-marker scan above misses most deaths
+        # because the death / "Do you want your possessions identified?" screen is
+        # auto-dismissed inside closed-loop skills (explore_and_descend) before
+        # env_response ever sees it — so `died` was only catching ~1 in 7 deaths.
+        # NLE's terminated flag is authoritative: a game that NLE ended and that
+        # we did NOT detect as an ascension is, at these depths, a death. (Milestone
+        # success sets state["terminated"] separately, AFTER this block, so it can't
+        # be confused for a death here.)
+        if terminated and not state["ascended"] and not state["died"]:
+            state["died"] = True
+            state.setdefault("death_dlvl", state.get("max_dlvl_reached", 1))
         # Milestone-driven success: if the tier's success_milestone fires, we
         # treat the rollout as won and let success_reward pay out.
         spec = state.get("spec")

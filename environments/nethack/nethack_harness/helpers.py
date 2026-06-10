@@ -853,8 +853,12 @@ def _build_skill_adapter_callables(skill_set: str = "full") -> list:
         # high-level pathfinding (move_to/autoexplore/find_and_descend) plus
         # interactions. The standardized action set for cross-encoding
         # benchmarks (hold actions fixed, vary the observation).
-        keep = {"move_to", "autoexplore", "find_and_descend", "attack",
-                "descend", "search", "pickup", "engrave_elbereth", "pray",
+        # explore_and_descend supersedes the weaker open-loop autoexplore /
+        # find_and_descend (which bump on doors/corridors and don't loop), so we
+        # drop those — otherwise the LLM defaults to the familiar weak tools and
+        # never calls the robust one. move_to stays for precise single-target moves.
+        keep = {"move_to", "explore_and_descend",
+                "attack", "throw", "descend", "search", "pickup", "engrave_elbereth", "pray",
                 "eat", "quaff", "read", "kick", "add_note", "recall",
                 "pin_objective", "wiki_lookup", "wiki_search"}
         out = []

@@ -77,4 +77,9 @@ def render_index(run_dirs, *, variants=DEFAULT_VARIANTS, root=None) -> str:
     <div class=bar>&#9632; RECORDED RUNS</div>
     {runs_html}
   </section>
+  <section class=panel>
+    <div class=bar>&#128193; BROWSE FILES</div>
+    <p class=hint><a href="/browse">click through the runs folder &rarr;</a>
+    &middot; open any <code>.ndjson</code>/<code>.jsonl</code> in the stats dashboard</p>
+  </section>
 </div></body></html>"""
