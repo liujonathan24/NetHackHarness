@@ -223,6 +223,10 @@ class RawEngine:
         self._ctx = None
         self._hackdir = None  # tempfile.mkdtemp() path string
 
+        # Outstanding snapshot handles created by this instance.  A handle is
+        # bound to the ctx that created it; end() frees any the caller leaked.
+        self._snapshots = set()
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
@@ -246,6 +250,15 @@ class RawEngine:
 
         lib.nle_end.restype = None
         lib.nle_end.argtypes = [ctypes.c_void_p]
+
+        # In-memory snapshot / restore / branch.  The handle is an opaque,
+        # self-contained malloc'd copy of (ctx + coroutine stack + arena).
+        lib.nle_fr_snapshot.restype = ctypes.c_void_p
+        lib.nle_fr_snapshot.argtypes = [ctypes.c_void_p]
+        lib.nle_fr_restore.restype = None
+        lib.nle_fr_restore.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        lib.nle_fr_destroy.restype = None
+        lib.nle_fr_destroy.argtypes = [ctypes.c_void_p]
 
     def _build_dat_path(self) -> Path:
         """Return the path to the pre-built dat directory (contains nhdat etc.)."""
@@ -309,13 +322,102 @@ class RawEngine:
         return self
 
     def end(self) -> None:
-        """Tear down the current game context and clean up the temp hackdir."""
+        """Tear down the current game context and clean up the temp hackdir.
+
+        Frees any outstanding snapshot handles first: they become invalid once
+        the ctx they would restore into is gone, and freeing them here prevents
+        leaks across games (start() calls end() before creating a new game).
+        Handles are self-contained copies, so destroy is independent of the ctx
+        and ordering relative to nle_end does not matter.
+        """
+        for snap in list(self._snapshots):
+            self._lib.nle_fr_destroy(snap)
+        self._snapshots.clear()
         if self._ctx is not None:
             self._lib.nle_end(self._ctx)
             self._ctx = None
         if self._hackdir is not None:
             shutil.rmtree(self._hackdir, ignore_errors=True)
             self._hackdir = None
+
+    # ------------------------------------------------------------------
+    # In-memory snapshot / restore / branch
+    # ------------------------------------------------------------------
+
+    def snapshot(self):
+        """Capture the full live game state and return an opaque handle.
+
+        The handle wraps a self-contained C-side copy of (ctx + coroutine stack
+        + arena) taken at the moment of the call — not merely the initial state.
+        It can be restored to return the engine to this exact point, and the
+        same handle can be restored repeatedly to branch alternate action lines.
+
+        The handle is bound to THIS RawEngine instance: restoring it into a
+        different instance's ctx is undefined, so restore() rejects handles it
+        did not create.  Outstanding handles are freed by end()/__del__ if the
+        caller does not free_snapshot() them first.
+
+        Raises RuntimeError if no game is active or the C call fails.
+        """
+        if self._ctx is None:
+            raise RuntimeError("snapshot() requires an active game; call start() first")
+        handle = self._lib.nle_fr_snapshot(self._ctx)
+        if not handle:
+            raise RuntimeError("nle_fr_snapshot failed (returned NULL)")
+        self._snapshots.add(handle)
+        return handle
+
+    def restore(self, handle) -> "RawEngine":
+        """Restore the engine to the state captured by ``handle``.  Returns self.
+
+        ``handle`` must be one this instance created (same-instance binding); a
+        foreign or unknown handle raises ValueError rather than corrupting
+        memory.
+
+        Observation-buffer refill behavior (verified empirically): restore
+        rewrites the engine's internal state (ctx + coroutine stack + arena) but
+        does NOT itself repopulate the binding's numpy observation buffers — the
+        buffers reflect the restored state only after the next step() refills
+        them.  In practice callers step() after restore (to branch), so the
+        buffers are correct by the time they are read.
+
+        Fidelity (verified empirically against fresh-engine ground truth):
+
+          * The FIRST restore from a handle, taken with no intervening steps,
+            followed by any action line, reproduces a from-scratch run
+            byte-for-byte on both glyphs and blstats.  This is the reliable
+            checkpoint guarantee.
+
+          * NetHack's remembered/displayed-map glyph buffer lives OUTSIDE the
+            ctx/stack/arena that the C snapshot captures.  So a SECOND restore
+            from the same handle, after a prior branch already explored the map,
+            carries display residue from that branch: the new branch still
+            DIVERGES from the first (branching is real and usable) but is not
+            byte-identical to a fresh run.  For byte-exact alternate branches,
+            take a fresh snapshot per branch point rather than reusing one
+            handle across explore-heavy branches.  This is a limitation of the
+            pre-built C fast-reset (its source documents "restores to the same
+            initial game state"); fixing it would require C changes.
+
+        Raises RuntimeError if no game is active.
+        """
+        if self._ctx is None:
+            raise RuntimeError("restore() requires an active game; call start() first")
+        if handle not in self._snapshots:
+            raise ValueError(
+                "restore() handle was not created by this RawEngine instance; "
+                "a snapshot is bound to the ctx that created it"
+            )
+        self._lib.nle_fr_restore(self._ctx, handle)
+        return self
+
+    def free_snapshot(self, handle) -> None:
+        """Explicitly free a snapshot handle created by this instance.
+
+        No-op if the handle is unknown (e.g. already freed)."""
+        if handle in self._snapshots:
+            self._lib.nle_fr_destroy(handle)
+            self._snapshots.discard(handle)
 
     # ------------------------------------------------------------------
     # Observation properties (reshaped views — reflect in-place C updates)
