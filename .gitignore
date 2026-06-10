@@ -24,3 +24,6 @@ skills-lock.json
 .claude/commands/
 .claude/scheduled_tasks.lock
 .claude/scheduled_tasks.json
+
+# nle low-level ttyrec side-effect files
+*.ttyrec*.bz2
