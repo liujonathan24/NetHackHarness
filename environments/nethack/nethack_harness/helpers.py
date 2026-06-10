@@ -858,7 +858,7 @@ def _build_skill_adapter_callables(skill_set: str = "full") -> list:
         # drop those — otherwise the LLM defaults to the familiar weak tools and
         # never calls the robust one. move_to stays for precise single-target moves.
         keep = {"move_to", "explore_and_descend",
-                "attack", "descend", "search", "pickup", "engrave_elbereth", "pray",
+                "attack", "throw", "descend", "search", "pickup", "engrave_elbereth", "pray",
                 "eat", "quaff", "read", "kick", "add_note", "recall",
                 "pin_objective", "wiki_lookup", "wiki_search"}
         out = []

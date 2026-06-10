@@ -1421,6 +1421,10 @@ def explore_and_descend(env: NetHackCoreEnv, obs: StructuredObservation,
     halt = None                 # reason we returned control to the agent
     exhausted = False           # True only if every reachable tile was searched (level done)
     attacks = 0                 # consecutive in-skill melee swings (bail if a monster won't die)
+    kites = 0                   # consecutive kite-retreats (let the pet finish; melee if it can't)
+    pet_waits = 0               # turns spent waiting on the stairs for the pet to catch up
+    PET_WAIT_BUDGET = 8         # don't wait forever — descend without the pet after this many
+    KITE_BUDGET = 4             # if the pet hasn't killed it after this many retreats, melee
     visited: set = set()  # frontiers already attempted (per level) — avoids oscillating
     opened: set = set()   # (level_idx, x, y) doors we've opened — they render as a wall
                           # char (`-`/`|`) in the tty, so patch them back to walkable.
@@ -1458,6 +1462,41 @@ def explore_and_descend(env: NetHackCoreEnv, obs: StructuredObservation,
                 return (dx, dy)
         return None
 
+    def nearest_pet(sx, sy):
+        """(x,y) of the closest pet glyph, or None. The starting pet is a strong
+        early ally — we want it to kill monsters for us and to follow us downstairs."""
+        uw = env.underlying.unwrapped
+        ks = uw._observation_keys
+        glyphs = uw.last_observation[ks.index("glyphs")]
+        mask = np.asarray(_nh.glyph_is_pet(glyphs), bool)
+        if not mask.any():
+            return None
+        ys, xs = np.where(mask)
+        best = None; bestd = 1 << 30
+        for yy, xx in zip(ys, xs):
+            d = max(abs(int(xx) - sx), abs(int(yy) - sy))  # chebyshev (8-dir steps)
+            if d < bestd:
+                bestd = d; best = (int(xx), int(yy))
+        return best
+
+    def kite_step(chars, start, monster):
+        """A walkable 8-dir step that INCREASES distance from `monster` (retreat).
+        Used to kite — back off and let the pet trade blows — instead of melee."""
+        sx, sy = start; mx, my = monster
+        curd = max(abs(sx - mx), abs(sy - my))
+        h, w = chars.shape
+        best = None; bestd = curd
+        for (dx, dy) in DIRS8:
+            nx, ny = sx + dx, sy + dy
+            if not (0 <= nx < w and 0 <= ny < h):
+                continue
+            if int(chars[ny, nx]) not in (ord('.'), ord('>'), ord('<')):
+                continue  # only retreat onto known-walkable floor/stairs
+            nd = max(abs(nx - mx), abs(ny - my))
+            if nd > bestd:
+                bestd = nd; best = (dx, dy)
+        return best  # None if no tile increases distance (cornered)
+
     while state["steps"] < max_game_steps and floors < max_floors and not state["term"] and not state["trunc"]:
         chars, start = obs_map()
         # Hand control back to the agent on danger so the LLM can react (heal,
@@ -1480,6 +1519,17 @@ def explore_and_descend(env: NetHackCoreEnv, obs: StructuredObservation,
                                      # glyph hides the `>`, so find_char goes blind.
         if down_stair is not None:
             if start == down_stair:
+                # Bring the pet down with us: in NetHack a pet ADJACENT when you
+                # descend follows you to the next floor. Wait on the stairs for it
+                # to catch up (a strong ally that kills monsters), but not forever.
+                pet = nearest_pet(*start)
+                if pet is not None:
+                    pdist = max(abs(pet[0] - start[0]), abs(pet[1] - start[1]))
+                    if pdist > 1 and pet_waits < PET_WAIT_BUDGET:
+                        pet_waits += 1
+                        do(SEARCH)  # wait in place; the pet closes the gap
+                        continue
+                pet_waits = 0
                 # standing on the downstair — dismiss any prompt, then descend.
                 do(MORE)
                 do(DOWN)
@@ -1504,6 +1554,20 @@ def explore_and_descend(env: NetHackCoreEnv, obs: StructuredObservation,
         #    monsters in-skill rather than autopiloting past them into a slow death.
         adir = adjacent_hostile()
         if adir is not None:
+            mx, my = start[0] + adir[0], start[1] + adir[1]   # the monster's tile
+            # Let the pet kill it: if a pet is next to the monster it will trade
+            # blows for free — kite back instead of taking melee damage ourselves.
+            pet = nearest_pet(*start)
+            pet_on_it = pet is not None and max(abs(pet[0] - mx), abs(pet[1] - my)) <= 1
+            if pet_on_it and kites < KITE_BUDGET:
+                kstep = kite_step(chars, start, (mx, my))
+                if kstep is not None:
+                    kites += 1
+                    if do(DIRS8[kstep]):  # retreat one tile; pet finishes the monster
+                        break
+                    continue
+                # cornered (nowhere to retreat) — fall through and melee
+            kites = 0
             attacks += 1
             if attacks > 16:  # stubborn / out-of-depth monster — let the LLM decide
                 halt = "a monster won't go down — returning to you to fight/flee/pray/elbereth"
@@ -1512,6 +1576,7 @@ def explore_and_descend(env: NetHackCoreEnv, obs: StructuredObservation,
                 break
             continue
         attacks = 0  # nothing adjacent to fight — reset the swing counter
+        kites = 0
         # 1) Explore the nearest OPEN frontier (exclude upstairs and closed doors;
         #    doors need an orthogonal approach and are handled in step 2).
         frontiers = [f for f in find_frontiers(chars)

@@ -55,6 +55,18 @@ again. This single tool does ~all the navigation.
 If HP critical: `engrave_elbereth` or `pray`. Hostile adjacent + healthy
 HP: `attack(direction=...)`. Hungry: `eat(item=...)`. Locked door: `kick`.
 
+=== STAY ALIVE (death is what stops you, not the clock) ===
+Most runs end in DEATH, not time — usually one of:
+- **Starvation.** Don't let Hunger reach Weak/Fainting. `pickup` every food item
+  and corpse you pass; `eat(item=...)` BEFORE you get Weak (fresh corpses of
+  non-poisonous monsters are food). Never keep exploring while Hungry.
+- **Melee swarm at low HP.** A fox/jackal/newt chips you to death. Don't melee at
+  low HP — `engrave_elbereth` (scares most monsters) then `search(times=20)` to
+  rest, or `pray` (once, when HP is critical), or flee toward stairs.
+- **Ranged / approaching threats.** Kill dangerous monsters from a distance with
+  `throw(item=..., direction=...)` (daggers, darts, rocks, spears) instead of
+  letting them reach you. Hit it before it hits you.
+
 === SKILLS CHEAT SHEET ===
 - **PRIMARY — dive**: `explore_and_descend` — explore the level + descend a
   floor, then returns to you. Call it every turn to go deeper.
@@ -64,7 +76,9 @@ HP: `attack(direction=...)`. Hungry: `eat(item=...)`. Locked door: `kick`.
 - Notes: `add_note` / `recall(query=...)` / `pin_objective`
 - Search/rest: `search(times=10)` for hidden doors, `search(times=20)` to heal
 - Wiki: `wiki_lookup(page="kobold")` / `wiki_search(query="cockatrice")`
-- Combat: `attack(direction=N|...)` — never on `[PET — don't attack]`
+- Combat: `attack(direction=N|...)` melee; `throw(item=..., direction=...)` ranged
+  — never on `[PET — don't attack]`
+- Survive: `eat(item=...)` before Weak; `pray`/`engrave_elbereth` at low HP
 
 Your top-level goal is pre-pinned as `Objective:` in JOURNAL."""
 
