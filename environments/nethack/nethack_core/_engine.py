@@ -343,3 +343,32 @@ class RawEngine:
     @property
     def message(self) -> np.ndarray:
         return self._message  # already (256,)
+
+    # ------------------------------------------------------------------
+    # Snapshot builder
+    # ------------------------------------------------------------------
+
+    def to_core_observation(self):
+        """Return a CoreObservation snapshot of the current engine state.
+
+        Each buffer is copied so that subsequent step() calls do not mutate
+        previously captured observations (callers may store trajectory frames).
+
+        Deferred import: env.py will import _engine in a later task, so a
+        module-level import here would create a cycle.
+        """
+        from .env import CoreObservation
+        return CoreObservation(
+            tty_chars=self._tty_chars.reshape(NLE_TERM_LI, NLE_TERM_CO).copy(),
+            tty_colors=self._tty_colors.reshape(NLE_TERM_LI, NLE_TERM_CO).copy(),
+            tty_cursor=self._tty_cursor.copy(),
+            glyphs=self._glyphs.reshape(ROWNO, COLNO - 1).copy(),
+            chars=self._chars.reshape(ROWNO, COLNO - 1).copy(),
+            colors=self._colors.reshape(ROWNO, COLNO - 1).copy(),
+            message=self._message.copy(),
+            inv_strs=self._inv_strs.reshape(NLE_INVENTORY_SIZE, NLE_INVENTORY_STR_LENGTH).copy(),
+            inv_letters=self._inv_letters.copy(),
+            inv_glyphs=self._inv_glyphs.copy(),
+            blstats=self._blstats.copy(),
+            misc=self._misc.copy(),
+        )
