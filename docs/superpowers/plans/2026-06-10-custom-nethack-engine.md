@@ -22,6 +22,10 @@ base-ref: 1c88a700a3be0a14cc06ab533d267ea691098085
 
 ---
 
+## Execution Environment (READ FIRST)
+
+The engine is **Linux x86-64** (the committed `third_party/NetHack/src/build/libnethack.so` is `ELF x86-64`; the fork targets Linux: mmap arena, initial-exec TLS, `-Wl,-Bsymbolic-functions`, UNIX-only port assumptions). **All runtime tasks (ctypes smoke, GATE A parity, snapshot spike, knob effect-tests) must run on Linux x86-64** — Docker (`Dockerfile.prime`), a Linux dev box, or CI. On macOS/arm64, `ctypes` cannot load the ELF `.so`. Source-only tasks (writing `_engine.py`, build scripts, the catalog) can be authored anywhere, but TDD verification happens on Linux. Path layout note: the fork nests source — headers at `third_party/NetHack/src/include/`, C at `third_party/NetHack/src/src/`, build dir `third_party/NetHack/src/build` (`make -C third_party/NetHack/src/build nethack -j`).
+
 ## Two-Repo Workflow (READ FIRST)
 
 Engine (C) changes and harness (Python) changes live in **different repositories and use different delivery mechanisms**:
@@ -35,6 +39,7 @@ Engine (C) changes and harness (Python) changes live in **different repositories
 - **Never commit fork C changes into this repo.** Work in `third_party/NetHack` on a fork branch, push to the fork remote, open a PR there. Once merged, in this repo run `git -C third_party/NetHack checkout <merged-sha>` then `git add third_party/NetHack && git commit -m "build: bump NetHack submodule to <sha> (<feature>)"`.
 - A `[FORK]` task is **done** only when its fork PR is merged **and** the submodule pointer is bumped here.
 - The Comet state machine tracks the **harness** change only; fork PRs are external and referenced by SHA.
+- **This plan executes BOTH tracks.** The agent does the engine C work too — creating fork branches in `third_party/NetHack`, pushing them to the fork remote, and opening PRs there — and pushes to both repos. The PR-to-fork mechanism is preserved (engine changes never land here as C diffs, only as submodule bumps); the difference is that the agent, not a separate human pass, authors them. Pushing to a remote is confirmed at push time.
 
 **Dependency structure (good news — harness isn't fully blocked on fork PRs):**
 The fork *already* exposes the obs buffers, seeding, and the `nle_fr_snapshot` primitive. So the binding, parity gate, and cutover (H tasks in Phases 1–3) run against the **current** fork with **no fork PR required**. The fork PRs add the *new* surface and gate only the features that need them:
