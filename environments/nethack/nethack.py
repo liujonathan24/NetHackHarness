@@ -673,6 +673,17 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         )
         # Death/ascension detection from the game state, not raw NLE termination flag.
         _detect_terminal_outcome(last_obs, state)
+        # Robust death fallback: the text-marker scan above misses most deaths
+        # because the death / "Do you want your possessions identified?" screen is
+        # auto-dismissed inside closed-loop skills (explore_and_descend) before
+        # env_response ever sees it — so `died` was only catching ~1 in 7 deaths.
+        # NLE's terminated flag is authoritative: a game that NLE ended and that
+        # we did NOT detect as an ascension is, at these depths, a death. (Milestone
+        # success sets state["terminated"] separately, AFTER this block, so it can't
+        # be confused for a death here.)
+        if terminated and not state["ascended"] and not state["died"]:
+            state["died"] = True
+            state.setdefault("death_dlvl", state.get("max_dlvl_reached", 1))
         # Milestone-driven success: if the tier's success_milestone fires, we
         # treat the rollout as won and let success_reward pay out.
         spec = state.get("spec")
