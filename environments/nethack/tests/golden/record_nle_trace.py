@@ -19,6 +19,15 @@ SEED_CORE = 42
 SEED_DISP = 42
 N_STEPS = 200
 
+# Options string must exactly match the fork engine's _OPTIONS_STR so the
+# oracle and the binding run with identical nethack option flags.
+NETHACKOPTIONS = (
+    "autopickup", "color", "disclose:+i +a +v +g +c +o", "mention_walls",
+    "nobones", "nocmdassist", "nolegacy", "nosparkle",
+    "pickup_burden:unencumbered", "pickup_types:$?!/", "runmode:teleport",
+    "showexp", "showscore", "time",
+)
+
 # Observation keys to capture (GATE-relevant). ORDER defines the tuple order.
 KEYS = ("tty_chars", "tty_colors", "glyphs", "chars", "colors", "blstats", "message")
 
@@ -32,7 +41,7 @@ def main():
     actions = rng.choice(SAFE_ACTIONS, size=N_STEPS).astype(np.int64)
 
     nh = nethack.Nethack(observation_keys=KEYS, playername="Agent-mon-hum-neu-mal",
-                         spawn_monsters=True)
+                         spawn_monsters=True, options=list(NETHACKOPTIONS))
     nh.set_initial_seeds(SEED_CORE, SEED_DISP, False)
     init = nh.reset()
     idx = {k: i for i, k in enumerate(KEYS)}

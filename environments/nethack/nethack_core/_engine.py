@@ -129,7 +129,12 @@ class NleSettings(ctypes.Structure):
 class RawEngine:
     """Thin ctypes wrapper around the fork's nle_start/nle_step/nle_end API.
 
-    One engine per process (the C side maintains global NetHack state).
+    Multiple independent RawEngine instances can run concurrently in the same
+    process, including across threads: each instance owns its own nle_ctx_t,
+    and the engine anchors a thread-local current_nle_ctx on every call (the
+    fork migrated NetHack's globals into nle_ctx_t for exactly this).
+    Per-env files are isolated via a per-instance temp hackdir.
+
     Call start() before step(), and end() when done.  start() may be called
     again after end() for a fresh game.
     """
