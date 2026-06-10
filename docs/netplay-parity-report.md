@@ -6,10 +6,12 @@
 level**. We hold the model fixed at `qwen/qwen3-vl-235b-a22b-instruct` (via Prime proxy) and
 ask: can our harness match that, and which observation encoding is best?
 
-> **Status:** final. At n=24, **B1 (ASCII) = 2.29 ± 0.24 SE**, statistically consistent with
-> NetPlay's **2.6** (~1.3 SE below — not a clean pass, but within noise); **JSON = 1.96 ± 0.27**
-> trails it. The dominant failure mode is **death, not the turn budget** (B1: 22/24 deaths, 2
-> turn-outs), and **text encodings beat vision**.
+> **Status:** final. At n=24, the best cells reach **2.29 ± ~0.25 SE** (B1+pet, JSON+nopet) —
+> statistically consistent with NetPlay's **2.6** (~1.3 SE below; not a clean pass). A pet-vs-
+> non-pet ablation at n=24 (§6b) shows the **pet tactics are net-neutral** (they help B1, hurt
+> JSON; combined 2.13 vs 2.06). Failure mode = **death, not the turn budget**; the deeper cause
+> is the agents **never level up** (mean XL ~1.4 — they dive fast and die weak). **Text beats
+> vision.**
 
 ---
 
@@ -26,9 +28,13 @@ ask: can our harness match that, and which observation encoding is best?
   image (IMG) is worst. This confirms VLMs parse rendered game images poorly, but refutes the
   premise that "LLMs are terrible at ASCII" — with a skill handling navigation, the model
   reasons best over plain text.
-- **Death — not the clock — is what stops us.** ~3 of every 4 games end in death (starvation
-  or melee attrition on early floors), only ~1 in 30 hits the turn cap. The remaining gap to a
-  *clean, repeatable* >2.6 is survival and variance, not exploration.
+- **Death — not the clock — is what stops us,** and the deeper cause is **weakness**: ~⅔–¾ of
+  games end in death, and the agents barely level (mean experience level ~1.4, most end at the
+  starting XL 1, ~0.4 kills/game). They dive fast and die weak. The highest-leverage untried
+  lever is the **speed-vs-strength tradeoff** (level up a little before descending).
+- **A pet-vs-non-pet ablation at n=24 settled fix #5: net-neutral.** Pet tactics help B1
+  (+0.46) but hurt JSON (−0.33); combined they move the mean 0.07 (within ±0.25 SE). Below
+  ~n=20, per-condition differences are coin-flips — the lesson that made us run n=24 at all.
 
 ---
 
@@ -124,34 +130,43 @@ Three of the five "fixes" were really **measurement integrity**, and they domina
 | + fix #4 (cap removed) | 2.33 | first *true* depth measurement; peaks at dlvl 5 |
 | + fix #5 (survival/pet), n=6 | 2.0–2.83 | within noise — motivated the n=24 run |
 
-### 6b. n=24 confirmation (final), `full_dungeon_easy`, all fixes
+### 6b. n=24 results, `full_dungeon_easy` — pet vs non-pet ablation
 
-| Encoding | n | mean max dlvl | died | out of turns | other¹ | dlvl ≥3 | dlvl 6 (win) |
-|----------|:-:|:---:|:---:|:---:|:---:|:---:|:---:|
-| **B1 (ASCII)** | 24 | **2.29 ± 0.24** | 22 | 2 | 0 | 10/24 | 0 |
-| **JSON** | 24 | **1.96 ± 0.27** | 11 | 2 | 11 | 5/24 | 1 |
+The full harness (fixes #1–#4 + survival) with the **pet tactics** (pet-aware descent +
+kiting + let-the-pet-kill) **on vs off** (`NETHACK_DISABLE_PET=1`), n=24 each:
 
-_(± = standard error of the mean. NetPlay/GPT-4 = 2.6.)_
-¹ _"other" = the episode ended while the agent was still issuing tool calls, before the turn
-cap — almost certainly the in-game NLE step budget exhausting inside long `explore_and_descend`
-calls. JSON hits this far more than B1 (11 vs 0)._
+| Encoding | pet **ON** (mean ± SE) | pet **OFF** | Δ (on−off) | deaths on/off | dlvl≥3 on/off |
+|----------|:---:|:---:|:---:|:---:|:---:|
+| **B1 (ASCII)** | **2.29 ± 0.24** | 1.83 ± 0.18 | **+0.46** | 22 / 14 | 10 / 6 |
+| **JSON** | 1.96 ± 0.27 | **2.29 ± 0.28** | **−0.33** | 11 / 13 | 5 / 8 |
+| **B1+JSON combined** | 2.13 | 2.06 | +0.07 | — | — |
+
+_(deaths/dlvl≥3 are counts out of 24. NetPlay/GPT-4 = 2.6.)_
+
+**Pet tactics are net-neutral.** The two encodings disagree on sign — pet *helps* B1 (+0.46)
+and *hurts* JSON (−0.33) — and the combined mean barely moves (2.13 vs 2.06, a 0.07 swing well
+inside the ±0.25 SE). Each per-encoding Δ is only ~1.5 SE, i.e. not significant. This is the
+same pattern §5.3 flagged at n=6 (opposite-direction-per-encoding), now confirmed at n=24: the
+pet/kiting code is sound and NetHack-correct, but **does not reliably move the aggregate
+metric.** The best single cell — B1+pet and JSON+nopet, both **2.29** — sits just under 2.6.
 
 **Depth distribution (count of rollouts reaching exactly each level):**
 
-| dlvl | 1 | 2 | 3 | 4 | 5 | 6 |
-|------|:-:|:-:|:-:|:-:|:-:|:-:|
-| B1   | 8 | 6 | 6 | 3 | 1 | 0 |
-| JSON | 12| 7 | 2 | 1 | 1 | 1 |
+| run | 1 | 2 | 3 | 4 | 5 | 6 |
+|-----|:-:|:-:|:-:|:-:|:-:|:-:|
+| B1 pet     | 8 | 6 | 6 | 3 | 1 | 0 |
+| B1 nopet   | 11| 7 | 5 | 1 | 0 | 0 |
+| JSON pet   | 12| 7 | 2 | 1 | 1 | 1 |
+| JSON nopet | 8 | 8 | 5 | 0 | 2 | 1 |
 
-The bimodal shape is the story: a third of B1 rollouts (8/24) stall at dungeon level 1, while
-10/24 push to level 3+. The mean is a tug-of-war between those two buckets.
+The bimodal shape is the real story everywhere: ~⅓ of rollouts stall at dungeon level 1 while
+the rest push to level 3+. The mean is a tug-of-war between those two buckets, and that
+variance — not the pet tactics — is what separates us from a clean >2.6.
 
-**On fix #5 (survival + pet tactics):** at this sample size it is **roughly neutral** for B1
-(2.29 vs the pre-#5 2.33). The n=6 swing to 2.83 was an upward fluctuation, not a real lift —
-exactly the noise §5.3 warned about. The `eat`-uptake jump (4→52 calls) is real, but it did
-not translate into a measurable depth gain at n=24, and the `throw` tool stayed at zero use.
-The honest read: the survival/pet code is sound and NetHack-correct, but **does not move the
-aggregate metric** — death still ends ~90% of B1 games.
+**On fix #5 (survival + pet):** survival's `eat`-uptake jump (4→52 calls) is real but did not
+translate to a depth gain at n=24; `throw` stayed at zero use; pet tactics are neutral (above).
+The honest read: fix #5 is sound and NetHack-correct, but **death still ends ~⅔ of games and
+the aggregate metric is unmoved.**
 
 ### 6c. Five-encoding snapshot (n=6, fixes #1–#4, for the text-vs-vision ranking)
 
@@ -167,35 +182,50 @@ aggregate metric** — death still ends ~90% of B1 games.
 
 ## 7. Findings
 
-1. **At or near parity with NetPlay (best encoding).** B1 = **2.29 ± 0.24** at n=24 — 2.6 sits
-   ~1.3 standard errors above, so we are *statistically consistent with parity* but cannot
-   claim a clean pass. JSON trails at **1.96 ± 0.27**. Peak rollouts reach dungeon level 5–6
-   (JSON had one full win), so the *capability* is there; the average is dragged down by the
-   large bucket of floor-1 stalls and early deaths.
+1. **At or near parity with NetPlay (best encoding).** Best cells are **2.29 ± ~0.25** at n=24
+   (B1+pet and JSON+nopet) — 2.6 sits ~1.3 SE above, so we are *statistically consistent with
+   parity* but cannot claim a clean pass. Peak rollouts reach dungeon level 5–6 (one full
+   win), so the *capability* is there; the average is dragged down by floor-1 stalls + deaths.
 
 2. **Text beats vision, and ASCII is not the weak link.** ASCII (B1) and JSON lead; the pure
    pixel image (IMG) is worst. VLMs read rendered NetHack poorly, but a navigation skill makes
    plain text the strongest substrate.
 
-3. **Death, not the clock, is the binding constraint.** ~73% of games end in death (mostly
-   starvation and melee attrition on floors 1–2); ~1 in 30 hits the turn cap. Survival fixes
-   (#2, #5) target the right thing; the food/eat prompt drove a 13× jump in eating (4→52 calls
-   on B1). The ranged `throw` tool, however, saw **zero uptake** — the model never used it,
-   so ranged attack is not (yet) a working lever for these early-floor deaths.
+3. **Death, not the clock, is the binding constraint.** ~⅔–¾ of games end in death; ~1 in 30
+   hits the turn cap (the rest are NLE in-game step-budget exhaustion mid-skill). The food/eat
+   prompt drove a 13× jump in eating (4→52 calls on B1); the ranged `throw` tool saw **zero
+   uptake**; pet tactics are **net-neutral** (§6b). None of the fix-#5 tactics reliably move
+   the metric.
 
-4. **The remaining gap is variance, not ideas.** Every condition is bimodal: a couple of
-   rollouts dive to dlvl 4–6, the rest stall at dlvl 1 (a hard floor, or an early death). The
-   route to a *clean, repeatable* >2.6 is reducing that variance, and measuring it at adequate n.
+4. **The agents stay WEAK — the deeper reason death dominates.** At n=24 mean experience level
+   is only **~1.4 (max 3)**; most games end at **XL 1, the starting level** (B1: 13/24, JSON:
+   17/24 never leave XL 1), with **~0.4 kills/game**. The agent dives fast but never levels up,
+   so it plunges into floor 2–4 monsters at ~14 HP and dies. NetPlay/autoascend instead grinds
+   XP before descending. (The pet-kill tactic actively suppresses player XP — the pet gets the
+   kills — which is one reason it doesn't help.) The **speed-vs-strength tradeoff** looks like
+   the highest-leverage untried lever.
+
+5. **The remaining gap is variance, not ideas.** Every condition is bimodal: ~⅓ of rollouts
+   stall at dlvl 1, the rest dive to 3–6. A clean, repeatable >2.6 needs that variance reduced
+   (and measured at adequate n — every per-condition Δ below ~n=20 is a coin-flip).
 
 ---
 
 ## 8. Remaining work
 
-- **Confirm fix #5 at scale** (this run) and decide keep/trim — e.g. drop the unused `throw`
-  tool if it stays at zero uptake.
-- **Fix the death detector** (`_detect_terminal_outcome`) so the `died` flag is trustworthy;
-  re-classify deaths by cause to target survival precisely.
-- **Audit early termination** — some episodes still end before the turn cap while the agent is
-  still acting (likely the in-game NLE step budget inside long `explore_and_descend` calls).
-- **Variance reduction** — the bimodal stall-at-floor-1 vs dive-to-6 split is the last lever
-  toward a repeatable >2.6.
+- **Strength-vs-speed (the top untried lever, from finding #4).** Have the agent clear/level a
+  bit on each floor before descending, so it isn't XL 1 on floor 4. NetPlay grinds XP first.
+- **Trim fix #5.** Pet tactics are net-neutral and `throw` is unused — candidates to simplify.
+- **Variance reduction** — the bimodal stall-at-floor-1 vs dive-to-6 split is the dominant
+  driver of the mean; reducing it (and measuring at n≥24) is the path to a repeatable >2.6.
+- **Audit early termination** — episodes that end before the turn cap while still acting are
+  the NLE in-game step budget exhausting inside long `explore_and_descend` calls (JSON-heavy).
+
+### Done since the first draft
+- **Death detector fixed** (`nethack.py`): NLE's `terminated` flag is now authoritative, so the
+  `died` state-flag went from catching ~1/7 deaths to all of them (B1 2→22, JSON 3→11 at n=24).
+- **Eval auto-save** (`tools/run_eval.sh`): runs land in `environments/nethack/outputs/evals/<name>`
+  (browsable in the viewer) instead of `/tmp`. Pet ablation via `NETHACK_DISABLE_PET=1`.
+- **Stats dashboard** (`tools/rollout_view/{stats,dashboard,browse}.py`): post-hoc time-series
+  metrics over saved traces (`register_metric` for custom obs), a self-contained HTML dashboard
+  (`/dashboard`), and a Finder-style file browser (`/browse`) in the rollout viewer.
