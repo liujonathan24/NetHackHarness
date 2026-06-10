@@ -76,6 +76,20 @@ _NETHACKOPTIONS = (
 _OPTIONS_STR = ",".join(_NETHACKOPTIONS) + ",name:Agent-mon-hum-neu-mal"
 
 
+# The difficulty-knob catalog (names + order) is fixed for a given libnethack.so,
+# so read it from the engine once per process and cache it.
+_TUNE_NAMES = None
+
+
+def tune_names(lib) -> list:
+    """Return the ordered list of difficulty-knob names from the engine."""
+    global _TUNE_NAMES
+    if _TUNE_NAMES is None:
+        n = lib.nle_tune_count()
+        _TUNE_NAMES = [lib.nle_tune_name(i).decode("ascii") for i in range(n)]
+    return _TUNE_NAMES
+
+
 # ---------------------------------------------------------------------------
 # ctypes struct mirrors — field order MUST match the C definitions exactly.
 # ---------------------------------------------------------------------------
@@ -260,6 +274,16 @@ class RawEngine:
         lib.nle_fr_destroy.restype = None
         lib.nle_fr_destroy.argtypes = [ctypes.c_void_p]
 
+        # Difficulty knob catalog.  nle_get_tune returns nle_tune_t*, which is a
+        # flat block of doubles indexed by the name table — so get/set are fully
+        # generic (a new knob in the engine appears with no binding change).
+        lib.nle_tune_count.restype = ctypes.c_int
+        lib.nle_tune_count.argtypes = []
+        lib.nle_tune_name.restype = ctypes.c_char_p
+        lib.nle_tune_name.argtypes = [ctypes.c_int]
+        lib.nle_get_tune.restype = ctypes.POINTER(ctypes.c_double)
+        lib.nle_get_tune.argtypes = [ctypes.c_void_p]
+
     def _build_dat_path(self) -> Path:
         """Return the path to the pre-built dat directory (contains nhdat etc.)."""
         root = Path(__file__).resolve().parents[3]
@@ -410,6 +434,44 @@ class RawEngine:
         if handle in self._snapshots:
             self._lib.nle_fr_destroy(handle)
             self._snapshots.discard(handle)
+
+    # ------------------------------------------------------------------
+    # Difficulty knobs (nle_tune_t)
+    # ------------------------------------------------------------------
+
+    def tune_catalog(self) -> list:
+        """Return the ordered list of difficulty-knob names the engine exposes."""
+        return list(tune_names(self._lib))
+
+    def get_tune(self) -> dict:
+        """Return the current difficulty knobs as a {name: value} dict.
+
+        Requires an active game (the knob block lives on the engine ctx).
+        """
+        if self._ctx is None:
+            raise RuntimeError("get_tune() requires an active game; call start() first")
+        names = tune_names(self._lib)
+        ptr = self._lib.nle_get_tune(self._ctx)
+        return {name: float(ptr[i]) for i, name in enumerate(names)}
+
+    def set_tune(self, **knobs) -> "RawEngine":
+        """Set one or more difficulty knobs by name.  Returns self.
+
+        Live (Layer 3) knobs take effect on the next step().  Unknown knob names
+        raise KeyError.  Values are coerced to float (bools/ints ride as doubles).
+        """
+        if self._ctx is None:
+            raise RuntimeError("set_tune() requires an active game; call start() first")
+        names = tune_names(self._lib)
+        index = {name: i for i, name in enumerate(names)}
+        ptr = self._lib.nle_get_tune(self._ctx)
+        for key, value in knobs.items():
+            if key not in index:
+                raise KeyError(
+                    f"unknown tune knob {key!r}; known knobs: {names}"
+                )
+            ptr[index[key]] = float(value)
+        return self
 
     # ------------------------------------------------------------------
     # Observation properties (reshaped views — reflect in-place C updates)
