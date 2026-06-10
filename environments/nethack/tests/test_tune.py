@@ -107,6 +107,60 @@ def test_hunger_rate_scale_effect():
     )
 
 
+def _visible_cells(nsteps=5, **knobs):
+    env = _engine.RawEngine()
+    env.start(core=42, disp=42)
+    if knobs:
+        env.set_tune(**knobs)
+    for _ in range(nsteps):
+        env.step(106)  # j (move; triggers vision recalc)
+    n = int((env.chars != ord(" ")).sum())
+    env.end()
+    return n
+
+
+def test_reveal_map_and_fog_of_war_reveal_the_level():
+    """reveal_map and fog_of_war expand the observed level.
+
+    Default obs shows only the explored area; reveal_map=1 (and, equivalently in
+    this glyph-obs model, fog_of_war=0) reveals the whole level's terrain.
+    """
+    base = _visible_cells()
+    revealed = _visible_cells(reveal_map=1.0)
+    no_fog = _visible_cells(fog_of_war=0.0)
+    assert revealed > base, "reveal_map did not reveal additional cells"
+    assert no_fog > base, "fog_of_war=0 did not reveal additional cells"
+
+
+def test_all_knobs_are_settable_and_safe():
+    """Every catalog knob accepts a non-default value and the engine keeps
+    stepping without crashing (smoke coverage for knobs whose effect needs a
+    combat/exploration scenario to observe deterministically)."""
+    env = _engine.RawEngine()
+    env.start(core=42, disp=42)
+    stress = {
+        "dmg_to_player_scale": 0.0,
+        "dmg_by_player_scale": 5.0,
+        "player_hp_scale": 3.0,
+        "hp_regen_scale": 4.0,
+        "vision_radius": 3.0,
+        "fog_of_war": 0.0,
+        "reveal_map": 1.0,
+        "hunger_rate_scale": 2.0,
+        "ongoing_spawn_scale": 4.0,
+        "monster_difficulty_scale": 6.0,
+        "monster_speed_scale": 2.0,
+        "xp_gain_scale": 10.0,
+    }
+    # Stress every knob in the catalog (fails loudly if a knob is missing here).
+    assert set(stress) == set(env.tune_catalog())
+    env.set_tune(**stress)
+    for i in range(60):
+        env.step([104, 108, 106, 107][i % 4])
+    assert env.get_tune()["xp_gain_scale"] == 10.0
+    env.end()
+
+
 def test_tune_is_captured_by_snapshot():
     """Knobs live on the engine ctx, so a snapshot captures them: changing a
     knob after snapshotting and then restoring reverts it to the snapshot value.
