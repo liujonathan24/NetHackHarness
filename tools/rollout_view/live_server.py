@@ -207,6 +207,20 @@ def _make_handler(server: RolloutViewServer):
                 import mimetypes
                 ctype = mimetypes.guess_type(str(fp))[0] or "application/octet-stream"
                 self._send_bytes(fp.read_bytes(), ctype)
+            elif path == "/browse":
+                from tools.rollout_view.browse import render_browser
+                rel = (q.get("path") or [""])[0]
+                self._send(render_browser(server.runs_root, rel))
+            elif path == "/dashboard":
+                from tools.rollout_view.browse import collect_data_files
+                from tools.rollout_view.dashboard import dashboard_from_paths
+                rel = (q.get("path") or [""])[0]
+                files = collect_data_files(server.runs_root, rel)
+                if not files:
+                    return self._send("<h1>404 — no .ndjson/.jsonl under that path</h1>", 404)
+                metrics = tuple((q.get("metrics") or ["dlvl,hp,xp,kills_cum"])[0].split(","))
+                self._send(dashboard_from_paths([str(f) for f in files], metrics=metrics,
+                                                title=f"STATS · {rel or server.runs_root.name}"))
             elif path == "/live":
                 variant = (q.get("variant") or ["B1"])[0]
                 server.live = LiveStepper(server.make_interface(), variant=variant)
