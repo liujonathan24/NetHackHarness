@@ -1425,6 +1425,10 @@ def explore_and_descend(env: NetHackCoreEnv, obs: StructuredObservation,
     pet_waits = 0               # turns spent waiting on the stairs for the pet to catch up
     PET_WAIT_BUDGET = 8         # don't wait forever — descend without the pet after this many
     KITE_BUDGET = 4             # if the pet hasn't killed it after this many retreats, melee
+    import os as _os
+    pet_tactics = _os.environ.get("NETHACK_DISABLE_PET", "") not in ("1", "true", "True")
+    # ^ ablation switch: NETHACK_DISABLE_PET=1 turns OFF pet-aware descent + kiting
+    #   (keeps everything else — survival prompt, search, in-skill melee).
     visited: set = set()  # frontiers already attempted (per level) — avoids oscillating
     opened: set = set()   # (level_idx, x, y) doors we've opened — they render as a wall
                           # char (`-`/`|`) in the tty, so patch them back to walkable.
@@ -1522,7 +1526,7 @@ def explore_and_descend(env: NetHackCoreEnv, obs: StructuredObservation,
                 # Bring the pet down with us: in NetHack a pet ADJACENT when you
                 # descend follows you to the next floor. Wait on the stairs for it
                 # to catch up (a strong ally that kills monsters), but not forever.
-                pet = nearest_pet(*start)
+                pet = nearest_pet(*start) if pet_tactics else None
                 if pet is not None:
                     pdist = max(abs(pet[0] - start[0]), abs(pet[1] - start[1]))
                     if pdist > 1 and pet_waits < PET_WAIT_BUDGET:
@@ -1557,7 +1561,7 @@ def explore_and_descend(env: NetHackCoreEnv, obs: StructuredObservation,
             mx, my = start[0] + adir[0], start[1] + adir[1]   # the monster's tile
             # Let the pet kill it: if a pet is next to the monster it will trade
             # blows for free — kite back instead of taking melee damage ourselves.
-            pet = nearest_pet(*start)
+            pet = nearest_pet(*start) if pet_tactics else None
             pet_on_it = pet is not None and max(abs(pet[0] - mx), abs(pet[1] - my)) <= 1
             if pet_on_it and kites < KITE_BUDGET:
                 kstep = kite_step(chars, start, (mx, my))
