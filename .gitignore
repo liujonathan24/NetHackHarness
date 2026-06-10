@@ -27,3 +27,7 @@ skills-lock.json
 
 # nle low-level ttyrec side-effect files
 *.ttyrec*.bz2
+
+# engine crash artifacts (core dumps + sentinel crash logs)
+core.*
+nle_crash_*.txt

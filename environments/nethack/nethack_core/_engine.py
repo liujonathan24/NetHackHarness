@@ -348,9 +348,10 @@ class RawEngine:
         """Capture the full live game state and return an opaque handle.
 
         The handle wraps a self-contained C-side copy of (ctx + coroutine stack
-        + arena) taken at the moment of the call — not merely the initial state.
-        It can be restored to return the engine to this exact point, and the
-        same handle can be restored repeatedly to branch alternate action lines.
+        + arena + rl-port display mirror) taken at the moment of the call — not
+        merely the initial state.  It can be restored to return the engine to
+        this exact point, and the same handle can be restored repeatedly to
+        branch alternate action lines with byte-exact fidelity each time.
 
         The handle is bound to THIS RawEngine instance: restoring it into a
         different instance's ctx is undefined, so restore() rejects handles it
@@ -381,23 +382,14 @@ class RawEngine:
         them.  In practice callers step() after restore (to branch), so the
         buffers are correct by the time they are read.
 
-        Fidelity (verified empirically against fresh-engine ground truth):
-
-          * The FIRST restore from a handle, taken with no intervening steps,
-            followed by any action line, reproduces a from-scratch run
-            byte-for-byte on both glyphs and blstats.  This is the reliable
-            checkpoint guarantee.
-
-          * NetHack's remembered/displayed-map glyph buffer lives OUTSIDE the
-            ctx/stack/arena that the C snapshot captures.  So a SECOND restore
-            from the same handle, after a prior branch already explored the map,
-            carries display residue from that branch: the new branch still
-            DIVERGES from the first (branching is real and usable) but is not
-            byte-identical to a fresh run.  For byte-exact alternate branches,
-            take a fresh snapshot per branch point rather than reusing one
-            handle across explore-heavy branches.  This is a limitation of the
-            pre-built C fast-reset (its source documents "restores to the same
-            initial game state"); fixing it would require C changes.
+        Fidelity (verified empirically against fresh-engine ground truth): the
+        snapshot is COMPLETE.  Restore + any action line reproduces a from-scratch
+        run byte-for-byte on glyphs, chars, colors AND blstats — including on
+        repeated restores from the same handle after an abandoned branch explored
+        a different part of the map.  (The fork allocates the engine's per-env
+        heap buffers in the arena, and the C snapshot captures the rl-port display
+        mirror — which lives outside the arena — alongside ctx/stack/arena, so no
+        display residue leaks across branches.)
 
         Raises RuntimeError if no game is active.
         """

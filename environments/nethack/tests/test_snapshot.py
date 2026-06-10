@@ -4,24 +4,24 @@ These tests exercise Pillar 1a: nle_fr_snapshot / nle_fr_restore / nle_fr_destro
 bound on RawEngine.  A snapshot captures the live engine state (ctx + coroutine
 stack + per-env arena) and restore returns the engine to that point.
 
-EMPIRICALLY OBSERVED C-API CONTRACT (see RawEngine.restore docstring)
----------------------------------------------------------------------
+SNAPSHOT COMPLETENESS CONTRACT (see RawEngine.restore docstring)
+----------------------------------------------------------------
 - restore() does NOT refill the numpy obs buffers; they reflect the restored
   state only after the next step().
-- A snapshot faithfully reproduces the FIRST restore+replay from that point:
-  restore() (with no intervening steps) followed by any action line produces
-  byte-identical glyphs AND blstats to a fresh engine that played the same
-  prefix+line.
-- The displayed map memory (NetHack's remembered-glyph buffer) lives OUTSIDE
-  the snapshotted ctx/stack/arena.  Therefore a SECOND restore from the same
-  handle, after a first branch already explored the map, carries display
-  residue: the second branch still DIVERGES from the first (branching is real)
-  but is not byte-identical to a fresh run.  This is a limitation of the
-  pre-built C fast-reset, which its own source documents ("restores to the same
-  initial game state").  No C changes are in scope for this task.
+- The snapshot is COMPLETE: it captures all per-env state. The engine's per-env
+  heap buffers are arena-allocated (so the arena memcpy captures them) and the
+  rl-port display mirror (which lives outside the arena) is captured alongside.
+  Therefore restore() returns the engine to EXACTLY the snapshot state, and
+  branching is byte-exact: restore + any action line produces byte-identical
+  glyphs, chars, colors AND blstats to a fresh engine that played the same
+  prefix+line — even on a SECOND restore from the same handle after a prior
+  branch explored a different part of the map, and regardless of how far the
+  abandoned branch diverged. (This required completing the fork's arena
+  migration + capturing the rl mirror; earlier the displayed-map memory leaked
+  across cross-branch restores.)
 
-Tests assert the demonstrated contract.  Action ints follow the existing
-convention (raw ASCII compass values), matching tests/test_engine_concurrency.py.
+Tests assert byte-exact branching.  Action ints follow the existing convention
+(raw ASCII compass values), matching tests/test_engine_concurrency.py.
 """
 import numpy as np
 import pytest
@@ -90,13 +90,12 @@ def test_round_trip_first_branch_matches_fresh():
 
 
 def test_branch_first_is_faithful_and_branches_diverge():
-    """One snapshot, two branches.
+    """One snapshot, two branches: both branches are byte-exact vs fresh runs.
 
-    Branch A (first restore) is byte-identical to fresh-A.  Branch B (second
-    restore from the same handle) DIVERGES from branch A — branching is real —
-    demonstrating snapshot-driven branching.  (Branch B is not asserted equal to
-    fresh-B because display-memory residue from branch A persists; see module
-    docstring.)
+    Branch A (first restore) matches fresh-A and branch B (second restore from
+    the same handle) matches fresh-B, byte-for-byte — and the two branches
+    diverge from each other.  This is the complete-snapshot guarantee: a second
+    restore from the same handle is unaffected by the abandoned first branch.
     """
     prefix = _COMPASS[:3]
     line_a = [107, 121, 117, 98]   # l y u b
@@ -124,6 +123,11 @@ def test_branch_first_is_faithful_and_branches_diverge():
     assert _same(branch_a, fresh_a), (
         "first branch from snapshot did not match a fresh engine"
     )
+    # Second branch (after restore over an abandoned first branch) is ALSO
+    # byte-exact vs a fresh run — no residue from branch A.
+    assert _same(branch_b, fresh_b), (
+        "second branch from the same handle carried residue from the first branch"
+    )
     # Branching actually diverges.
     assert not _same(branch_a, branch_b), (
         "the two branches did not diverge — snapshot branching is not real"
@@ -131,14 +135,53 @@ def test_branch_first_is_faithful_and_branches_diverge():
     env.end()
 
 
-def test_replay_determinism_blstats():
-    """Restore + identical replay is deterministic on authoritative game state.
+def test_repeated_restore_is_byte_exact():
+    """Many restores from one handle, with map-exploring branches in between,
+    all reproduce the same state byte-for-byte (glyphs AND blstats).
 
-    The first branch matches a fresh run exactly.  A second restore + identical
-    replay reproduces the same blstats (authoritative game state is reset), even
-    though the displayed-map glyph buffer carries residue from the first branch
-    (see module docstring).  We therefore assert blstats determinism, and that
-    the glyph residue is confined to a handful of remembered-map cells.
+    This is the regression test for display-mirror residue: a long, divergent
+    branch B is run and abandoned between two runs of branch A; A must be
+    identical both times.
+    """
+    prefix = _COMPASS[:2]
+    line_a = [107, 107, 108, 121, 117, 98, 110, 104]
+    line_b = [110, 110, 98, 104, 108, 106, 107, 121]  # diverges widely
+
+    env = _engine.RawEngine()
+    env.start(core=42, disp=42)
+    for a in prefix:
+        env.step(a)
+    h = env.snapshot()
+
+    for a in line_a:
+        env.step(a)
+    first_a = _state(env)
+
+    # Abandoned divergent branch explores a different region of the map.
+    env.restore(h)
+    for a in line_b:
+        env.step(a)
+
+    # Re-run branch A from the same handle: must be byte-identical to first_a.
+    env.restore(h)
+    for a in line_a:
+        env.step(a)
+    second_a = _state(env)
+
+    assert np.array_equal(first_a["glyphs"], second_a["glyphs"]), (
+        "glyphs differed across repeated restore — display-mirror residue"
+    )
+    assert np.array_equal(first_a["blstats"], second_a["blstats"]), (
+        "blstats differed across repeated restore"
+    )
+    env.end()
+
+
+def test_replay_determinism():
+    """Restore + identical replay is fully deterministic (glyphs AND blstats).
+
+    Two restores from the same handle followed by the same line produce
+    byte-identical observations.
     """
     prefix = _COMPASS[:3]
     line = [107, 121, 117, 98]
@@ -158,17 +201,14 @@ def test_replay_determinism_blstats():
         env.step(a)
     second = _state(env)
 
-    # First branch is fully faithful.
+    # First branch is fully faithful to a fresh run.
     assert _same(first, fresh)
-    # Authoritative game state (blstats) is deterministic across restores.
+    # Restore + identical replay is byte-exact on both glyphs and blstats.
+    assert np.array_equal(first["glyphs"], second["glyphs"]), (
+        "glyphs were not deterministic across restore + identical replay"
+    )
     assert np.array_equal(first["blstats"], second["blstats"]), (
         "blstats were not deterministic across restore + identical replay"
-    )
-    # Glyph divergence, if any, is limited to remembered-map display residue.
-    glyph_diff = int((first["glyphs"] != second["glyphs"]).sum())
-    assert glyph_diff <= 8, (
-        f"unexpectedly large glyph divergence ({glyph_diff} cells) — residue should "
-        "be confined to a few remembered-map cells"
     )
     env.end()
 

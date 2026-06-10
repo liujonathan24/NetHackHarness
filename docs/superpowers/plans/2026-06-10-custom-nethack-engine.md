@@ -353,6 +353,13 @@ def test_engine_matches_golden_nle():
 
 ### Task 12: GATE B — multi-level snapshot-completeness spike
 
+> **GATE B RESULT (2026-06-10, recorded during Pillar 1a):**
+> **Single level = PASS (after fork fix); multi-level = FAIL → strategy "bundle level files" (Task 12b) needed for cross-level snapshots.**
+>
+> *What was found.* `nle_fr_snapshot` captured ctx + coroutine stack + per-env arena, but ~35 per-env heap buffers hanging off `nle_ctx_t` (player `u`, flags, dungeon topology, `gbuf` display, vision, worms, level/rooms, …) were `calloc`'d OUTSIDE the arena and the rl-port display mirror (`NetHackRL::glyphs_/chars_/colors_/…`) lives outside it too — so neither was captured. Result: restore left display/state residue across cross-branch restores.
+> *Fix (fork, arena-native).* Routed those init-time buffers through a new `nle_arena_calloc()` (alloc.c) so the arena memcpy captures them by construction (matches the plan's "O(arena)" intent), dropped the now-invalid libc `free()`s in `free_nle_fields`, and added a C shim (`nle_rl_mirror_save/load`, winrl.cc) that `nle_fr_snapshot/restore` use to capture the rl mirror. **Single-level snapshot/branch is now byte-exact on glyphs/chars/colors/blstats — including repeated restores from one handle after divergent branches** (verified: `environments/nethack/tests/test_snapshot.py`).
+> *Multi-level (separate, definitive from source).* Off-current dungeon levels are persisted by stock `savelev()`/`getlev()` (`src/save.c`, `src/restore.c`) to **disk files in the per-instance hackdir** (`fqn_prefix[LEVELPREFIX]`), NOT the arena. So a snapshot captures only the current level; restoring then revisiting an off-level reads the post-snapshot disk file → divergence. An empirical multi-level spike needs a deterministic descent harness (a BFS autoexplorer was prototyped but livelocks on seed 42's geometry; reaching dlvl≥2 reliably is a NetHack-bot subproject — deferred). **Conclusion stands on source inspection: do Task 12b (bundle `<hackdir>/<lock>.*` level files into the blob, or route level I/O to memfd) before relying on cross-level snapshots.**
+
 **Files:**
 - Create: `environments/nethack/tests/test_snapshot_spike.py`
 
