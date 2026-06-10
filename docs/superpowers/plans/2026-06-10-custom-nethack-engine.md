@@ -69,19 +69,19 @@ So Phases 1–3 (binding + parity + cutover) can begin immediately; F1/F3/F4 for
 - Create: `.gitmodules`
 - Create: `third_party/NetHack/` (submodule)
 
-- [ ] **Step 1: Add submodule pinned to current main**
+- [x] **Step 1: Add submodule pinned to current main**
 
 ```bash
 git submodule add https://github.com/liujonathan24/NetHack third_party/NetHack
 git -C third_party/NetHack rev-parse HEAD   # record the pinned commit
 ```
 
-- [ ] **Step 2: Verify checkout**
+- [x] **Step 2: Verify checkout**
 
 Run: `ls third_party/NetHack/src/include/nle.h third_party/NetHack/src/nle_fast_reset.c`
 Expected: both paths exist.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add .gitmodules third_party/NetHack
@@ -93,30 +93,11 @@ git commit -m "build: add liujonathan24/NetHack fork as submodule (custom-nethac
 **Files:**
 - Create: `environments/nethack/nethack_core/build_engine.sh`
 
-- [ ] **Step 1: Write the build script**
+- [x] **Step 1: Write the build script** — DONE, but made **reproducible**: instead of `make -C src/build` (which relied on a stale committed CMakeCache pointing at an external PufferLib checkout), the script now does a clean `cmake -S third_party/NetHack/src -B src/build -DCMAKE_BUILD_TYPE=RelWithDebInfo` configure from the submodule source (deps vendored in `src/third_party/`), wiping the cache if it was generated from a different source tree. Also untracked the fork's committed 47MB `src/build/` artifacts (fork commit `bbdcb6e`, local-only — already gitignored).
 
-```bash
-#!/usr/bin/env bash
-# Build libnethack.so + data from the pinned submodule.
-set -euo pipefail
-ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
-FORK="$ROOT/third_party/NetHack"
-make -C "$FORK/src/build" nethack -j"${JOBS:-8}"
-echo "Built: $FORK/src/build/libnethack.so"
-ls -l "$FORK/src/build/libnethack.so"
-```
+- [x] **Step 2: Make executable + run** — DONE. Produces valid `ELF x86-64 libnethack.so` + `dat/` data files; `grep PufferLib CMakeCache.txt` = 0 (reproducible).
 
-- [ ] **Step 2: Make executable + run**
-
-Run: `chmod +x environments/nethack/nethack_core/build_engine.sh && ./environments/nethack/nethack_core/build_engine.sh`
-Expected: `libnethack.so` printed and present. (If the toolchain is missing — cmake/bison/flex/libbz2 — install per Dockerfile.prime.)
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add environments/nethack/nethack_core/build_engine.sh
-git commit -m "build: add libnethack.so build script for the fork submodule"
-```
+- [x] **Step 3: Commit** — DONE. Harness commit `09c99ba` "build: reproducible libnethack.so build script (cmake from submodule)". Submodule pointer NOT bumped (fork commit `bbdcb6e` unpushed — pending push+bump checkpoint).
 
 ### Task 3: `_engine` library locator + load
 
@@ -134,8 +115,10 @@ from nethack_core import _engine
 def test_library_loads():
     lib = _engine.load_library()
     assert lib is not None
-    # public symbols exist
-    for sym in ("nle_start", "nle_step", "nle_reset", "nle_end", "nle_set_seed"):
+    # public symbols exist (NOTE: engine has NO nle_reset — reset is via
+    # nle_end+nle_start or the fast-reset/snapshot path. Verified against
+    # libnethack.so exports + nle.h:1115-1119.)
+    for sym in ("nle_start", "nle_step", "nle_end", "nle_set_seed", "nle_get_obs"):
         assert hasattr(lib, sym)
 ```
 
