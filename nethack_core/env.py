@@ -123,6 +123,24 @@ class NetHackCoreEnv:
         # engine resets. Native tasks pass None; non-None only on the engine path.
         self._level_blob = level_blob
 
+        # Most recent observation, stored so the harness can read it back without
+        # reaching into the backend. Set in reset()/step(); exposed as the
+        # ``last_observation`` property (a sequence ordered by observation_keys,
+        # so ``last_observation[observation_keys.index("chars")]`` works).
+        self._last_observation: Optional[CoreObservation] = None
+
+        # Harness-owned per-episode scratch: the autoexplore frontier blacklist
+        # for the current level. The curriculum's _update_frontier_blacklist
+        # writes it here each turn and in-skill pickers read it back; it lives on
+        # the env purely as a side-channel (skills don't get the verifiers state
+        # dict). Native attribute -- no backend reach-through required.
+        self._frontier_blacklist_current: set = set()
+
+        # Lazily-built keystroke->action-index map for the gym/MiniHack backend
+        # (the native engine consumes keystrokes directly and needs no map).
+        self._keystroke_index_map: Optional[dict] = None
+        self._action_set_len: int = 0
+
         # NATIVE tasks (NetHackScore / NetHackChallenge) are driven by the fork
         # engine via EngineEnv; the MiniHack/des_file path still uses nle's gym
         # env until the curriculum migration (Phase E) retires it. Branch on the
@@ -235,6 +253,8 @@ class NetHackCoreEnv:
             self._reward_model.reset(obs)
             self._current_seeds = self._pending_seeds
             self._pending_seeds = None
+            self._last_observation = obs
+            self._frontier_blacklist_current = set()
             logger.info("Episode start: task=%s seeds=%s hash=%s",
                         self.task_name, self._current_seeds, meta.seed_hash)
             return obs, meta
@@ -262,7 +282,10 @@ class NetHackCoreEnv:
         )
         logger.info("Episode start: task=%s seeds=%s hash=%s",
                     self.task_name, self._current_seeds, meta.seed_hash)
-        return CoreObservation.from_nle(obs), meta
+        core_obs = CoreObservation.from_nle(obs)
+        self._last_observation = core_obs
+        self._frontier_blacklist_current = set()
+        return core_obs, meta
 
     def step(self, action: int) -> tuple[CoreObservation, float, bool, bool, dict]:
         if self._is_native:
@@ -275,9 +298,39 @@ class NetHackCoreEnv:
             # EngineEnv exposes no truncation signal; episodes terminate, not
             # truncate. Surface truncated=False unless info ever provides one.
             truncated = bool(info.get("truncated", False))
+            self._last_observation = obs
             return obs, reward, bool(done), truncated, info
-        obs, reward, terminated, truncated, info = self._env.step(action)
-        return CoreObservation.from_nle(obs), float(reward), bool(terminated), bool(truncated), info
+        # Gym/MiniHack backend: its Discrete action space wants an INDEX into the
+        # task's restricted `actions` tuple, but every harness caller now drives
+        # on keystroke bytes (the semantic action enums ARE keystrokes). Translate
+        # keystroke -> index here so the keystroke vocabulary is the single ABI
+        # regardless of backend. Out-of-set keystrokes fall through unchanged
+        # (lets pre-resolved indices keep working in legacy tests).
+        idx = self._keystroke_to_index(action)
+        obs, reward, terminated, truncated, info = self._env.step(idx)
+        core_obs = CoreObservation.from_nle(obs)
+        self._last_observation = core_obs
+        return core_obs, float(reward), bool(terminated), bool(truncated), info
+
+    def _keystroke_to_index(self, action: int) -> int:
+        """Map a keystroke byte to its index in the gym env's action set.
+
+        Cached per env. If the value is already a valid index (and not a known
+        keystroke) it is returned unchanged, so callers that still pass indices
+        on the gym path keep working.
+        """
+        action = int(action)
+        cache = self._keystroke_index_map
+        if cache is None:
+            actions = self._env.unwrapped.actions
+            cache = {int(a): i for i, a in enumerate(actions)}
+            self._keystroke_index_map = cache
+            self._action_set_len = len(actions)
+        if action in cache:
+            return cache[action]
+        if 0 <= action < self._action_set_len:
+            return action  # already an index
+        return action
 
     def close(self) -> None:
         if self._is_native:
@@ -303,15 +356,43 @@ class NetHackCoreEnv:
         return self._current_seeds
 
     @property
+    def observation_keys(self) -> tuple[str, ...]:
+        """The ordered observation-field names (mirrors the old nle attribute)."""
+        return self._observation_keys
+
+    @property
+    def last_observation(self):
+        """Most recent observation as a sequence ordered by ``observation_keys``.
+
+        Returns a list whose ``i``-th element is the array for
+        ``observation_keys[i]`` -- so existing harness code that does
+        ``last_observation[observation_keys.index("chars")]`` keeps working
+        without touching the backend. Returns ``None`` before the first reset.
+        """
+        obs = self._last_observation
+        if obs is None:
+            return None
+        return [getattr(obs, name, None) for name in self._observation_keys]
+
+    @property
+    def frontier_blacklist_current(self) -> set:
+        """Harness-owned per-level autoexplore frontier blacklist (mutable)."""
+        return self._frontier_blacklist_current
+
+    @frontier_blacklist_current.setter
+    def frontier_blacklist_current(self, value) -> None:
+        self._frontier_blacklist_current = set(value) if value else set()
+
+    @property
     def underlying(self):
         """Escape hatch for code that needs the raw backend.
 
         Native tasks return the EngineEnv (and ``.engine`` reaches RawEngine);
-        the MiniHack/des_file path returns the nle gym env. NOTE: the harness
-        layer (nethack_harness skills/curriculum) still reaches for nle-only
-        attributes via ``underlying.unwrapped.actions`` etc.; that layer is
-        migrated to the engine in Phase E and is not exercised by native-engine
-        callers yet.
+        the MiniHack/des_file path returns the nle gym env. The harness no longer
+        reaches through here for actions/observations: it drives the engine with
+        keystroke bytes directly (the semantic action enums ARE keystrokes) and
+        reads observations via the ``last_observation`` / ``observation_keys``
+        properties on this class.
         """
         return self._engine if self._is_native else self._env
 

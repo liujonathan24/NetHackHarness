@@ -20,7 +20,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Literal, Optional
 
-from nle import nethack
+from nethack_core import actions as nethack
 
 from nethack_core.env import NetHackCoreEnv
 from nethack_harness.memory.journal import Journal
@@ -31,8 +31,8 @@ from nethack_harness.navigation.pathfinding import a_star, nearest_frontier, pla
 Direction = Literal["N", "NE", "E", "SE", "S", "SW", "W", "NW", "."]
 
 
-# NLE primitive action ids for directional movement
-# (see nle.nethack.ACTIONS and CompassDirection in nle/nethack.py)
+# Semantic action ids for directional movement -- the int value of each member
+# is the keystroke the engine consumes (see nethack_core.actions).
 _DIRECTION_TO_ACTION = {
     "N": nethack.CompassDirection.N,
     "NE": nethack.CompassDirection.NE,
@@ -206,14 +206,9 @@ def move(env: NetHackCoreEnv, obs: StructuredObservation, direction: str, run: b
             p2 = a_star(chars2, start2, stair2)
             if p2 and len(p2) <= 60:
                 acts = _enum_actions_to_indices(env, p2)
-                try:
-                    actions_list = env.underlying.unwrapped.actions
-                    enum_to_idx = {int(a): i for i, a in enumerate(actions_list)}
-                    more_idx = enum_to_idx.get(int(nethack.MiscAction.MORE), 0)
-                    down_idx = enum_to_idx.get(int(nethack.MiscDirection.DOWN), 0)
-                    acts = acts + [more_idx, down_idx]
-                except Exception:
-                    pass
+                # Keystrokes consumed directly by the engine: MORE dismisses a
+                # prompt, then DOWN ('>') descends.
+                acts = acts + [int(nethack.MiscAction.MORE), int(nethack.MiscDirection.DOWN)]
                 return SkillResult(
                     actions=acts,
                     feedback=(
@@ -310,19 +305,10 @@ def descend(env: NetHackCoreEnv, obs: StructuredObservation) -> SkillResult:
             f"Can't descend — you're standing on: {under}. Find a '>' tile and step ON it first.",
             interrupted=True,
         )
-    # Convert enum values to action INDICES — env.step takes indices not
-    # raw NLE enum keycodes. Without this fix, descend sends [13, 62] which
-    # env.step interprets as indices 13 and 62; index 62 is OOB and crashes
-    # (or silently no-ops). This bug ate every "successful" descent attempt
-    # for who-knows-how-long.
-    if env is None:
-        # Test path: no real env; fall back to enum values (tests don't step).
-        return SkillResult([int(nethack.MiscAction.MORE), int(ord('>'))], "Attempted to descend.")
-    actions = env.underlying.unwrapped.actions
-    enum_to_idx = {int(a): i for i, a in enumerate(actions)}
-    more_idx = enum_to_idx.get(int(nethack.MiscAction.MORE), 0)
-    down_idx = enum_to_idx.get(int(nethack.MiscDirection.DOWN), enum_to_idx.get(int(ord('>')), 0))
-    return SkillResult([more_idx, down_idx], "Attempted to descend.")
+    # The engine consumes keystroke bytes directly: MORE (13) dismisses any
+    # prompt, then DOWN ('>', 62) descends. No action-index translation.
+    return SkillResult([int(nethack.MiscAction.MORE), int(nethack.MiscDirection.DOWN)],
+                       "Attempted to descend.")
 
 
 @registry.register("search", schema={
@@ -637,9 +623,8 @@ def bootstrap_character(env: NetHackCoreEnv) -> dict[str, str]:
     """
     out = dict(_UNKNOWN_CHARACTER)
     try:
-        nle_env = env.underlying
-        last_msg = nle_env.unwrapped.last_observation
-        keys = nle_env.unwrapped._observation_keys
+        last_msg = env.last_observation
+        keys = env.observation_keys
         # Primary: welcome message
         if "message" in keys:
             msg_bytes = last_msg[keys.index("message")]
@@ -668,11 +653,10 @@ def _current_chars_and_player(env: NetHackCoreEnv):
 
     The skill API gets a StructuredObservation but we want the raw chars
     array for pathfinding. The CoreObservation lives in the verifiers state
-    dict, not here; so we read it back from NLE's last_observation.
+    dict, not here; so we read it back from the env's last_observation.
     """
-    nle_env = env.underlying.unwrapped
-    keys = nle_env._observation_keys
-    last = nle_env.last_observation
+    keys = env.observation_keys
+    last = env.last_observation
     chars = last[keys.index("chars")]
     blstats = last[keys.index("blstats")]
     return chars, (int(blstats[0]), int(blstats[1]))
@@ -680,18 +664,12 @@ def _current_chars_and_player(env: NetHackCoreEnv):
 
 def _enum_actions_to_indices(env: NetHackCoreEnv, enum_actions: list[int]) -> list[int]:
     """
-    Pathfinding returns NLE action ENUM values (e.g. 107 for CompassDirection.N).
-    NetHackScore.step expects INDICES into env.actions (e.g. 1 for N). This
-    converts the former to the latter, skipping any enum value not present in
-    the action set (which would otherwise raise IndexError mid-trajectory).
+    Pathfinding returns semantic action enum values (e.g. 107 for
+    CompassDirection.N), which ARE the keystroke bytes the engine consumes. The
+    engine takes them directly, so this is now an identity pass-through (kept as
+    a named seam in case a future backend needs translation again).
     """
-    actions = env.underlying.unwrapped.actions
-    enum_to_idx = {int(a): i for i, a in enumerate(actions)}
-    out: list[int] = []
-    for a in enum_actions:
-        if a in enum_to_idx:
-            out.append(enum_to_idx[a])
-    return out
+    return [int(a) for a in enum_actions]
 
 
 @registry.register("move_to", schema={
@@ -728,14 +706,8 @@ def move_to(env: NetHackCoreEnv, obs: StructuredObservation, x: int, y: int) -> 
             p2 = a_star(chars, start, stair2)
             if p2:
                 acts = _enum_actions_to_indices(env, p2)
-                try:
-                    actions_list = env.underlying.unwrapped.actions
-                    enum_to_idx = {int(a): i for i, a in enumerate(actions_list)}
-                    more_idx = enum_to_idx.get(int(nethack.MiscAction.MORE), 0)
-                    down_idx = enum_to_idx.get(int(nethack.MiscDirection.DOWN), 0)
-                    acts = acts + [more_idx, down_idx]
-                except Exception:
-                    pass
+                # Keystrokes consumed directly: MORE dismisses a prompt, DOWN descends.
+                acts = acts + [int(nethack.MiscAction.MORE), int(nethack.MiscDirection.DOWN)]
                 return SkillResult(
                     actions=acts,
                     feedback=f"move_to({tx},{ty}) — diverted to `>` at {stair2}, pathing {len(p2)} steps and descending.",
@@ -820,19 +792,12 @@ def autoexplore(env: NetHackCoreEnv, obs: StructuredObservation, max_steps: int 
             if path:
                 trimmed = path[:max_steps]
                 acts = _enum_actions_to_indices(env, trimmed)
-                # Auto-descend: append MORE + DOWN indices so a single
+                # Auto-descend: append MORE + DOWN keystrokes so a single
                 # autoexplore call when `>` is visible reaches the stairs
                 # AND descends without needing another LM round-trip.
                 # Without this, the agent saw the stairs hint but then
                 # picked move_to / move single-step instead of `descend`.
-                try:
-                    actions_list = env.underlying.unwrapped.actions
-                    enum_to_idx = {int(a): i for i, a in enumerate(actions_list)}
-                    more_idx = enum_to_idx.get(int(nethack.MiscAction.MORE), 0)
-                    down_idx = enum_to_idx.get(int(nethack.MiscDirection.DOWN), 0)
-                    acts = acts + [more_idx, down_idx]
-                except Exception:
-                    pass
+                acts = acts + [int(nethack.MiscAction.MORE), int(nethack.MiscDirection.DOWN)]
                 return SkillResult(
                     actions=acts,
                     feedback=(
@@ -844,11 +809,11 @@ def autoexplore(env: NetHackCoreEnv, obs: StructuredObservation, max_steps: int 
         pass
     # Wave-2 Track B: optional per-level frontier blacklist. The harness
     # ( nethack.py::_update_frontier_blacklist ) stashes the current-level
-    # set onto the underlying NLE env via `_frontier_blacklist_current` for
+    # set onto the env via `frontier_blacklist_current` for
     # skills to pick up; if absent we fall back to legacy behavior.
     blacklist = None
     try:
-        cur_bl = getattr(env.underlying.unwrapped, "_frontier_blacklist_current", None)
+        cur_bl = getattr(env, "frontier_blacklist_current", None)
         if isinstance(cur_bl, (set, frozenset)) and cur_bl:
             blacklist = set(cur_bl)
     except Exception:
@@ -927,13 +892,8 @@ def autoexplore(env: NetHackCoreEnv, obs: StructuredObservation, max_steps: int 
                     best = de
                     best_path = p
             if best is not None and best_path:
-                # Pull a portable search-action enum from the env's last
-                # observation; fall back to literal ord('s') (which works
-                # via vi-key dispatch on most NLE action sets).
-                from nle import nethack as _nh
-                actions = env.underlying.unwrapped.actions
-                enum_to_idx = {int(a): i for i, a in enumerate(actions)}
-                search_action_idx = enum_to_idx.get(int(_nh.Command.SEARCH), int(ord('s')))
+                # SEARCH is the keystroke 's', consumed directly by the engine.
+                search_action_idx = int(nethack.Command.SEARCH)
                 path_idx = _enum_actions_to_indices(env, best_path[:max_steps])
                 return SkillResult(
                     actions=path_idx + [search_action_idx] * 20,
@@ -986,9 +946,8 @@ def autoexplore(env: NetHackCoreEnv, obs: StructuredObservation, max_steps: int 
             from nethack_harness.navigation.pathfinding import a_star as _astar2
             from nethack_core.observations import extract_visible_features
             try:
-                nle_env = env.underlying.unwrapped
-                keys = nle_env._observation_keys
-                last_obs_buf = nle_env.last_observation
+                keys = env.observation_keys
+                last_obs_buf = env.last_observation
                 tty = last_obs_buf[keys.index("tty_chars")] if "tty_chars" in keys else None
             except Exception:
                 tty = None
@@ -1056,11 +1015,9 @@ def find_and_descend(env: NetHackCoreEnv, obs: StructuredObservation, max_action
             if int(chars[yy, xx]) == ord('>'):
                 stair = (xx, yy); break
         if stair: break
-    # Compute descend action indices (env.step takes indices not enum values).
-    _acts = env.underlying.unwrapped.actions
-    _e2i = {int(a): i for i, a in enumerate(_acts)}
-    _more_i = _e2i.get(int(nethack.MiscAction.MORE), 0)
-    _down_i = _e2i.get(int(nethack.MiscDirection.DOWN), _e2i.get(int(ord('>')), 0))
+    # Descend keystrokes consumed directly by the engine.
+    _more_i = int(nethack.MiscAction.MORE)
+    _down_i = int(nethack.MiscDirection.DOWN)
     if stair is not None:
         if stair == start:
             return SkillResult([_more_i, _down_i], "Already on `>` — descending.")
@@ -1075,9 +1032,8 @@ def find_and_descend(env: NetHackCoreEnv, obs: StructuredObservation, max_action
     # 2) Pick a reachable door (open/gap or closed) and path there.
     from nethack_core.observations import extract_visible_features
     try:
-        nle_env = env.underlying.unwrapped
-        keys = nle_env._observation_keys
-        tty = nle_env.last_observation[keys.index("tty_chars")] if "tty_chars" in keys else None
+        keys = env.observation_keys
+        tty = env.last_observation[keys.index("tty_chars")] if "tty_chars" in keys else None
     except Exception:
         tty = None
     door_xy = None; door_path = None
@@ -1143,10 +1099,8 @@ def find_and_descend(env: NetHackCoreEnv, obs: StructuredObservation, max_action
         sc = len(p) + (0 if is_corr else 100)
         if sc < best_score:
             best_score = sc; best_de = de; best_p = p
-    from nle import nethack as _nh
-    actions_list = nle_env.actions if hasattr(nle_env, "actions") else env.underlying.unwrapped.actions
-    enum_to_idx = {int(a): i for i, a in enumerate(actions_list)}
-    s_idx = enum_to_idx.get(int(_nh.Command.SEARCH), int(ord('s')))
+    # SEARCH ('s') keystroke, consumed directly by the engine.
+    s_idx = int(nethack.Command.SEARCH)
     if best_de is not None and best_p is not None:
         a = _enum_actions_to_indices(env, best_p[:max_actions - 25])
         a += [s_idx] * 25
@@ -1262,49 +1216,51 @@ def explore_and_descend(env: NetHackCoreEnv, obs: StructuredObservation,
     Internally it re-observes every step (NetPlay's explore_level loop) and
     searches dead-ends / room perimeters for hidden passages."""
     import numpy as np
-    from nle import nethack as _nh
+    from nethack_core import actions as _nh
+    # Glyph predicates (glyph_is_monster/pet) are C-backed nle helpers with no
+    # nethack_core equivalent yet; the action vocabulary above is nle-free.
+    import nle.nethack as _glyph
     from nethack_harness.navigation.pathfinding import a_star, find_frontiers
 
-    nle_env = env.underlying.unwrapped
-    acts = nle_env.actions
-    e2i = {int(a): i for i, a in enumerate(acts)}
-    MORE = e2i.get(int(_nh.MiscAction.MORE), 0)
-    DOWN = e2i.get(int(_nh.MiscDirection.DOWN), e2i.get(int(ord('>')), 0))
-    SEARCH = e2i.get(int(_nh.Command.SEARCH), int(ord('s')))
-    KICK = e2i.get(int(_nh.Command.KICK), None)
-    DIRS = {(0, -1): e2i.get(int(_nh.CompassDirection.N)),
-            (0, 1): e2i.get(int(_nh.CompassDirection.S)),
-            (1, 0): e2i.get(int(_nh.CompassDirection.E)),
-            (-1, 0): e2i.get(int(_nh.CompassDirection.W))}
+    # The engine consumes keystroke bytes directly, so each action IS its enum
+    # value -- no action-index translation layer.
+    MORE = int(_nh.MiscAction.MORE)
+    DOWN = int(_nh.MiscDirection.DOWN)
+    SEARCH = int(_nh.Command.SEARCH)
+    KICK = int(_nh.Command.KICK)
+    DIRS = {(0, -1): int(_nh.CompassDirection.N),
+            (0, 1): int(_nh.CompassDirection.S),
+            (1, 0): int(_nh.CompassDirection.E),
+            (-1, 0): int(_nh.CompassDirection.W)}
     # All 8 compass directions for melee — a monster can be diagonally adjacent.
     # Orthogonal first so straight melee is preferred over a diagonal swing.
-    DIRS8 = {(0, -1): e2i.get(int(_nh.CompassDirection.N)),
-             (0, 1): e2i.get(int(_nh.CompassDirection.S)),
-             (1, 0): e2i.get(int(_nh.CompassDirection.E)),
-             (-1, 0): e2i.get(int(_nh.CompassDirection.W)),
-             (1, -1): e2i.get(int(_nh.CompassDirection.NE)),
-             (1, 1): e2i.get(int(_nh.CompassDirection.SE)),
-             (-1, 1): e2i.get(int(_nh.CompassDirection.SW)),
-             (-1, -1): e2i.get(int(_nh.CompassDirection.NW))}
+    DIRS8 = {(0, -1): int(_nh.CompassDirection.N),
+             (0, 1): int(_nh.CompassDirection.S),
+             (1, 0): int(_nh.CompassDirection.E),
+             (-1, 0): int(_nh.CompassDirection.W),
+             (1, -1): int(_nh.CompassDirection.NE),
+             (1, 1): int(_nh.CompassDirection.SE),
+             (-1, 1): int(_nh.CompassDirection.SW),
+             (-1, -1): int(_nh.CompassDirection.NW)}
     kicked: dict = {}  # (level_idx, x, y) -> kick attempts (avoid infinite kicking)
 
     # persistent per-(level,tile) search counts so repeated calls don't re-search
-    search_count = getattr(nle_env, "_explore_search_count", None)
+    search_count = getattr(env, "_explore_search_count", None)
     if search_count is None:
         search_count = {}
-        try: setattr(nle_env, "_explore_search_count", search_count)
+        try: setattr(env, "_explore_search_count", search_count)
         except Exception: pass
 
     def floor_id():
-        bl = nle_env.last_observation[_ks.index("blstats")]
+        bl = env.last_observation[_ks.index("blstats")]
         return (int(bl[23]), int(bl[24]))  # (DNUM, DLEVEL) — unique per floor
 
     state = {"r": 0.0, "term": False, "trunc": False, "steps": 0, "obs": None}
-    _ttci = nle_env._observation_keys.index("tty_chars")
+    _ttci = env.observation_keys.index("tty_chars")
 
     def _more_up() -> bool:
         try:
-            tty = nle_env.last_observation[_ttci]
+            tty = env.last_observation[_ttci]
             return any(b"--More--" in bytes(int(c) for c in row) for row in tty[:3])
         except Exception:
             return False
@@ -1408,15 +1364,15 @@ def explore_and_descend(env: NetHackCoreEnv, obs: StructuredObservation,
         return best
 
     def cur_doors():
-        uw = env.underlying.unwrapped
-        glyphs = uw.last_observation[uw._observation_keys.index("glyphs")]
+        ks = env.observation_keys
+        glyphs = env.last_observation[ks.index("glyphs")]
         return _closed_door_positions(glyphs)
 
     floors = 0
     level_idx = 0
     down_stair = None           # remembered `>` position (hidden under `@` on arrival)
-    _ks = nle_env._observation_keys
-    _bl0 = nle_env.last_observation[_ks.index("blstats")]
+    _ks = env.observation_keys
+    _bl0 = env.last_observation[_ks.index("blstats")]
     start_hp = int(_bl0[10])    # HP at call start — bail to the LLM if it drops hard
     halt = None                 # reason we returned control to the agent
     exhausted = False           # True only if every reachable tile was searched (level done)
@@ -1436,10 +1392,9 @@ def explore_and_descend(env: NetHackCoreEnv, obs: StructuredObservation,
     def obs_map():
         """Glyph-derived unambiguous map + player position. Using glyphs (not tty
         chars) fixes the open-door-vs-wall ambiguity at the source."""
-        uw = env.underlying.unwrapped
-        ks = uw._observation_keys
-        glyphs = uw.last_observation[ks.index("glyphs")]
-        bl = uw.last_observation[ks.index("blstats")]
+        ks = env.observation_keys
+        glyphs = env.last_observation[ks.index("glyphs")]
+        bl = env.last_observation[ks.index("blstats")]
         chars = _glyph_clean_chars(glyphs)
         px, py = int(bl[0]), int(bl[1])
         chars[py, px] = ord('.')  # our own tile is always walkable to path from
@@ -1451,10 +1406,9 @@ def explore_and_descend(env: NetHackCoreEnv, obs: StructuredObservation,
         fights weak monsters mid-explore rather than autopiloting past them into a
         slow death; we only call this when HP is healthy (the half-HP halt fires
         first) and we're not already beelining to reachable stairs."""
-        uw = env.underlying.unwrapped
-        ks = uw._observation_keys
-        glyphs = uw.last_observation[ks.index("glyphs")]
-        bl = uw.last_observation[ks.index("blstats")]
+        ks = env.observation_keys
+        glyphs = env.last_observation[ks.index("glyphs")]
+        bl = env.last_observation[ks.index("blstats")]
         px, py = int(bl[0]), int(bl[1])
         h, w = glyphs.shape
         for (dx, dy) in DIRS8:  # orthogonal-first ordering
@@ -1462,17 +1416,16 @@ def explore_and_descend(env: NetHackCoreEnv, obs: StructuredObservation,
             if not (0 <= nx < w and 0 <= ny < h):
                 continue
             g = int(glyphs[ny, nx])
-            if _nh.glyph_is_monster(g) and not _nh.glyph_is_pet(g):
+            if _glyph.glyph_is_monster(g) and not _glyph.glyph_is_pet(g):
                 return (dx, dy)
         return None
 
     def nearest_pet(sx, sy):
         """(x,y) of the closest pet glyph, or None. The starting pet is a strong
         early ally — we want it to kill monsters for us and to follow us downstairs."""
-        uw = env.underlying.unwrapped
-        ks = uw._observation_keys
-        glyphs = uw.last_observation[ks.index("glyphs")]
-        mask = np.asarray(_nh.glyph_is_pet(glyphs), bool)
+        ks = env.observation_keys
+        glyphs = env.last_observation[ks.index("glyphs")]
+        mask = np.asarray(_glyph.glyph_is_pet(glyphs), bool)
         if not mask.any():
             return None
         ys, xs = np.where(mask)
@@ -1505,7 +1458,7 @@ def explore_and_descend(env: NetHackCoreEnv, obs: StructuredObservation,
         chars, start = obs_map()
         # Hand control back to the agent on danger so the LLM can react (heal,
         # flee, eat, pray) instead of this skill autopiloting into death.
-        _bl = nle_env.last_observation[_ks.index("blstats")]
+        _bl = env.last_observation[_ks.index("blstats")]
         hp, hpmax, hunger = int(_bl[10]), int(_bl[11]), int(_bl[21])
         # Return EARLY (at half HP) so the LLM can heal/flee/pray before it's
         # critical — dying mid-call is the main thing capping our depth.

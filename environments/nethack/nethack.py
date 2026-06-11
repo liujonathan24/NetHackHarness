@@ -818,7 +818,7 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
                         _DIRECTION_KEYS = None
                     _DKEY = {"N": ord("k"), "S": ord("j"), "E": ord("l"), "W": ord("h"),
                              "NE": ord("u"), "NW": ord("y"), "SE": ord("n"), "SW": ord("b")}
-                    from nle import nethack as _nh
+                    from nethack_core import actions as _nh
                     kick_cmd = int(_nh.Command.KICK)
                     kick_seq = _to_action_indices(env, [kick_cmd]) + _to_action_indices(env, [_DKEY.get(door_dir, ord("."))])
                     for ka in kick_seq:
@@ -842,7 +842,7 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
                     # it, escalating count the longer we're wedged. NLE caps a
                     # search run, so this is safe. This is what unwedges the
                     # seed-22 corridor pocket (all frontiers border rock).
-                    from nle import nethack as _nh
+                    from nethack_core import actions as _nh
                     search_idx = _to_action_indices(env, [int(_nh.Command.SEARCH)])
                     n_search = min(10 * state.get("_stuck_count", 2), 30)
                     if search_idx:
@@ -1063,13 +1063,13 @@ def _update_frontier_blacklist(state: dict) -> None:
     open_frontiers = find_frontiers(chars, blacklist=blacklist_for_lvl, strict=True)
     if not open_frontiers and state["_zero_scout_streak"] >= NEEDS_HIDDEN_TURNS:
         state["_needs_hidden_passage"] = True
-    # Expose the current-level blacklist on the underlying NLE env so the
-    # in-skill autoexplore picker can consume it without needing the full
-    # verifiers state dict (which it doesn't have access to).
+    # Expose the current-level blacklist on the env so the in-skill autoexplore
+    # picker can consume it without needing the full verifiers state dict (which
+    # it doesn't have access to).
     try:
         env_obj = state.get("env")
         if env_obj is not None:
-            env_obj.underlying.unwrapped._frontier_blacklist_current = set(blacklist_for_lvl)
+            env_obj.frontier_blacklist_current = set(blacklist_for_lvl)
     except Exception:
         pass
 
