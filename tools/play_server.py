@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import math
 import pathlib
 import sys
 import time
@@ -269,7 +270,7 @@ def traces():
 def trace():
     path = request.args.get("path", "")
     rp = pathlib.Path(path).resolve()
-    if not any(str(rp).startswith(str(d.resolve())) for d in _TRACE_DIRS) or not rp.is_file():
+    if not _under_trace_dirs(rp) or not rp.is_file():
         return jsonify({"error": "not allowed"}), 400
     turns = []
     for line in open(rp):
@@ -311,11 +312,18 @@ _SAFE_BINOPS = {ast.Add: lambda a, b: a + b, ast.Sub: lambda a, b: a - b,
 _SAFE_UNARYOPS = {ast.USub: lambda a: -a, ast.UAdd: lambda a: +a}
 
 
+def _under_trace_dirs(rp: pathlib.Path) -> bool:
+    """True iff `rp` (already resolved) sits inside one of the _TRACE_DIRS.
+    Uses proper path containment (is_relative_to) rather than a prefix-string
+    check, so a sibling like `outputs_evil/` does NOT match `outputs/`."""
+    return any(rp.is_relative_to(d.resolve()) for d in _TRACE_DIRS)
+
+
 def _trace_allowed(path: str) -> pathlib.Path | None:
     """Resolve `path` and return it only if it sits under the _TRACE_DIRS
     allow-list and is a real file (same check the /trace route enforces)."""
     rp = pathlib.Path(path).resolve()
-    if rp.is_file() and any(str(rp).startswith(str(d.resolve())) for d in _TRACE_DIRS):
+    if rp.is_file() and _under_trace_dirs(rp):
         return rp
     return None
 
@@ -365,7 +373,10 @@ def _compile_metric_expr(expr: str, known: set[str]):
         if isinstance(node, ast.Constant):
             if isinstance(node.value, bool) or not isinstance(node.value, (int, float)):
                 raise ValueError("only numeric literals are allowed")
-            return float(node.value)
+            try:
+                return float(node.value)  # huge int literals raise OverflowError
+            except OverflowError:
+                raise ValueError("numeric literal is too large") from None
         if isinstance(node, ast.Name):
             if node.id not in known:
                 raise ValueError(f"unknown metric {node.id!r}; known: {sorted(known)}")
@@ -379,7 +390,12 @@ def _compile_metric_expr(expr: str, known: set[str]):
 
     def fn(rec):
         v = _ev(tree, rec)
-        return None if v is MISSING else float(v)
+        if v is MISSING:
+            return None
+        v = float(v)
+        # overflow (e.g. 1e308*1e308 -> inf) / nan must not poison chart coords;
+        # treat non-finite like a missing value (same as div-by-zero -> None).
+        return v if math.isfinite(v) else None
     return fn
 
 
@@ -390,54 +406,75 @@ def obs_metrics():
 
 @app.route("/obs/plot", methods=["POST"])
 def obs_plot():
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):  # non-dict body (e.g. [1,2] / "hi") -> clean 400
+        return jsonify({"error": "request body must be a JSON object"}), 400
     paths = data.get("paths") or []
     metrics = list(data.get("metrics") or [])
     custom = data.get("custom") or []
 
-    # 1) register custom composed metrics over the existing series (safe eval).
-    known = set(stats.metric_names())
-    for c in custom:
-        name, expr = (c.get("name") or "").strip(), (c.get("expr") or "").strip()
-        if not name or not expr:
-            return jsonify({"error": "custom metric needs a name and an expr"}), 400
-        try:
-            fn = _compile_metric_expr(expr, known)
-        except ValueError as e:
-            return jsonify({"error": f"metric {name!r}: {e}"}), 400
-        stats.register_metric(name, fn)
-        known.add(name)
-        if name not in metrics:
-            metrics.append(name)
-    if not metrics:
-        return jsonify({"error": "no metrics selected"}), 400
-
-    # 2) load each allow-listed trace into normalized records.
-    runs: list[tuple[str, list[dict]]] = []
-    for p in paths:
-        rp = _trace_allowed(p)
-        if rp is None:
-            return jsonify({"error": f"path not allowed: {p}"}), 400
-        runs.append((rp.stem, _normalize_records(stats.load_trace(rp))))
-    if not runs:
-        return jsonify({"error": "no traces selected"}), 400
-
-    # 3) render embeddable SVG fragments (one chart per metric) + an aggregate
-    # table, so they sit inline on the /obs page (no iframe / full doc).
-    labels = [lbl for lbl, _ in runs]
-    recs = [r for _, r in runs]
-    charts = []
-    for metric in metrics:
-        series_by_run = []
-        for lbl, r in runs:
+    # Custom metrics are registered process-wide in stats._CUSTOM_METRICS, so we
+    # track the names WE add this request and unregister them in a finally —
+    # otherwise they leak into later /obs/metrics responses and a reused name
+    # silently overwrites the previous one across requests.
+    registered: list[str] = []
+    try:
+        # 1) register custom composed metrics over the existing series (safe eval).
+        # Built-in names are resolved custom-first by stats.series, so a custom
+        # metric named e.g. `dlvl` would permanently shadow the built-in — reject.
+        known = set(stats.metric_names())
+        for c in custom:
+            if not isinstance(c, dict):
+                return jsonify({"error": "each custom metric must be an object"}), 400
+            name, expr = (c.get("name") or "").strip(), (c.get("expr") or "").strip()
+            if not name or not expr:
+                return jsonify({"error": "custom metric needs a name and an expr"}), 400
+            if name in stats.BUILTIN_METRICS:
+                return jsonify({"error": f"custom metric {name!r} collides with a "
+                                         f"built-in metric; pick another name"}), 400
+            if name in registered:
+                return jsonify({"error": f"duplicate custom metric name {name!r}"}), 400
             try:
-                series_by_run.append((lbl, stats.series(r, metric)))
-            except KeyError:
-                series_by_run.append((lbl, []))
-        charts.append(dashboard._svg_linechart(metric, series_by_run))
-    html = (dashboard._agg_table(labels, recs) +
-            f'<div class="charts">{"".join(charts)}</div>')
-    return jsonify({"charts_html": html})
+                fn = _compile_metric_expr(expr, known)
+            except (ValueError, OverflowError) as e:
+                return jsonify({"error": f"metric {name!r}: {e}"}), 400
+            stats.register_metric(name, fn)
+            registered.append(name)
+            known.add(name)
+            if name not in metrics:
+                metrics.append(name)
+        if not metrics:
+            return jsonify({"error": "no metrics selected"}), 400
+
+        # 2) load each allow-listed trace into normalized records.
+        runs: list[tuple[str, list[dict]]] = []
+        for p in paths:
+            rp = _trace_allowed(p)
+            if rp is None:
+                return jsonify({"error": f"path not allowed: {p}"}), 400
+            runs.append((rp.stem, _normalize_records(stats.load_trace(rp))))
+        if not runs:
+            return jsonify({"error": "no traces selected"}), 400
+
+        # 3) render embeddable SVG fragments (one chart per metric) + an aggregate
+        # table, so they sit inline on the /obs page (no iframe / full doc).
+        labels = [lbl for lbl, _ in runs]
+        recs = [r for _, r in runs]
+        charts = []
+        for metric in metrics:
+            series_by_run = []
+            for lbl, r in runs:
+                try:
+                    series_by_run.append((lbl, stats.series(r, metric)))
+                except KeyError:
+                    series_by_run.append((lbl, []))
+            charts.append(dashboard._svg_linechart(metric, series_by_run))
+        html = (dashboard._agg_table(labels, recs) +
+                f'<div class="charts">{"".join(charts)}</div>')
+        return jsonify({"charts_html": html})
+    finally:
+        for name in registered:
+            stats.unregister_metric(name)
 
 
 def main() -> None:

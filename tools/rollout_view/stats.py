@@ -151,6 +151,12 @@ def register_metric(name: str, fn: Callable[[dict], Optional[float]]) -> None:
     _CUSTOM_METRICS[name] = fn
 
 
+def unregister_metric(name: str) -> None:
+    """Remove a previously registered custom metric (no-op if absent). Lets
+    callers keep custom metrics request-scoped instead of leaking process-wide."""
+    _CUSTOM_METRICS.pop(name, None)
+
+
 def metric_names() -> list[str]:
     return sorted(set(BUILTIN_METRICS) | set(_CUSTOM_METRICS))
 

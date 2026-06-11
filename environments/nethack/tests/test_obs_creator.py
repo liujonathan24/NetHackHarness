@@ -74,6 +74,28 @@ def test_safe_eval_rejects_malicious_or_invalid(expr):
         ps._compile_metric_expr(expr, known)
 
 
+@pytest.mark.parametrize("expr", [
+    "os.path",        # attribute access
+    "a[0]",           # subscript
+    '"x"',            # string constant
+    "True",           # bool constant
+    "xp and dlvl",    # BoolOp
+    "xp > 1",         # Compare
+    "1" + "0" * 400,  # huge int literal -> OverflowError, surfaced as ValueError
+])
+def test_safe_eval_rejects_each_disallowed_ast(expr):
+    known = set(stats.metric_names())
+    with pytest.raises(ValueError):
+        ps._compile_metric_expr(expr, known)
+
+
+def test_safe_eval_non_finite_is_none():
+    # 1e308*1e308 -> inf; must be treated as MISSING, not poison chart coords.
+    known = set(stats.metric_names())
+    fn = ps._compile_metric_expr("1e308 * 1e308", known)
+    assert fn(_recs()[0]) is None
+
+
 def test_xp_lvl_adapter():
     recs = [{"turn": 0, "status": {"xp_lvl": 3}, "text": "", "raw_grid": None, "raw": {}}]
     out = ps._normalize_records(recs)
@@ -97,25 +119,28 @@ def _write_trace(path: pathlib.Path):
     path.write_text("\n".join(lines) + "\n")
 
 
-def test_plot_endpoint_with_custom_metric(client, tmp_path):
-    # write the trace into an allow-listed dir
-    d = ps._REC_DIR
-    d.mkdir(parents=True, exist_ok=True)
-    tp = d / "test_obs_tmp.ndjson"
+@pytest.fixture()
+def trace_path(tmp_path, monkeypatch):
+    """Hermetic allow-listed trace: write under tmp_path and point the server's
+    allow-list at it (no writes into the real outputs/web_play dir)."""
+    monkeypatch.setattr(ps, "_REC_DIR", tmp_path)
+    monkeypatch.setattr(ps, "_TRACE_DIRS", [tmp_path])
+    tp = tmp_path / "trace.ndjson"
     _write_trace(tp)
-    try:
-        r = client.post("/obs/plot", json={
-            "paths": [str(tp)],
-            "metrics": ["dlvl", "xp"],
-            "custom": [{"name": "composed", "expr": "xp + 10*dlvl"}],
-        })
-        assert r.status_code == 200, r.get_data(as_text=True)
-        html = r.get_json()["charts_html"]
-        assert "<svg" in html
-        # the composed custom metric chart appears (title rendered into ctitle)
-        assert "composed" in html
-    finally:
-        tp.unlink(missing_ok=True)
+    return tp
+
+
+def test_plot_endpoint_with_custom_metric(client, trace_path):
+    r = client.post("/obs/plot", json={
+        "paths": [str(trace_path)],
+        "metrics": ["dlvl", "xp"],
+        "custom": [{"name": "composed", "expr": "xp + 10*dlvl"}],
+    })
+    assert r.status_code == 200, r.get_data(as_text=True)
+    html = r.get_json()["charts_html"]
+    assert "<svg" in html
+    # the composed custom metric chart appears (title rendered into ctitle)
+    assert "composed" in html
 
 
 def test_plot_endpoint_path_safety(client):
@@ -126,19 +151,83 @@ def test_plot_endpoint_path_safety(client):
     assert "not allowed" in r.get_json()["error"]
 
 
-def test_plot_endpoint_rejects_bad_expr(client, tmp_path):
-    d = ps._REC_DIR
-    d.mkdir(parents=True, exist_ok=True)
-    tp = d / "test_obs_tmp2.ndjson"
-    _write_trace(tp)
+def test_plot_endpoint_rejects_bad_expr(client, trace_path):
+    r = client.post("/obs/plot", json={
+        "paths": [str(trace_path)], "metrics": [],
+        "custom": [{"name": "evil", "expr": "__import__('os').system('echo hi')"}],
+    })
+    assert r.status_code == 400
+
+
+def test_custom_metric_colliding_with_builtin_rejected(client, trace_path):
+    # A custom metric named like a built-in (dlvl) would permanently shadow it.
+    builtin_before = stats.BUILTIN_METRICS["dlvl"]
+    r = client.post("/obs/plot", json={
+        "paths": [str(trace_path)], "metrics": [],
+        "custom": [{"name": "dlvl", "expr": "xp + 1"}],
+    })
+    assert r.status_code == 400
+    assert "built-in" in r.get_json()["error"]
+    # built-in untouched and not shadowed afterward
+    assert stats.BUILTIN_METRICS["dlvl"] is builtin_before
+    assert "dlvl" not in stats._CUSTOM_METRICS
+
+
+def test_custom_metric_does_not_leak_into_metrics_endpoint(client, trace_path):
+    r = client.post("/obs/plot", json={
+        "paths": [str(trace_path)], "metrics": [],
+        "custom": [{"name": "foo", "expr": "xp + 1"}],
+    })
+    assert r.status_code == 200, r.get_data(as_text=True)
+    # request-scoped: foo must NOT persist into the registry afterward
+    assert "foo" not in stats._CUSTOM_METRICS
+    listed = client.get("/obs/metrics").get_json()["metrics"]
+    assert "foo" not in listed
+
+
+def test_plot_endpoint_big_int_literal_is_400(client, trace_path):
+    huge = "1" + "0" * 400
+    r = client.post("/obs/plot", json={
+        "paths": [str(trace_path)], "metrics": [],
+        "custom": [{"name": "big", "expr": huge}],
+    })
+    assert r.status_code == 400  # OverflowError surfaced as clean 400, not 500
+
+
+def test_plot_endpoint_non_dict_body_is_400(client):
+    for body in ([1, 2], "hi"):
+        r = client.post("/obs/plot", json=body)
+        assert r.status_code == 400, body
+
+
+def test_plot_endpoint_non_dict_custom_entry_is_400(client, trace_path):
+    r = client.post("/obs/plot", json={
+        "paths": [str(trace_path)], "metrics": ["dlvl"], "custom": ["notadict"],
+    })
+    assert r.status_code == 400
+
+
+def test_trace_dirs_sibling_prefix_false_positive_rejected(client, monkeypatch):
+    # A sibling dir whose name has an allow-listed dir as a string prefix
+    # (outputs vs outputs_evil) must NOT be treated as allowed.
+    allowed = _ROOT / "outputs"
+    evil = _ROOT / "outputs_evil"
+    monkeypatch.setattr(ps, "_TRACE_DIRS", [allowed])
+    evil.mkdir(parents=True, exist_ok=True)
+    fp = evil / "x.ndjson"
+    _write_trace(fp)
     try:
         r = client.post("/obs/plot", json={
-            "paths": [str(tp)], "metrics": [],
-            "custom": [{"name": "evil", "expr": "__import__('os').system('echo hi')"}],
+            "paths": [str(fp)], "metrics": ["dlvl"], "custom": [],
         })
         assert r.status_code == 400
+        assert "not allowed" in r.get_json()["error"]
     finally:
-        tp.unlink(missing_ok=True)
+        fp.unlink(missing_ok=True)
+        try:
+            evil.rmdir()
+        except OSError:
+            pass
 
 
 def test_pages_serve_200(client):
