@@ -21,7 +21,7 @@
 ## 3. Make `EngineEnv` canonical (harness integration)
 - [x] 3.1 `NetHackCoreEnv.seed/reset/step` delegate to `EngineEnv` for native tasks; reward via swappable `RewardModel` (score+dlvl*50+xp*50); native path imports neither gym nor nle. `f065d93`+`d110e04`
 - [x] 3.2 Native env observation shape parity (21,79)/blstats; cutover tests `test_core_env_cutover.py` green
-- [ ] 3.3 **Harness action-layer migration to semantics-native (design-approved).** nle's action enums ARE keystrokes (`CompassDirection.N`==107==`ord('k')`). Own the vocabulary in `nethack_core/actions.py` (IntEnums = named keystrokes); repoint `helpers.py`/`skills.py`/`pathfinding.py` off `nle.nethack`; DELETE the 38 `enum→idx`/`unwrapped.actions` index sites (step the keystroke directly); replace `unwrapped.last_observation`/`_observation_keys` with the env's own accessor. Makes the ~23 harness tests green + removes the last harness nle coupling.
+- [x] 3.3 **Harness action-layer migration to semantics-native — DONE `99da719`+`1c6fcbe`.** `nethack_core/actions.py` (nle-free IntEnums = named keystrokes); `helpers.py`/`skills.py`/`pathfinding.py`/`nethack.py` repointed; index layer deleted (keystroke is the single ABI for both backends); `last_observation`/`observation_keys`/`frontier_blacklist_current` are env-native properties. Harness tests 39→17 fail (22 fixed, 0 new); native path nle-free. REMAINING nle coupling: skills.py glyph predicates (`glyph_is_monster/pet`, `MAXPCHARS`) — handle in Phase F.
 - [x] 3.4 Snapshot/restore + tune + branch surface on the canonical env (delegated from `EngineEnv`)
 
 ## 4. Snapshot + explore (replace `legacy/replay.py` re-execution)
