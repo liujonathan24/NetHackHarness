@@ -34,11 +34,11 @@
 > validated state-modification layer on top of checkpointing. v1 mutations:
 > `hp`/`max_hp`, `goto_depth` (skip e.g. 2→4), `gold`, `xp_level`, `hunger`.
 > Applied both live (`EngineEnv.modify(**changes)`) and via an at-reset config.
-- [ ] 5.1 Fork C: secure state setters — `hp`/`max_hp`/`gold`/`xp_level`/`hunger` field pokes + `goto_depth(n)` (via `goto_level`); a whitelisted name→setter table (X-macro style), bounds-validated. Exposed via the binding.
-- [ ] 5.2 Binding + `EngineEnv.modify(**changes)` (live) — validates names/bounds, rejects unknown/out-of-range (secure); `RawEngine` low-level setters.
-- [ ] 5.3 At-reset config: `EngineEnv(modify=...)` / `reset(modify={...})` applies the modification set at episode start; `NetHackCoreEnv` passes through.
+- [x] 5.1 Fork C: secure state setters `hp`/`max_hp`/`gold`/`xp_level`/`hunger` + `goto_depth(n)` (deferred `schedule_goto`); name-keyed `nle_set_state` dispatch — DONE fork `e991505`
+- [x] 5.2 Binding + `EngineEnv.modify(**changes)` (live), whitelist+bounds validated — DONE `efd3c8a`
+- [x] 5.3 At-reset config `EngineEnv(modify=...)`/`reset(modify={...})`; `NetHackCoreEnv` pass-through — DONE `efd3c8a`
 - [ ] 5.4 Delete the 3 MiniHack tiers from `curriculum.py`; remove the `minihack` git dependency from `pyproject.toml` + lockfiles (native + saved-level tiers remain).
-- [ ] 5.5 Tests: each mutation applies + round-trips in blstats (hp/gold/xp/hunger), `goto_depth` lands on the target dlvl, out-of-range/unknown rejected, at-reset config works, curriculum loads without minihack.
+- [x] 5.5 Tests: mutations round-trip in blstats, `goto_depth` lands dlvl 4, out-of-range/unknown rejected, at-reset config — DONE `test_modify.py` (5 tests; suite 94 green)
 
 ## 6. The nle cutover
 - [ ] 6.1 Delete the `import nle` code path from `nethack_core` (env.py / __init__.py)
