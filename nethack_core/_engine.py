@@ -293,6 +293,16 @@ class RawEngine:
         lib.nle_fr_destroy.restype = None
         lib.nle_fr_destroy.argtypes = [ctypes.c_void_p]
 
+        # Portable level blob save / load.  nle_save_level mallocs a blob (caller
+        # frees via nle_free_blob).  nle_load_level is TWO-PHASE: it mutates state
+        # but does not render — the caller must step once (ctrl-R) to redraw.
+        lib.nle_save_level.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_long)]
+        lib.nle_save_level.restype = ctypes.c_void_p
+        lib.nle_free_blob.argtypes = [ctypes.c_void_p]
+        lib.nle_free_blob.restype = None
+        lib.nle_load_level.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long]
+        lib.nle_load_level.restype = ctypes.c_int
+
         # Difficulty knob catalog.  nle_get_tune returns nle_tune_t*, which is a
         # flat block of doubles indexed by the name table — so get/set are fully
         # generic (a new knob in the engine appears with no binding change).
@@ -476,6 +486,47 @@ class RawEngine:
         if handle in self._snapshots:
             self._lib.nle_fr_destroy(handle)
             self._snapshots.discard(handle)
+
+    # ------------------------------------------------------------------
+    # Portable level blob save / load
+    # ------------------------------------------------------------------
+
+    def save_level(self) -> bytes:
+        """Serialize the current dungeon level to a portable blob.
+
+        Unlike snapshot(), which captures the full live game and is bound to this
+        instance's ctx, the blob is a self-contained level description that can be
+        loaded into a fresh game on a different floor.
+
+        Raises RuntimeError if no game is active or the C call fails.
+        """
+        if self._ctx is None:
+            raise RuntimeError("save_level() requires an active game; call start() first")
+        n = ctypes.c_long(0)
+        ptr = self._lib.nle_save_level(self._ctx, ctypes.byref(n))
+        if not ptr or n.value <= 0:
+            raise RuntimeError("nle_save_level failed")
+        try:
+            return ctypes.string_at(ptr, n.value)
+        finally:
+            self._lib.nle_free_blob(ptr)
+
+    def load_level(self, blob: bytes) -> "RawEngine":
+        """Load a level blob as the current level.  Returns self.
+
+        Two-phase: the C call mutates state but does not render, so we step once
+        (ctrl-R = action 18, a no-move redraw) to re-render the new level.
+
+        Raises RuntimeError if no game is active or the C call fails.
+        """
+        if self._ctx is None:
+            raise RuntimeError("load_level() requires an active game; call start() first")
+        buf = ctypes.create_string_buffer(blob, len(blob))
+        rc = self._lib.nle_load_level(self._ctx, buf, len(blob))
+        if rc != 0:
+            raise RuntimeError(f"nle_load_level failed (rc={rc})")
+        self.step(18)  # ctrl-R redraw inside the coroutine
+        return self
 
     # ------------------------------------------------------------------
     # Difficulty knobs (nle_tune_t)

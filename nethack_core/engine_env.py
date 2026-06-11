@@ -25,6 +25,7 @@ computed here.
 from __future__ import annotations
 
 import hashlib
+import pathlib
 from typing import Optional
 
 from ._engine import RawEngine
@@ -128,6 +129,22 @@ class EngineEnv:
 
     def free_snapshot(self, handle) -> None:
         self._engine.free_snapshot(handle)
+
+    # ----- portable level blob save / load -----
+
+    def save_level(self, path) -> None:
+        """Serialize the current level to a portable blob written to ``path``."""
+        pathlib.Path(path).write_bytes(self._engine.save_level())
+
+    def load_level(self, path) -> CoreObservation:
+        """Load a level blob from ``path`` as the current level.
+
+        Returns the re-rendered observation.  The underlying C load is two-phase;
+        RawEngine.load_level steps once (ctrl-R) internally to redraw, so the
+        observation returned here already reflects the loaded level.
+        """
+        self._engine.load_level(pathlib.Path(path).read_bytes())
+        return self._engine.to_core_observation()
 
     # ----- difficulty knobs -----
 
