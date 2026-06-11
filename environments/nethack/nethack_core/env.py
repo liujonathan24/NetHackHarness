@@ -22,14 +22,15 @@ import pathlib
 from dataclasses import dataclass, field
 from typing import Any, Optional, Union
 
-import gymnasium as gym
-import nle  # noqa: F401  -- registers NetHack-* envs with gym
 import numpy as np
 
-try:
-    import minihack  # noqa: F401  -- registers MiniHack-* envs (optional)
-except ImportError:
-    pass  # MiniHack tiers will fail at make-time; that's fine.
+# `.rewards` is imported lazily inside __init__: rewards -> observations -> env
+# (for CoreObservation), so a module-scope import here would be circular.
+
+# NOTE: `gymnasium`, `nle` and `minihack` are NOT imported at module scope. The
+# native engine path (NetHackScore / NetHackChallenge driven by EngineEnv) needs
+# none of them. They are imported lazily only in the MiniHack/des_file gym path
+# (retired in the curriculum migration) and in `action_space` (PufferLib compat).
 
 logger = logging.getLogger(__name__)
 
@@ -98,8 +99,17 @@ class NetHackCoreEnv:
         no_progress_timeout: int = 10_000,
         des_file: Optional[str] = None,
         level_blob: Optional[Union[str, pathlib.Path]] = None,
+        reward_model: "Optional[RewardModel]" = None,
     ):
         self.task_name = task_name
+        # Reward is computed from the observation stream by a swappable model
+        # (the fork engine has no gym reward). Defaults to score + dlvl*50 +
+        # xp_level*50; pass reward_model=... to change the signal. Lazy import
+        # avoids the rewards->observations->env import cycle.
+        if reward_model is None:
+            from .rewards import DEFAULT_REWARD_MODEL
+            reward_model = DEFAULT_REWARD_MODEL()
+        self._reward_model = reward_model
         # `misc` is declared in NLE's space but not always returned by MiniHack
         # tasks, which makes the passive obs-space-keys checker complain. We
         # don't read misc anywhere so it's safe to omit by default.
@@ -127,6 +137,17 @@ class NetHackCoreEnv:
             self._engine: Optional["EngineEnv"] = EngineEnv()
             self._env = None
         else:
+            # Lazy gym/nle/minihack import: only the MiniHack/des_file path needs
+            # them. `import nle` registers the NetHack-* gym envs; `import minihack`
+            # registers MiniHack-*. Keeping them out of module scope means native
+            # engine usage pulls in neither gym nor nle.
+            import gymnasium as gym
+            import nle  # noqa: F401  -- registers NetHack-* envs with gym
+            try:
+                import minihack  # noqa: F401  -- registers MiniHack-* envs
+            except ImportError:
+                pass  # MiniHack tiers will fail at make-time; that's fine.
+
             self._engine = None
             # NB: passing observation_keys here is what filters NLE's huge default
             # obs dict. no_progress_timeout is only accepted by NetHackChallenge;
@@ -211,6 +232,7 @@ class NetHackCoreEnv:
             )
             if self._level_blob is not None:
                 obs = self._engine.load_level(self._level_blob)
+            self._reward_model.reset(obs)
             self._current_seeds = self._pending_seeds
             self._pending_seeds = None
             logger.info("Episode start: task=%s seeds=%s hash=%s",
@@ -245,19 +267,15 @@ class NetHackCoreEnv:
     def step(self, action: int) -> tuple[CoreObservation, float, bool, bool, dict]:
         if self._is_native:
             # Engine path: EngineEnv.step returns (obs, done, info). Map to the
-            # gym 5-tuple so callers don't break. Reward is 0.0 by design — the
-            # gym reward was never consumed as a learning signal: the verifiers
-            # rubric (scout/descent/success/ascension) derives reward entirely
-            # from observation-derived `state` fields, and the only readers of
-            # NetHackCoreEnv.step's reward (nethack.py's total_reward) feed it to
-            # debug telemetry (helpers.py JSONL "reward") and a write-only
-            # state["last_reward"]. The fork engine has no gym-score reward; the
-            # milestone/curriculum layer owns reward.
+            # gym 5-tuple so callers don't break. The fork engine has no gym
+            # reward, so reward comes from the swappable RewardModel computed over
+            # the observation stream (default: score + dlvl*50 + xp_level*50).
             obs, done, info = self._engine.step(action)
+            reward = self._reward_model.step(obs)
             # EngineEnv exposes no truncation signal; episodes terminate, not
             # truncate. Surface truncated=False unless info ever provides one.
             truncated = bool(info.get("truncated", False))
-            return obs, 0.0, bool(done), truncated, info
+            return obs, reward, bool(done), truncated, info
         obs, reward, terminated, truncated, info = self._env.step(action)
         return CoreObservation.from_nle(obs), float(reward), bool(terminated), bool(truncated), info
 
@@ -270,11 +288,13 @@ class NetHackCoreEnv:
     # ----- properties -----
 
     @property
-    def action_space(self) -> gym.Space:
+    def action_space(self):
         if self._is_native:
             # The engine consumes raw keystroke bytes (e.g. ord(".")), so the
-            # action space is the full byte range. gym consumers (puffer adapter)
-            # only need a Discrete; this is the minimal correct shape.
+            # action space is the full byte range. Only PufferLib/gym consumers
+            # need this; import gym lazily so the native path stays gym-free
+            # unless action_space is actually requested.
+            import gymnasium as gym
             return gym.spaces.Discrete(256)
         return self._env.action_space
 
