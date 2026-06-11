@@ -1,0 +1,13 @@
+{
+  "change": "level-replay",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "generated_by": "comet-handoff.sh",
+  "context_hash": "7a443f52dca213e6f5d11c063ad6790dce42becfcbb0d98bf07471421e822018",
+  "files": [
+    { "path": "openspec/changes/level-replay/proposal.md", "sha256": "923ab67dbd456ace7d859be9666cf9b2a626f9348573194a1c542a0e869a3be1" },
+    { "path": "openspec/changes/level-replay/design.md", "sha256": "1f708e10807d8c68076ee9123acb8e645ed0459cfbda4346670dbd0854b4a151" },
+    { "path": "openspec/changes/level-replay/tasks.md", "sha256": "ac164fce064658f44ea5fd3bc4ce04b080c93772935b70c2ee2b6b2512cb31bb" }
+  ]
+}
