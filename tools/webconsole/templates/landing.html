@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}NetHack Console{% endblock %}
+{% block body %}
+<div class="landing">
+  <div class="title"><span class="glyph">&gt;</span> NetHack Web Console</div>
+
+  <p class="lede">
+    An interactive browser front-end over the <b>fork NetHack engine</b>
+    (<code>EngineEnv</code>). Play the dungeon live, then dial the difficulty and
+    generation <b>knobs</b> in real time: <b>Vision</b> (night-vision radius,
+    fog-of-war, full-map reveal), <b>Stat-based</b> scaling (damage dealt/taken,
+    HP, regen, hunger, XP gain), and <b>Dungeon &amp; spawns</b> (room density,
+    monster difficulty, ongoing spawn rate, monster speed). Live knobs apply
+    immediately; <code>reset</code> knobs regenerate the floor on Reset.
+  </p>
+  <p class="lede">
+    Sessions can be <b>recorded</b> as <code>.ndjson</code> traces and
+    <b>replayed</b> turn-by-turn in the Tracer — scrub the map, status, reward,
+    messages, and any LLM agent panes. The gallery below shows a few knobs in
+    action.
+  </p>
+
+  <div class="cards">
+    <a class="card c-map" href="/map">
+      <div class="cglyph">@</div>
+      <div class="ctitle">Map Viewer</div>
+      <div class="cdesc">Live interactive play with the full grouped knob sidebar,
+        Reset/regenerate, and the Record toggle.</div>
+    </a>
+    <a class="card c-obs" href="/obs">
+      <div class="cglyph">&divonx;</div>
+      <div class="ctitle">Observation Creator</div>
+      <div class="cdesc">Compose metrics over recorded rollouts and plot them.
+        (Coming next.)</div>
+    </a>
+    <a class="card c-trace" href="/traces">
+      <div class="cglyph">&gt;</div>
+      <div class="ctitle">Tracer</div>
+      <div class="cdesc">Replay recorded <code>.ndjson</code> rollouts: scrub turns,
+        see map + status + reward + messages + LLM panes.</div>
+    </a>
+  </div>
+
+  <div id="gallery">
+    <h3>Knob-effect demos</h3>
+    <div id="demos"><div style="color:#5d5f6e">loading GIFs…</div></div>
+  </div>
+</div>
+
+<script>buildGifs('demos');</script>
+{% endblock %}

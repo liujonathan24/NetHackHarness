@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Map Viewer — NetHack Console{% endblock %}
+{% block body %}
+<div class="page">
+  <div id="main">
+    <div id="message">&nbsp;</div>
+    <div id="screen" class="screen" tabindex="0"></div>
+    <div id="status">connecting...</div>
+    <div id="hint">Click the screen, then type NetHack commands (h j k l y u b n move,
+      &gt; &lt; stairs, s search, i inventory). Arrows = movement. Enter / Esc supported.</div>
+  </div>
+  <div id="side">
+    <div id="groups"></div>
+    <div id="seedrow">seed <input id="seed" value="42"></div>
+    <button id="reset" class="act-btn" onclick="doReset()">Reset / Regenerate floor</button>
+    <button id="recbtn" class="act-btn" onclick="toggleRec()">&#9679; Record trace</button>
+    <div id="recstat"></div>
+  </div>
+</div>
+
+<script>initMap();</script>
+{% endblock %}

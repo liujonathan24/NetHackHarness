@@ -1,15 +1,21 @@
-"""NetHack web console over the fork engine: Play + Traces in one browser app.
+"""NetHack web console over the fork engine: a multi-page browser app.
 
-This is the primary interface (the Textual launchpad is legacy). It has two tabs:
+This is the primary interface (the Textual launchpad is legacy). Pages
+(Jinja templates under tools/webconsole/templates, assets under static/):
 
-  * Play   - live interactive play on EngineEnv, with the difficulty/generation
-             knobs grouped into Vision / Stat-based / Dungeon & spawns. Live
-             knobs apply immediately (vision refreshes without moving via ctrl-R);
-             reset knobs regenerate on Reset. A Record toggle writes the session
-             out as a .ndjson trace.
-  * Traces - replay recorded .ndjson rollouts (the TraceTurn format the launchpad
-             tracer uses): scrub turns, see the map + status + reward + any LLM
-             messages. Web recordings show up here too.
+  * /        landing - README/description + GIF gallery + nav cards.
+  * /map     Map Viewer - live interactive play on EngineEnv, with the
+             difficulty/generation knobs grouped into Vision / Stat-based /
+             Dungeon & spawns. Live knobs apply immediately (vision refreshes
+             without moving via ctrl-R); reset knobs regenerate on Reset. A
+             Record toggle writes the session out as a .ndjson trace.
+  * /traces  Tracer - replay recorded .ndjson rollouts (the TraceTurn format the
+             launchpad tracer uses): scrub turns, see the map + status + reward +
+             any LLM messages. Web recordings show up here too.
+  * /obs     Observation Creator - placeholder (filled in by a later task).
+
+The JSON API (/reset /step /live /set_tune /catalog /record_* /traces /trace
+/gif*) is unchanged; this is a presentation/navigation refactor only.
 
 Headless-friendly:
 
@@ -20,19 +26,29 @@ Headless-friendly:
 from __future__ import annotations
 
 import argparse
+import ast
 import json
+import math
 import pathlib
 import sys
 import time
 
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT / "environments" / "nethack"))
+sys.path.insert(0, str(_ROOT))  # so `tools.rollout_view` imports when run as a script
 
-from flask import Flask, jsonify, request, send_from_directory  # noqa: E402
+from flask import Flask, jsonify, render_template, request, send_from_directory  # noqa: E402
 
 from nethack_core.engine_env import EngineEnv  # noqa: E402
 
-app = Flask(__name__)
+from tools.rollout_view import dashboard, stats  # noqa: E402
+
+_WEB = _ROOT / "tools" / "webconsole"
+app = Flask(
+    __name__,
+    template_folder=str(_WEB / "templates"),
+    static_folder=str(_WEB / "static"),
+)
 STATE: dict = {"env": None, "seed": 42, "tune": {}, "rec": None, "turn": 0}
 _REC_DIR = _ROOT / "outputs" / "web_play"
 _TRACE_DIRS = [_REC_DIR, _ROOT / "outputs", _ROOT / "environments" / "nethack" / "outputs"]
@@ -104,9 +120,26 @@ def _record(obs, action_key=None):
 # Play routes
 # --------------------------------------------------------------------------
 
+# --------------------------------------------------------------------------
+# Page routes (HTML). The JSON API below is unchanged.
+# --------------------------------------------------------------------------
+
 @app.route("/")
 def index():
-    return _HTML
+    return render_template("landing.html", active="home")
+
+
+@app.route("/map")
+def page_map():
+    return render_template("map.html", active="map")
+
+
+@app.route("/obs")
+def page_obs():
+    # dashboard._CSS styles the embedded SVG chart fragments (.chart .ctitle
+    # .svgchart .legend .agg .kpis ...) returned by /obs/plot; inject it so they
+    # render correctly inside the page (console.css already supplies the vars).
+    return render_template("obs.html", active="obs", dash_css=dashboard._CSS)
 
 
 @app.route("/catalog")
@@ -211,6 +244,11 @@ def gif(name):
 
 @app.route("/traces")
 def traces():
+    # Serve the Tracer page to browser navigations (Accept: text/html);
+    # return the JSON rollout list to fetch() / API clients (unchanged shape).
+    accept = request.accept_mimetypes
+    if accept["text/html"] and accept["text/html"] >= accept["application/json"]:
+        return render_template("traces.html", active="traces")
     seen, out = set(), []
     for d in _TRACE_DIRS:
         if not d.exists():
@@ -232,7 +270,7 @@ def traces():
 def trace():
     path = request.args.get("path", "")
     rp = pathlib.Path(path).resolve()
-    if not any(str(rp).startswith(str(d.resolve())) for d in _TRACE_DIRS) or not rp.is_file():
+    if not _under_trace_dirs(rp) or not rp.is_file():
         return jsonify({"error": "not allowed"}), 400
     turns = []
     for line in open(rp):
@@ -257,191 +295,186 @@ def trace():
     return jsonify({"turns": turns})
 
 
-_HTML = r"""<!doctype html><html><head><meta charset="utf-8"><title>NetHack console</title>
-<style>
-  body{background:#0c0c10;color:#ddd;font-family:monospace;margin:0}
-  #tabs{display:flex;background:#15151b;border-bottom:1px solid #333}
-  #tabs button{background:none;border:0;color:#aaa;padding:10px 18px;cursor:pointer;font-size:14px}
-  #tabs button.act{color:#fff;border-bottom:2px solid #2a7;background:#1c1c24}
-  .pane{display:none}
-  .pane.act{display:flex}
-  #main{padding:12px}
-  .screen{font-size:15px;line-height:1.15;white-space:pre;letter-spacing:0;outline:1px solid #222}
-  #message{height:18px;color:#fff;margin-bottom:4px}
-  #status,#t-status{height:18px;margin-top:6px;color:#eee}
-  #hint{color:#888;margin-top:8px;font-size:12px}
-  #demos img{max-height:300px;border:1px solid #333;background:#000}
-  #side{width:360px;padding:12px;border-left:1px solid #333;background:#111;overflow-y:auto;max-height:96vh}
-  h3{color:#9c9;margin:14px 0 6px;border-bottom:1px solid #333;padding-bottom:3px}
-  .knob{display:flex;align-items:center;flex-wrap:wrap;margin:5px 0;gap:6px}
-  .knob .name{width:150px;color:#cc8;font-size:12px}
-  .knob .name .rst{color:#e85;font-size:10px}
-  .knob input[type=range]{flex:1}
-  .knob input.num{width:54px;background:#222;color:#fd0;border:1px solid #444;text-align:right}
-  .knob .note{flex-basis:100%;color:#666;font-size:10px;margin-left:150px}
-  .sw{position:relative;width:42px;height:20px;display:inline-block}
-  .sw input{opacity:0;width:0;height:0}
-  .sw span{position:absolute;inset:0;background:#444;border-radius:20px;cursor:pointer;transition:.15s}
-  .sw span:before{content:"";position:absolute;height:14px;width:14px;left:3px;top:3px;background:#ddd;border-radius:50%;transition:.15s}
-  .sw input:checked + span{background:#2a7}
-  .sw input:checked + span:before{transform:translateX(22px)}
-  #seedrow{margin:14px 0 8px}
-  #seed{width:80px;background:#222;color:#fff;border:1px solid #444}
-  button.act-btn{background:#284;color:#fff;border:0;padding:9px 12px;cursor:pointer;width:100%;font-size:14px;margin-top:6px}
-  #reset.dirty{background:#a63}
-  #recbtn.on{background:#a33}
-  #recstat{color:#f88;font-size:12px;height:16px}
-  /* traces */
-  #t-list{width:300px;border-right:1px solid #333;padding:10px;overflow-y:auto;max-height:96vh}
-  #t-list .f{padding:5px;cursor:pointer;font-size:12px;color:#bcb;border-bottom:1px solid #222}
-  #t-list .f:hover{background:#1c1c24}
-  #t-main{padding:12px;flex:1}
-  #scrub{width:100%}
-  #t-msgs{color:#ad8;margin:4px 0;min-height:18px}
-  #t-llm{margin-top:10px;font-size:12px}
-  #t-llm .lbl{color:#9c9}
-  #t-llm pre{white-space:pre-wrap;background:#15151b;padding:6px;border:1px solid #2a2a33;max-height:200px;overflow:auto}
-</style></head><body>
-<div id="tabs">
-  <button id="tab-play" class="act" onclick="showTab('play')">Play</button>
-  <button id="tab-traces" onclick="showTab('traces')">Traces</button>
-</div>
+# --------------------------------------------------------------------------
+# Observation Creator routes (/obs)
+#
+# Load web-recorded .ndjson rollouts via rollout_view.stats.load_trace, compose
+# custom metrics over the EXISTING built-in series with a RESTRICTED, SAFE
+# expression evaluator (AST whitelist — no eval/exec), then render embeddable SVG
+# charts via rollout_view.dashboard so they sit inline on the retro /obs page.
+# --------------------------------------------------------------------------
 
-<div id="play" class="pane act">
-  <div id="main">
-    <div id="message">&nbsp;</div>
-    <div id="screen" class="screen" tabindex="0"></div>
-    <div id="status">connecting...</div>
-    <div id="hint">Click the screen, then type NetHack commands (h j k l y u b n move,
-      &gt; &lt; stairs, s search, i inventory). Arrows = movement. Enter / Esc supported.</div>
-    <div id="demos"></div>
-  </div>
-  <div id="side">
-    <div id="groups"></div>
-    <div id="seedrow">seed <input id="seed" value="42"></div>
-    <button id="reset" class="act-btn" onclick="doReset()">Reset / Regenerate floor</button>
-    <button id="recbtn" class="act-btn" onclick="toggleRec()">&#9679; Record trace</button>
-    <div id="recstat"></div>
-  </div>
-</div>
+# AST node types the composed-metric expression evaluator accepts. Anything else
+# (calls, attribute access, subscripts, comprehensions, names that aren't a known
+# metric, ...) is rejected — this whitelist is the security boundary; NO eval/exec.
+_SAFE_BINOPS = {ast.Add: lambda a, b: a + b, ast.Sub: lambda a, b: a - b,
+                ast.Mult: lambda a, b: a * b, ast.Div: lambda a, b: a / b}
+_SAFE_UNARYOPS = {ast.USub: lambda a: -a, ast.UAdd: lambda a: +a}
 
-<div id="traces" class="pane">
-  <div id="t-list">loading...</div>
-  <div id="t-main">
-    <div id="t-status">pick a trace on the left</div>
-    <input type="range" id="scrub" min="0" max="0" value="0" oninput="showTurn(+this.value)">
-    <div id="t-turninfo" style="color:#888;font-size:12px"></div>
-    <div id="t-msgs"></div>
-    <div id="t-map" class="screen"></div>
-    <div id="t-llm"></div>
-  </div>
-</div>
 
-<script>
-const PALETTE=['#1a1a1a','#c44','#4b4','#b83','#46c','#b5b','#5bb','#bbb',
-               '#666','#f66','#6f6','#fd5','#6af','#f6f','#6ff','#fff'];
-const CHARCOL={'@':'#fd5','>':'#6ff','<':'#6ff','$':'#fd5','#':'#777','.':'#556',
-               '|':'#bbb','-':'#bbb','+':'#4b4'};
-function esc(ch){return ch==='<'?'&lt;':(ch==='>'?'&gt;':ch);}
-function colorize(rows,colors){
-  let h='';
-  for(let y=0;y<rows.length;y++){for(let x=0;x<rows[y].length;x++){
-    let ch=rows[y][x]; if(ch===' '){h+=' ';continue;}
-    let c=colors?colors[y][x]:-1; let col=(c>=0&&c<16)?PALETTE[c]:(CHARCOL[ch]||(/[a-zA-Z]/.test(ch)?'#d6d':'#aaa'));
-    h+='<span style="color:'+col+'">'+esc(ch)+'</span>';
-  } h+='\n';} return h;
-}
-async function post(u,b){const r=await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});return r.json();}
-function showTab(t){
-  ['play','traces'].forEach(n=>{document.getElementById(n).classList.toggle('act',n===t);
-    document.getElementById('tab-'+n).classList.toggle('act',n===t);});
-  if(t==='traces') loadTraceList();
-  if(t==='play') document.getElementById('screen').focus();
-}
+def _under_trace_dirs(rp: pathlib.Path) -> bool:
+    """True iff `rp` (already resolved) sits inside one of the _TRACE_DIRS.
+    Uses proper path containment (is_relative_to) rather than a prefix-string
+    check, so a sibling like `outputs_evil/` does NOT match `outputs/`."""
+    return any(rp.is_relative_to(d.resolve()) for d in _TRACE_DIRS)
 
-/* ---------- Play ---------- */
-let curTune={}, META={};
-function setDirty(v){document.getElementById('reset').classList.toggle('dirty',v);}
-function syncControl(name,val){const m=META[name]; if(!m)return;
-  if(m.kind==='bool'){const c=document.getElementById('k_'+name); if(c)c.checked=val>=0.5;}
-  else {const r=document.getElementById('k_'+name), n=document.getElementById('n_'+name);
-        if(r)r.value=val; if(n)n.value=(+val).toFixed(m.kind==='int'?0:2);}}
-function apply(d){
-  document.getElementById('screen').innerHTML=colorize(d.map,d.colors);
-  document.getElementById('message').textContent=d.message||' ';
-  let s=d.status;
-  document.getElementById('status').textContent='HP '+s.hp+'/'+s.max_hp+'   AC '+s.ac+'   Dlvl '+s.dlvl+'   $'+s.gold+'   XP-lvl '+s.xp_lvl+(d.done?'   [GAME OVER]':'');
-  for(const k in d.tune) syncControl(k,d.tune[k]);
-  setDirty(false);
-  document.getElementById('recstat').textContent=d.recording?('● recording '+d.recording):'';
-  document.getElementById('recbtn').classList.toggle('on',!!d.recording);
-}
-async function onChange(name,val){curTune[name]=val;
-  if(META[name].reset) setDirty(true);
-  else {const d=await post('/live',{name:name,value:val}); apply(d);}}
-async function doReset(){const seed=+document.getElementById('seed').value||42;
-  const d=await post('/reset',{seed:seed,tune:curTune}); apply(d); document.getElementById('screen').focus();}
-async function toggleRec(){
-  const on=document.getElementById('recbtn').classList.contains('on');
-  const r=await post(on?'/record_stop':'/record_start',{});
-  document.getElementById('recbtn').classList.toggle('on',!on);
-  document.getElementById('recstat').textContent=on?('saved '+(r.name||'')+' ('+(r.turns||0)+' turns)'):('● recording '+r.name);
-}
-function row(m){const div=document.createElement('div'); div.className='knob';
-  const rst=m.reset?' <span class="rst">&#8635;reset</span>':'';
-  if(m.kind==='bool'){
-    div.innerHTML='<span class="name">'+m.name+rst+'</span><label class="sw"><input type="checkbox" id="k_'+m.name+'" '+(m.default>=0.5?'checked':'')+'><span></span></label>';
-    div.querySelector('input').addEventListener('change',e=>onChange(m.name,e.target.checked?1:0));
-  } else {const dec=m.kind==='int'?0:2;
-    div.innerHTML='<span class="name">'+m.name+rst+'</span><input type="range" id="k_'+m.name+'" min="'+m.lo+'" max="'+m.hi+'" step="'+m.step+'" value="'+m.default+'"><input type="number" class="num" id="n_'+m.name+'" min="'+m.lo+'" max="'+m.hi+'" step="'+m.step+'" value="'+(+m.default).toFixed(dec)+'">';
-    const r=div.querySelector('input[type=range]'),n=div.querySelector('input.num');
-    r.addEventListener('input',e=>{n.value=(+e.target.value).toFixed(dec); onChange(m.name,+e.target.value);});
-    n.addEventListener('change',e=>{let v=Math.max(m.lo,Math.min(m.hi,+e.target.value)); n.value=v.toFixed(dec); r.value=v; onChange(m.name,v);});}
-  if(m.note){const nt=document.createElement('span'); nt.className='note'; nt.textContent=m.note; div.appendChild(nt);} return div;}
-async function build(){const cat=await(await fetch('/catalog')).json();
-  cat.knobs.forEach(m=>{META[m.name]=m; curTune[m.name]=m.default;});
-  const box=document.getElementById('groups');
-  cat.groups.forEach(g=>{const h=document.createElement('h3'); h.textContent=g; box.appendChild(h);
-    cat.knobs.filter(m=>m.group===g).forEach(m=>box.appendChild(row(m)));});}
-async function buildGifs(){const list=await(await fetch('/gifs')).json(); if(!list.length)return;
-  const box=document.getElementById('demos'); box.innerHTML='<h3>Knob effect demos</h3>';
-  list.forEach(n=>{const w=document.createElement('div'); w.style.cssText='display:inline-block;margin:6px 10px 6px 0;vertical-align:top';
-    w.innerHTML='<div style="color:#cc8;font-size:12px">'+n+'</div><img src="/gif/'+n+'">'; box.appendChild(w);});}
-const KEYMAP={'ArrowUp':'k','ArrowDown':'j','ArrowLeft':'h','ArrowRight':'l','Enter':'\r','Escape':'\x1b'};
-document.getElementById('screen').addEventListener('keydown',async e=>{
-  let ch=KEYMAP[e.key]; if(!ch&&e.key.length===1)ch=e.key; if(!ch)return; e.preventDefault();
-  apply(await post('/step',{keys:ch}));});
 
-/* ---------- Traces ---------- */
-let TURNS=[];
-async function loadTraceList(){
-  const list=await(await fetch('/traces')).json();
-  const box=document.getElementById('t-list');
-  if(!list.length){box.innerHTML='<div style="color:#888">no .ndjson traces found.<br>Record one in the Play tab.</div>'; return;}
-  box.innerHTML='<h3>Rollouts</h3>';
-  list.forEach(f=>{const d=document.createElement('div'); d.className='f';
-    d.textContent=f.name+'  ('+f.turns+')'; d.onclick=()=>loadTrace(f.path); box.appendChild(d);});
-}
-async function loadTrace(path){
-  const r=await(await fetch('/trace?path='+encodeURIComponent(path))).json();
-  TURNS=r.turns||[];
-  const sc=document.getElementById('scrub'); sc.max=Math.max(0,TURNS.length-1); sc.value=0;
-  showTurn(0);
-}
-function showTurn(i){
-  if(!TURNS.length)return; const t=TURNS[i]||TURNS[0]; const s=t.status||{};
-  document.getElementById('t-status').textContent='HP '+(s.hp??'?')+'/'+(s.max_hp??'?')+'   Dlvl '+(s.dlvl??'?')+'   reward '+(t.reward||0).toFixed(2);
-  document.getElementById('t-turninfo').textContent='turn '+t.turn+'  ('+(i+1)+'/'+TURNS.length+')';
-  document.getElementById('t-msgs').textContent=(t.messages||[]).join('  ');
-  document.getElementById('t-map').innerHTML=colorize(t.raw_grid||[],null);
-  let llm=''; if(t.user) llm+='<div class="lbl">user</div><pre>'+t.user.replace(/</g,'&lt;')+'</pre>';
-  if(t.assistant) llm+='<div class="lbl">assistant</div><pre>'+t.assistant.replace(/</g,'&lt;')+'</pre>';
-  if(t.tool_calls&&t.tool_calls.length) llm+='<div class="lbl">tool_calls</div><pre>'+JSON.stringify(t.tool_calls,null,1).replace(/</g,'&lt;')+'</pre>';
-  document.getElementById('t-llm').innerHTML=llm;
-}
+def _trace_allowed(path: str) -> pathlib.Path | None:
+    """Resolve `path` and return it only if it sits under the _TRACE_DIRS
+    allow-list and is a real file (same check the /trace route enforces)."""
+    rp = pathlib.Path(path).resolve()
+    if rp.is_file() and _under_trace_dirs(rp):
+        return rp
+    return None
 
-(async()=>{await build(); await buildGifs(); await doReset();})();
-</script></body></html>"""
+
+def _normalize_records(records: list[dict]) -> list[dict]:
+    """Web traces (_record) store status with `xp_lvl`, but stats.py's `xp`
+    metric reads status['xp']. Map xp_lvl -> xp when xp is absent so the series
+    isn't empty for web recordings. Traces that already carry `xp` (or parse it
+    from rendered text) are untouched, so other tools' traces keep working."""
+    for r in records:
+        st = r.get("status") or {}
+        if "xp" not in st and "xp_lvl" in st:
+            st["xp"] = st["xp_lvl"]
+    return records
+
+
+def _compile_metric_expr(expr: str, known: set[str]):
+    """Parse a composed-metric expression into a per-record fn via an AST
+    whitelist. Only +,-,*,/ , unary +/- , numeric literals, parentheses and
+    bare metric names (must be in `known`) are allowed. A referenced metric that
+    is None at a turn makes the whole composed value None for that turn.
+    Raises ValueError on anything outside the whitelist."""
+    try:
+        tree = ast.parse(expr, mode="eval")
+    except SyntaxError as e:
+        raise ValueError(f"could not parse expression: {e}") from None
+
+    # _Missing propagates None: any sub-expression touching a missing metric is None.
+    class _Missing:
+        pass
+    MISSING = _Missing()
+
+    def _ev(node, rec):
+        if isinstance(node, ast.Expression):
+            return _ev(node.body, rec)
+        if isinstance(node, ast.BinOp) and type(node.op) in _SAFE_BINOPS:
+            a, b = _ev(node.left, rec), _ev(node.right, rec)
+            if a is MISSING or b is MISSING:
+                return MISSING
+            if isinstance(node.op, ast.Div) and b == 0:
+                return MISSING
+            return _SAFE_BINOPS[type(node.op)](a, b)
+        if isinstance(node, ast.UnaryOp) and type(node.op) in _SAFE_UNARYOPS:
+            a = _ev(node.operand, rec)
+            return MISSING if a is MISSING else _SAFE_UNARYOPS[type(node.op)](a)
+        # numeric literal only (reject str/bytes/bool constants)
+        if isinstance(node, ast.Constant):
+            if isinstance(node.value, bool) or not isinstance(node.value, (int, float)):
+                raise ValueError("only numeric literals are allowed")
+            try:
+                return float(node.value)  # huge int literals raise OverflowError
+            except OverflowError:
+                raise ValueError("numeric literal is too large") from None
+        if isinstance(node, ast.Name):
+            if node.id not in known:
+                raise ValueError(f"unknown metric {node.id!r}; known: {sorted(known)}")
+            v = stats.series([rec], node.id)
+            return v[0][1] if v else MISSING
+        raise ValueError(f"disallowed expression element: {type(node).__name__}")
+
+    # Validate the whole tree once (with a dummy record) so bad exprs fail fast,
+    # before any metric is registered.
+    _ev(tree, {"status": {}, "text": "", "raw_grid": None, "raw": {}, "turn": 0})
+
+    def fn(rec):
+        v = _ev(tree, rec)
+        if v is MISSING:
+            return None
+        v = float(v)
+        # overflow (e.g. 1e308*1e308 -> inf) / nan must not poison chart coords;
+        # treat non-finite like a missing value (same as div-by-zero -> None).
+        return v if math.isfinite(v) else None
+    return fn
+
+
+@app.route("/obs/metrics")
+def obs_metrics():
+    return jsonify({"metrics": stats.metric_names()})
+
+
+@app.route("/obs/plot", methods=["POST"])
+def obs_plot():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):  # non-dict body (e.g. [1,2] / "hi") -> clean 400
+        return jsonify({"error": "request body must be a JSON object"}), 400
+    paths = data.get("paths") or []
+    metrics = list(data.get("metrics") or [])
+    custom = data.get("custom") or []
+
+    # Custom metrics are registered process-wide in stats._CUSTOM_METRICS, so we
+    # track the names WE add this request and unregister them in a finally —
+    # otherwise they leak into later /obs/metrics responses and a reused name
+    # silently overwrites the previous one across requests.
+    registered: list[str] = []
+    try:
+        # 1) register custom composed metrics over the existing series (safe eval).
+        # Built-in names are resolved custom-first by stats.series, so a custom
+        # metric named e.g. `dlvl` would permanently shadow the built-in — reject.
+        known = set(stats.metric_names())
+        for c in custom:
+            if not isinstance(c, dict):
+                return jsonify({"error": "each custom metric must be an object"}), 400
+            name, expr = (c.get("name") or "").strip(), (c.get("expr") or "").strip()
+            if not name or not expr:
+                return jsonify({"error": "custom metric needs a name and an expr"}), 400
+            if name in stats.BUILTIN_METRICS:
+                return jsonify({"error": f"custom metric {name!r} collides with a "
+                                         f"built-in metric; pick another name"}), 400
+            if name in registered:
+                return jsonify({"error": f"duplicate custom metric name {name!r}"}), 400
+            try:
+                fn = _compile_metric_expr(expr, known)
+            except (ValueError, OverflowError) as e:
+                return jsonify({"error": f"metric {name!r}: {e}"}), 400
+            stats.register_metric(name, fn)
+            registered.append(name)
+            known.add(name)
+            if name not in metrics:
+                metrics.append(name)
+        if not metrics:
+            return jsonify({"error": "no metrics selected"}), 400
+
+        # 2) load each allow-listed trace into normalized records.
+        runs: list[tuple[str, list[dict]]] = []
+        for p in paths:
+            rp = _trace_allowed(p)
+            if rp is None:
+                return jsonify({"error": f"path not allowed: {p}"}), 400
+            runs.append((rp.stem, _normalize_records(stats.load_trace(rp))))
+        if not runs:
+            return jsonify({"error": "no traces selected"}), 400
+
+        # 3) render embeddable SVG fragments (one chart per metric) + an aggregate
+        # table, so they sit inline on the /obs page (no iframe / full doc).
+        labels = [lbl for lbl, _ in runs]
+        recs = [r for _, r in runs]
+        charts = []
+        for metric in metrics:
+            series_by_run = []
+            for lbl, r in runs:
+                try:
+                    series_by_run.append((lbl, stats.series(r, metric)))
+                except KeyError:
+                    series_by_run.append((lbl, []))
+            charts.append(dashboard._svg_linechart(metric, series_by_run))
+        html = (dashboard._agg_table(labels, recs) +
+                f'<div class="charts">{"".join(charts)}</div>')
+        return jsonify({"charts_html": html})
+    finally:
+        for name in registered:
+            stats.unregister_metric(name)
 
 
 def main() -> None:
