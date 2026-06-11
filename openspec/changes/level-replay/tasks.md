@@ -19,10 +19,10 @@
 - [x] 2.4 Tests: save→load round-trip (loaded floor == saved), generate-N-floors smoke, new knobs settable + safe — DONE `b1b2178`+`9a10b02`
 
 ## 3. Make `EngineEnv` canonical (harness integration)
-- [ ] 3.1 `NetHackCoreEnv.seed/reset/step` delegate to `EngineEnv`; build `CoreObservation` from binding buffers
-- [ ] 3.2 Verify `observations.py` `shape()` + `StructuredObservation` field/type parity vs the pre-cutover shape (parity test)
-- [ ] 3.3 Update `skills.py` action-index mapping + `last_observation`/`_observation_keys` reads to the binding
-- [ ] 3.4 Snapshot/restore + tune surface available on the canonical env (delegated from `EngineEnv`)
+- [x] 3.1 `NetHackCoreEnv.seed/reset/step` delegate to `EngineEnv` for native tasks; reward via swappable `RewardModel` (score+dlvl*50+xp*50); native path imports neither gym nor nle. `f065d93`+`d110e04`
+- [x] 3.2 Native env observation shape parity (21,79)/blstats; cutover tests `test_core_env_cutover.py` green
+- [ ] 3.3 **Harness action-layer migration to semantics-native (design-approved).** nle's action enums ARE keystrokes (`CompassDirection.N`==107==`ord('k')`). Own the vocabulary in `nethack_core/actions.py` (IntEnums = named keystrokes); repoint `helpers.py`/`skills.py`/`pathfinding.py` off `nle.nethack`; DELETE the 38 `enum→idx`/`unwrapped.actions` index sites (step the keystroke directly); replace `unwrapped.last_observation`/`_observation_keys` with the env's own accessor. Makes the ~23 harness tests green + removes the last harness nle coupling.
+- [x] 3.4 Snapshot/restore + tune + branch surface on the canonical env (delegated from `EngineEnv`)
 
 ## 4. Snapshot + explore (replace `legacy/replay.py` re-execution)
 - [ ] 4.1 Swap `legacy/replay.py`'s `(seed,actions)` re-execution to snapshot/restore; keep old recordings viewer-readable (no migration)
