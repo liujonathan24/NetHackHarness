@@ -56,3 +56,31 @@ def test_unknown_start_knob_raises():
     with pytest.raises(KeyError):
         env.start(core=42, disp=42, tune={"not_a_real_knob": 1.0})
     env.end()
+
+
+# --- remaining Pillar 2 generation knobs (level-replay) --------------------
+NEW_GEN_KNOBS = [
+    "mob_spawn", "trap_density", "locked_door", "corridor_connectivity", "room_size",
+]
+
+
+def test_new_generation_knobs_settable_and_safe():
+    """Each new generation knob is settable at start across its range (incl. the
+    0.0 edge) and the floor still generates without crashing; the value round-trips.
+    Effects are mostly off-screen, so this is a settability + safety contract."""
+    for knob in NEW_GEN_KNOBS:
+        for val in (0.0, 0.5, 1.0, 1.5, 3.0):
+            env = _engine.RawEngine()
+            env.start(core=42, disp=42, tune={knob: val})
+            assert env.get_tune()[knob] == val, f"{knob}={val} did not round-trip"
+            for _ in range(2):
+                env.step(46)  # '.' wait — floor exists, engine steps without crash
+            assert env.chars is not None
+            env.end()
+
+
+def test_new_generation_knobs_one_matches_unset():
+    """At 1.0 every new knob reproduces the vanilla generator (GATE A parity)."""
+    base = _floor_cells()
+    for knob in NEW_GEN_KNOBS:
+        assert _floor_cells(**{knob: 1.0}) == base, f"{knob}=1.0 drifted from vanilla"
