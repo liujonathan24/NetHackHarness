@@ -14,9 +14,9 @@
 - [x] 3.2 Grouped knob sidebar (Vision / Stat-based / Dungeon & spawns); bool switches; slider + editable number; live vs reset apply; Reset/regenerate; Record toggle.
 
 ## 4. Observation Creator (`/obs`) — metric composition + plotting
-- [ ] 4.1 Load rollouts (reuse the `.ndjson` list); adapter from our TraceTurn fields to the `records` shape `tools/rollout_view.stats` expects.
-- [ ] 4.2 `GET /obs/metrics` (built-in series) + `POST /obs/plot` (paths + metrics + a custom composition over existing series via `register_custom_metric`; restricted operator set, no arbitrary eval).
-- [ ] 4.3 Render plots via `tools/rollout_view` `_svg_linechart` / `render_dashboard`; embed in the page.
+- [x] 4.1 Load rollouts (reuse the `.ndjson` list); adapter from our TraceTurn fields to the `records` shape `tools/rollout_view.stats` expects.
+- [x] 4.2 `GET /obs/metrics` (built-in series) + `POST /obs/plot` (paths + metrics + a custom composition over existing series via `register_metric`; restricted AST operator set, no arbitrary eval).
+- [x] 4.3 Render plots via `tools/rollout_view` `_svg_linechart` / `_agg_table`; embed in the page.
 
 ## 5. Tracer (`/traces`)
 - [x] 5.1 List `.ndjson` rollouts; scrubber over turns; render map + status + reward + messages + LLM panes.
