@@ -33,6 +33,14 @@ def main() -> None:
         shutil.copy2(py, DST / py.name)
         copied += 1
 
+    # The ctypes engine binding (_engine.py / engine_env.py, copied above) needs
+    # its build script too; it is not a *.py file.
+    build_sh = SRC / "build_engine.sh"
+    if build_sh.is_file():
+        shutil.copy2(build_sh, DST / build_sh.name)
+        (DST / build_sh.name).chmod(0o755)
+        copied += 1
+
     init = DST / "__init__.py"
     if not init.exists():
         init.write_text('"""Vendored nethack_core for Hub deployment. Edit nethack_core/ in the workspace root, not here."""\n')
