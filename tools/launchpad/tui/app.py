@@ -20,6 +20,11 @@ from tools.launchpad.tui.screens.launch import LaunchScreen
 from tools.launchpad.tui.screens.traces import TracesScreen
 from tools.launchpad.tui.screens.train import TrainScreen
 
+# NOTE: the engine-backed "Play" screen (screens/play.py) is WIP — it composes
+# fine standalone but currently fails to attach children when the NetHack engine
+# is constructed inside the Textual lifecycle (a stdout/compose interaction under
+# investigation). Left unregistered so the launchpad stays functional; the
+# floor-regeneration value it targets is available via tools/render_floor.py.
 _ORDER = ("launch", "train", "harness", "traces")
 _LABELS = {"launch": "1·Launch", "train": "2·Train", "harness": "3·Harness", "traces": "4·Traces"}
 

@@ -46,7 +46,7 @@ class CoreObservation:
     inv_strs: np.ndarray        # (55, 80) uint8 -- inventory text
     inv_letters: np.ndarray     # (55,) uint8 -- inventory letters
     inv_glyphs: np.ndarray      # (55,) int16
-    blstats: np.ndarray         # (26,) int -- HP, AC, hunger, dlvl, ...
+    blstats: np.ndarray         # (26 or 27,) int -- HP, AC, hunger, dlvl, ... (27 on fork engine: NLE_BLSTATS_SIZE=27)
     misc: Optional[np.ndarray] = None  # (3,) -- input-mode flags; not on MiniHack
 
     @classmethod
