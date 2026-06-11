@@ -13,9 +13,28 @@ The engine SHALL let a caller generate floors natively (seed + generation knobs)
 - **WHEN** floors are generated across varying seeds/knobs and saved
 - **THEN** distinct floor blobs are produced and each reloads to its saved layout
 
-### Requirement: Curriculum runs without MiniHack
-The curriculum tiers SHALL run with `minihack` removed. The static des tiers (`empty_room`, `solo_combat`, `multi_combat`) SHALL be compiled once to level-file blobs (des → `lev_comp` → instantiate → save) and loaded via `load_level`; the native-generation tiers SHALL use the engine's generation directly.
+### Requirement: MiniHack is removed
+The MiniHack mini-task curriculum tiers SHALL be removed (not migrated), and the `minihack` git dependency SHALL be dropped from all `pyproject.toml`/lockfiles. Native-generation tiers and saved-level blobs remain the level sources.
 
-#### Scenario: Migrated tiers load and play (behavioral smoke)
-- **WHEN** each migrated curriculum tier is loaded
-- **THEN** it presents the specified features (a downstair, the specified monsters/room) and a short rollout runs to completion — verified without `minihack` installed
+#### Scenario: Curriculum runs without MiniHack
+- **WHEN** the curriculum is exercised with `minihack` uninstalled
+- **THEN** it runs using native generation and/or saved-level blobs, importing no `minihack`
+
+### Requirement: Secure state checkpoint + modification
+On top of snapshot/restore and save/load, the engine SHALL provide a curated, validated state-modification API. `EngineEnv.modify(**changes)` SHALL apply a whitelisted set of mutations — `hp`, `max_hp`, `goto_depth`, `gold`, `xp_level`, `hunger` — both live and via an at-reset config. Unknown fields and out-of-range values SHALL be rejected (no arbitrary memory writes).
+
+#### Scenario: Apply a field mutation
+- **WHEN** `modify(hp=20)` (or `gold`/`xp_level`/`hunger`) is applied
+- **THEN** the corresponding `blstats` field reflects the new value on the next observation
+
+#### Scenario: Skip dungeon levels
+- **WHEN** `modify(goto_depth=4)` is applied from dungeon level 2
+- **THEN** the hero is on dungeon level 4 (the depth blstat reads 4) on a valid floor
+
+#### Scenario: Reject unsafe modifications
+- **WHEN** an unknown field or an out-of-range value is passed to `modify`
+- **THEN** it is rejected with an error and the game state is unchanged
+
+#### Scenario: At-reset modification config
+- **WHEN** a modification config is supplied at `reset`
+- **THEN** the episode starts with those mutations applied

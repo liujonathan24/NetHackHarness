@@ -29,11 +29,16 @@
 - [ ] 4.2 Test: `branch(n, reseed=True)` shows outcome variance across branches; `reseed=False` identical; plain `restore` byte-exact
 - [ ] 4.3 Update `tests/test_replay.py` + `record_demo.py` to the snapshot mechanism
 
-## 5. Level customization + curriculum migration
-- [ ] 5.1 Format = concrete `savelev`/`getlev` blobs (OQ4); curriculum assets under `nethack_core/levels/` — documented in the design doc
-- [ ] 5.2 Compile the 3 static des tiers once (des → `lev_comp` → instantiate → `save_level`) to level blobs; native tiers stay native generation
-- [ ] 5.3 Behavioral-smoke parity: each migrated tier loads, shows the specified features (downstair, monsters/room), and a short rollout runs — verified with `minihack` uninstalled (no byte-match)
-- [ ] 5.4 Remove the `minihack` git dependency from `pyproject.toml` + lockfiles
+## 5. Secure state checkpoint + modification (REPLACES curriculum migration — design pivot 2026-06-11)
+> Abandon the MiniHack mini-task tiers (delete, don't migrate). Build a curated,
+> validated state-modification layer on top of checkpointing. v1 mutations:
+> `hp`/`max_hp`, `goto_depth` (skip e.g. 2→4), `gold`, `xp_level`, `hunger`.
+> Applied both live (`EngineEnv.modify(**changes)`) and via an at-reset config.
+- [ ] 5.1 Fork C: secure state setters — `hp`/`max_hp`/`gold`/`xp_level`/`hunger` field pokes + `goto_depth(n)` (via `goto_level`); a whitelisted name→setter table (X-macro style), bounds-validated. Exposed via the binding.
+- [ ] 5.2 Binding + `EngineEnv.modify(**changes)` (live) — validates names/bounds, rejects unknown/out-of-range (secure); `RawEngine` low-level setters.
+- [ ] 5.3 At-reset config: `EngineEnv(modify=...)` / `reset(modify={...})` applies the modification set at episode start; `NetHackCoreEnv` passes through.
+- [ ] 5.4 Delete the 3 MiniHack tiers from `curriculum.py`; remove the `minihack` git dependency from `pyproject.toml` + lockfiles (native + saved-level tiers remain).
+- [ ] 5.5 Tests: each mutation applies + round-trips in blstats (hp/gold/xp/hunger), `goto_depth` lands on the target dlvl, out-of-range/unknown rejected, at-reset config works, curriculum loads without minihack.
 
 ## 6. The nle cutover
 - [ ] 6.1 Delete the `import nle` code path from `nethack_core` (env.py / __init__.py)
