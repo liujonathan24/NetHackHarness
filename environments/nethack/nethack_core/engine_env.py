@@ -28,7 +28,19 @@ import hashlib
 import pathlib
 from typing import Optional
 
-from ._engine import RawEngine
+import numpy as np
+
+from ._engine import (
+    COLNO,
+    NLE_BLSTATS_SIZE,
+    NLE_INVENTORY_SIZE,
+    NLE_INVENTORY_STR_LENGTH,
+    NLE_MESSAGE_SIZE,
+    NLE_TERM_CO,
+    NLE_TERM_LI,
+    ROWNO,
+    RawEngine,
+)
 from .env import CoreObservation, EpisodeMetadata
 
 
@@ -207,6 +219,44 @@ class EngineEnv:
     def engine(self) -> RawEngine:
         """Escape hatch for the raw engine (snapshot internals, obs buffers)."""
         return self._engine
+
+    @property
+    def observation_space(self):
+        """A gymnasium Dict space describing the CoreObservation buffers.
+
+        Built lazily from the engine layout constants (so it is valid before the
+        first reset and does not require gymnasium at import time). Only
+        gym-shaped consumers (e.g. the PufferLib adapter) need this; the engine
+        itself works on raw numpy buffers.
+        """
+        import gymnasium as gym
+
+        u8 = lambda shape: gym.spaces.Box(  # noqa: E731
+            low=0, high=255, shape=shape, dtype=np.uint8
+        )
+        i16 = lambda shape: gym.spaces.Box(  # noqa: E731
+            low=np.iinfo(np.int16).min, high=np.iinfo(np.int16).max,
+            shape=shape, dtype=np.int16,
+        )
+        i64 = lambda shape: gym.spaces.Box(  # noqa: E731
+            low=np.iinfo(np.int64).min, high=np.iinfo(np.int64).max,
+            shape=shape, dtype=np.int64,
+        )
+        map_shape = (ROWNO, COLNO - 1)
+        tty_shape = (NLE_TERM_LI, NLE_TERM_CO)
+        return gym.spaces.Dict({
+            "tty_chars": u8(tty_shape),
+            "tty_colors": u8(tty_shape),
+            "tty_cursor": u8((2,)),
+            "glyphs": i16(map_shape),
+            "chars": u8(map_shape),
+            "colors": u8(map_shape),
+            "message": u8((NLE_MESSAGE_SIZE,)),
+            "inv_strs": u8((NLE_INVENTORY_SIZE, NLE_INVENTORY_STR_LENGTH)),
+            "inv_letters": u8((NLE_INVENTORY_SIZE,)),
+            "inv_glyphs": i16((NLE_INVENTORY_SIZE,)),
+            "blstats": i64((NLE_BLSTATS_SIZE,)),
+        })
 
 
 def _hash_seeds(core: int, disp: int) -> str:
