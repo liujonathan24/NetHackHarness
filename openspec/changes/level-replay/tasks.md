@@ -8,15 +8,15 @@
 - [x] 0.2 **Spike — mid-episode reseed: FEASIBLE, NO fork C needed.** Gameplay RNG is ISAAC64 in `nle_ctx_t->rng_state[2]` (captured by snapshot); `nle_set_seed` (already exported) → `set_random`→`isaac64_init` fully re-seeds it. Order: `restore` → `nle_set_seed(core,disp)` → `step`. Proven: 16/16 reseeds diverged; no-reseed byte-identical; reproducible per seed. Just needs a ctypes binding + `EngineEnv.branch`.
 
 ## 1. Fork C API (submodule → fork branch + PR)
-- [ ] 1.1 `nle_save_level(ctx, &len) -> blob` + `nle_load_level(ctx, bytes, len) -> int` per the proven Spike 0.1 approach (two-phase load; hero re-seat + `vision_reset`; rl-mirror scrub). Decls in `include/nle.h` near the seed API; add `#include <fcntl.h>`,`#include "lev.h"`
-- [ ] 1.2 Wire remaining Pillar 2 generation knobs to their `mklev`/spawn read-sites: `mob_spawn`, `trap_density`, `locked_door`, `corridor_connectivity`, `room_size`
-- [ ] 1.3 Open the fork PR; after merge, bump the `third_party/NetHack` submodule pointer in the harness
+- [x] 1.1 `nle_save_level(ctx, &len) -> blob` + `nle_load_level(ctx, bytes, len) -> int` per the proven Spike 0.1 approach (two-phase load; hero re-seat + `vision_reset`; rl-mirror scrub). Decls in `include/nle.h` near the seed API; add `#include <fcntl.h>`,`#include "lev.h"` — DONE fork `b7d0423`
+- [x] 1.2 Wire remaining Pillar 2 generation knobs to their `mklev`/spawn read-sites: `mob_spawn`, `trap_density`, `locked_door`, `corridor_connectivity`, `room_size` — DONE fork `70a7175` (knob<=0 guarded, 1.0 parity holds)
+- [~] 1.3 Open the fork PR; after merge, bump the `third_party/NetHack` submodule pointer — submodule bumped provisionally (harness `86d205d` → fork `70a7175`); fork branch PUSH + PR still pending (final A4 at end of build)
 
 ## 2. Binding surface (`_engine` / `EngineEnv`)
-- [ ] 2.1 Expose `save_level(path)` / `load_level(path)` on `RawEngine` and `EngineEnv` against a floor-library dir (closes custom-nethack-engine §4.4 partial); honor the two-phase render (step once after load)
-- [ ] 2.2 Expose the new generation knobs through the tune surface; assert they round-trip
-- [ ] 2.3 Bind the already-exported `nle_set_seed` as `RawEngine.reseed(core, disp)`; implement `EngineEnv.branch(n, reseed=True)` = snapshot → for each: restore → reseed(distinct) → return continuation (per Spike 0.2)
-- [ ] 2.4 Tests: save→load round-trip (loaded floor == saved), generate-N-floors smoke, new knobs settable + safe
+- [x] 2.1 Expose `save_level(path)` / `load_level(path)` on `RawEngine` and `EngineEnv` (closes custom-nethack-engine §4.4 partial); two-phase render honored; round-trip + hero-placement tested. Harness `3144667`+`b1b2178`, fork hero fix `22cc153`
+- [x] 2.2 Expose the new generation knobs through the tune surface; assert they round-trip — DONE (generic catalog; `9a10b02`)
+- [x] 2.3 Bind the already-exported `nle_set_seed` as `RawEngine.reseed(core, disp)`; implement `EngineEnv.branch(n, reseed=True)` = snapshot → for each: restore → reseed(distinct) → return continuation — DONE `55559d5` (8/8 branches diverge, 1/8 without)
+- [x] 2.4 Tests: save→load round-trip (loaded floor == saved), generate-N-floors smoke, new knobs settable + safe — DONE `b1b2178`+`9a10b02`
 
 ## 3. Make `EngineEnv` canonical (harness integration)
 - [ ] 3.1 `NetHackCoreEnv.seed/reset/step` delegate to `EngineEnv`; build `CoreObservation` from binding buffers
