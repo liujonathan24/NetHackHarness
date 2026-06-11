@@ -64,10 +64,22 @@ class _TuneProxy:
 class EngineEnv:
     """Deterministic NetHack env over the fork engine with snapshot + tune."""
 
-    def __init__(self) -> None:
+    #: Whitelist of secure-mutable state fields -> inclusive (lo, hi) bounds.
+    #: goto_depth is handled separately (the engine validates its upper bound).
+    _MODIFY_BOUNDS = {
+        "hp": (0, 30000),
+        "max_hp": (1, 30000),
+        "gold": (0, 10_000_000),
+        "xp_level": (1, 30),
+        "hunger": (0, 2000),
+    }
+
+    def __init__(self, modify: Optional[dict] = None) -> None:
         self._engine = RawEngine()
         self._pending_seeds: Optional[tuple[int, int]] = None
         self._current_seeds: Optional[tuple[int, int]] = None
+        #: Default modify config applied on every reset() (unless reset overrides).
+        self._default_modify = dict(modify) if modify else None
         #: ``env.tune.get()`` / ``env.tune.set(**knobs)`` difficulty-knob view.
         self.tune = _TuneProxy(self._engine)
 
@@ -85,6 +97,7 @@ class EngineEnv:
         *,
         seeds: Optional[tuple[int, int]] = None,
         tune: Optional[dict] = None,
+        modify: Optional[dict] = None,
     ) -> tuple[CoreObservation, EpisodeMetadata]:
         """Start a fresh game. Seeds must be staged via seed() or passed here.
 
@@ -94,6 +107,12 @@ class EngineEnv:
         ``tune`` applies difficulty-knob overrides before the starting level is
         generated, so generation-time knobs (e.g. room_density) reshape the
         starting floor. This is the "regenerate with these knobs" path.
+
+        ``modify`` applies whitelisted, bounds-checked state mutations (and an
+        optional ``goto_depth`` dungeon jump) AFTER the game has started, via
+        :meth:`modify`. If not passed, the per-instance default from
+        ``__init__(modify=...)`` is applied instead. Pass ``modify={}`` to apply
+        no mutations regardless of the default.
         """
         if seeds is not None:
             self._pending_seeds = seeds
@@ -111,7 +130,43 @@ class EngineEnv:
             seed_hash=_hash_seeds(*self._current_seeds),
             task_name="engine",
         )
-        return self._engine.to_core_observation(), meta
+        obs = self._engine.to_core_observation()
+        effective_modify = modify if modify is not None else self._default_modify
+        if effective_modify:
+            obs = self.modify(**effective_modify)
+        return obs, meta
+
+    # ----- secure state mutation -----
+
+    def modify(self, **changes) -> CoreObservation:
+        """Apply whitelisted, bounds-checked state mutations.
+
+        Validates the WHOLE call first (unknown fields or out-of-range values
+        raise before any engine write happens, so no partial/arbitrary writes),
+        then applies each field via the engine. ``goto_depth=n`` jumps the
+        dungeon level (the engine validates the upper bound). Returns the
+        refreshed CoreObservation.
+        """
+        depth = changes.pop("goto_depth", None)
+        for k, v in changes.items():
+            if k not in self._MODIFY_BOUNDS:
+                allowed = sorted(self._MODIFY_BOUNDS) + ["goto_depth"]
+                raise KeyError(
+                    f"unknown modify field {k!r}; allowed: {allowed}"
+                )
+            lo, hi = self._MODIFY_BOUNDS[k]
+            if not (lo <= int(v) <= hi):
+                raise ValueError(f"{k}={v} out of range [{lo},{hi}]")
+        if depth is not None and not (1 <= int(depth) <= 60):
+            raise ValueError(f"goto_depth={depth} out of range")
+        for k, v in changes.items():
+            self._engine.set_state(k, int(v))
+        if depth is not None:
+            self._engine.goto_depth(int(depth))
+        else:
+            # ctrl-R redraw so blstats refresh without consuming a game turn.
+            self._engine.step(18)
+        return self._engine.to_core_observation()
 
     def step(self, action: int) -> tuple[CoreObservation, bool, dict]:
         """Advance one action. Returns (observation, done, info)."""

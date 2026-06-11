@@ -313,6 +313,15 @@ class RawEngine:
         lib.nle_get_tune.restype = ctypes.POINTER(ctypes.c_double)
         lib.nle_get_tune.argtypes = [ctypes.c_void_p]
 
+        # Secure single-field state mutation + deferred dungeon-level jump.
+        # nle_set_state writes a whitelisted blstats-backed field (rc!=0 on an
+        # unknown name).  nle_goto_depth is TWO-PHASE like nle_load_level: it only
+        # schedules the jump; the actual level change happens on the next step.
+        lib.nle_set_state.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_long]
+        lib.nle_set_state.restype = ctypes.c_int
+        lib.nle_goto_depth.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        lib.nle_goto_depth.restype = ctypes.c_int
+
         # Reseed the gameplay/display RNGs.  Used after restore() to make
         # branches diverge: the 4th arg `reseed` is a C boolean (1 byte).
         lib.nle_set_seed.argtypes = [
@@ -552,6 +561,45 @@ class RawEngine:
         if rc != 0:
             raise RuntimeError(f"nle_load_level failed (rc={rc})")
         self.step(18)  # ctrl-R redraw inside the coroutine
+        return self
+
+    # ------------------------------------------------------------------
+    # Secure state mutation (single field) + deferred dungeon-level jump
+    # ------------------------------------------------------------------
+
+    def set_state(self, field: str, value: int) -> "RawEngine":
+        """Set a single whitelisted state field on the engine.  Returns self.
+
+        The C side only accepts a fixed whitelist of field names
+        (``hp``/``max_hp``/``gold``/``xp_level``/``hunger``); an unknown name
+        raises KeyError rather than writing arbitrary memory.  Bounds checking
+        is the caller's responsibility (EngineEnv.modify enforces it).
+
+        Raises RuntimeError if no game is active.
+        """
+        if self._ctx is None:
+            raise RuntimeError("set_state() requires an active game; call start() first")
+        rc = self._lib.nle_set_state(self._ctx, field.encode(), int(value))
+        if rc != 0:
+            raise KeyError(f"unknown state field {field!r}")
+        return self
+
+    def goto_depth(self, n: int) -> "RawEngine":
+        """Jump to dungeon level ``n``.  Returns self.
+
+        Two-phase like load_level: the C call only schedules the jump (the
+        engine runs deferred_goto() after the next rhack), so we step once to
+        process it.  A wait step ('.') runs rhack and triggers the deferred
+        jump; the wait may consume a game turn, which is acceptable for v1.
+
+        Raises ValueError if ``n`` is out of range, RuntimeError if no game.
+        """
+        if self._ctx is None:
+            raise RuntimeError("goto_depth() requires an active game; call start() first")
+        rc = self._lib.nle_goto_depth(self._ctx, int(n))
+        if rc != 0:
+            raise ValueError(f"goto_depth({n}) out of range")
+        self.step(ord("."))  # process the deferred goto (a wait step runs rhack)
         return self
 
     # ------------------------------------------------------------------

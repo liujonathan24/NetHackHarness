@@ -100,8 +100,12 @@ class NetHackCoreEnv:
         des_file: Optional[str] = None,
         level_blob: Optional[Union[str, pathlib.Path]] = None,
         reward_model: "Optional[RewardModel]" = None,
+        modify: Optional[dict] = None,
     ):
         self.task_name = task_name
+        # Default secure state mutations applied on every native reset() (and
+        # exposed live via the modify() pass-through). Engine path only.
+        self._modify = dict(modify) if modify else None
         # Reward is computed from the observation stream by a swappable model
         # (the fork engine has no gym reward). Defaults to score + dlvl*50 +
         # xp_level*50; pass reward_model=... to change the signal. Lazy import
@@ -250,6 +254,8 @@ class NetHackCoreEnv:
             )
             if self._level_blob is not None:
                 obs = self._engine.load_level(self._level_blob)
+            if self._modify:
+                obs = self._engine.modify(**self._modify)
             self._reward_model.reset(obs)
             self._current_seeds = self._pending_seeds
             self._pending_seeds = None
@@ -331,6 +337,25 @@ class NetHackCoreEnv:
         if 0 <= action < self._action_set_len:
             return action  # already an index
         return action
+
+    def modify(self, **changes) -> CoreObservation:
+        """Apply whitelisted, bounds-checked state mutations (native path only).
+
+        Pass-through to :meth:`EngineEnv.modify`: validates a fixed field
+        whitelist with bounds (and an optional ``goto_depth`` dungeon jump),
+        rejecting unknown fields or out-of-range values before any engine write.
+        Updates ``last_observation`` and returns the refreshed CoreObservation.
+
+        Raises RuntimeError on the MiniHack/gym backend, which has no engine.
+        """
+        if not self._is_native:
+            raise RuntimeError(
+                "modify() is only available on the native engine path "
+                "(not the MiniHack/gym backend)."
+            )
+        obs = self._engine.modify(**changes)
+        self._last_observation = obs
+        return obs
 
     def close(self) -> None:
         if self._is_native:
