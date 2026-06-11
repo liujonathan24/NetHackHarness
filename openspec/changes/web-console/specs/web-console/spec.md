@@ -18,12 +18,12 @@ The web console SHALL be a multi-page browser app served by one Flask process ov
 - **WHEN** a user types movement keys and adjusts a live knob on `/map`
 - **THEN** the hero moves and the live knob takes effect without a reset, while a reset knob applies on the next Reset
 
-### Requirement: Observation Creator page
-`/obs` SHALL let a user configure a reproducible observation/scenario (seed + generation knobs + reveal), regenerate, optionally step to a target state, and export it (the observation as JSON and/or a snapshot handle plus the seed/tune config) for reuse as a starting point.
+### Requirement: Observation Creator page (metric composition + plotting)
+`/obs` SHALL revive the rollout observation viewer: it SHALL load recorded rollouts, expose the built-in observation/metric series, let a user define a custom metric as a composition of existing series (e.g. `explevel` combined with a dungeon-depth scaling), and plot the resulting series across one or more rollouts. It SHALL reuse `tools/rollout_view` (`series`, `register_custom_metric`, `run_summary`, `aggregate`) and its SVG line-chart rendering rather than reimplementing metrics or plotting.
 
-#### Scenario: Create and export an observation
-- **WHEN** a user sets a seed + knobs, regenerates, and clicks export on `/obs`
-- **THEN** the console returns a reusable representation of that observation/scenario (obs JSON and/or snapshot + config)
+#### Scenario: Compose and plot a metric
+- **WHEN** a user selects rollouts and defines/selects a metric composition on `/obs`
+- **THEN** the page plots that metric's series (and built-in series) over turns/rollouts using the rollout_view charts
 
 ### Requirement: Tracer page
 `/traces` SHALL list available `.ndjson` rollouts, provide a scrubber over a selected rollout's turns, and render each turn's map + status + reward + game messages + any LLM user/assistant/tool_call panes. Live play recorded from the Map Viewer SHALL be replayable here.
@@ -32,9 +32,9 @@ The web console SHALL be a multi-page browser app served by one Flask process ov
 - **WHEN** a user selects a rollout and drags the scrubber
 - **THEN** the map and per-turn fields update to that turn
 
-### Requirement: Vision changes re-render in both directions
-Changing any vision knob (`vision_radius`, `fog_of_war`, `reveal_map`) live SHALL force the rendered observation to update immediately to reflect the new setting — including when visibility is REDUCED (radius down, fog on, reveal off) — not only when visibility is increased.
+### Requirement: Vision overrides are reversible visualization, not game state
+`reveal_map` and `fog_of_war` SHALL be implemented as render-time observation overlays — they SHALL NOT mutate the hero's remembered map (`gbuf`) — so toggling them DOWN immediately hides the previously shown terrain, with zero effect on game state or base-game performance (the overlay path is never exercised by normal play). `vision_radius` remains genuine vision (already-remembered cells correctly persist when it is reduced). Changing any vision knob live SHALL re-render the observation immediately in either direction.
 
-#### Scenario: Reducing reveal updates the view
-- **WHEN** a user turns `reveal_map` off (or lowers `vision_radius`) on `/map` without taking a game action
-- **THEN** the rendered map updates to the reduced-vision view rather than leaving the previously revealed cells on screen
+#### Scenario: Reducing reveal hides terrain without changing the game
+- **WHEN** a user turns `reveal_map` off (or fog on) on `/map` without taking a game action
+- **THEN** the rendered map immediately drops back to the genuinely-seen/remembered cells, and the hero's actual remembered map is unchanged (a subsequent normal step behaves as if reveal had never been on)

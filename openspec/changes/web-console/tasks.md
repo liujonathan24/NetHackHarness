@@ -13,16 +13,18 @@
 - [ ] 3.1 Live map render (structured chars+colors+message+status) + keyboard commands.
 - [ ] 3.2 Grouped knob sidebar (Vision / Stat-based / Dungeon & spawns); bool switches; slider + editable number; live vs reset apply; Reset/regenerate; Record toggle.
 
-## 4. Observation Creator (`/obs`)
-- [ ] 4.1 Configure a scenario: seed + generation knobs + reveal; regenerate; step to a target state.
-- [ ] 4.2 Export the observation/scenario (obs JSON and/or snapshot handle + seed/tune config) for reuse.
+## 4. Observation Creator (`/obs`) — metric composition + plotting
+- [ ] 4.1 Load rollouts (reuse the `.ndjson` list); adapter from our TraceTurn fields to the `records` shape `tools/rollout_view.stats` expects.
+- [ ] 4.2 `GET /obs/metrics` (built-in series) + `POST /obs/plot` (paths + metrics + a custom composition over existing series via `register_custom_metric`; restricted operator set, no arbitrary eval).
+- [ ] 4.3 Render plots via `tools/rollout_view` `_svg_linechart` / `render_dashboard`; embed in the page.
 
 ## 5. Tracer (`/traces`)
 - [ ] 5.1 List `.ndjson` rollouts; scrubber over turns; render map + status + reward + messages + LLM panes.
 
-## 6. Vision-reduce re-render fix
-- [ ] 6.1 Reducing any vision knob (`vision_radius`↓, `fog_of_war` on, `reveal_map` off) forces an immediate re-render reflecting the reduced setting.
-- [ ] 6.2 Determine + implement the mechanism (client always-re-render vs an engine "redraw from current vision" affordance for reveal-off); add a test that a vision reduction changes the rendered cell count.
+## 6. Vision-reduce fix — reveal/fog as obs overlays (fork C)
+- [ ] 6.1 Remove the `gbuf`-mutating reveal from `vision_recalc`; implement `reveal_map`/`fog_of_war` as a render-time overlay in `win/rl/winrl.cc fill_obs` (fill unknown cells from `level->locations`, never touch `gbuf`).
+- [ ] 6.2 `/live` re-renders on any vision change (both directions); `vision_radius` unchanged.
+- [ ] 6.3 Tests: `reveal_map` 1→0 drops obs cell count back; `gbuf`/normal-play obs unaffected (golden parity holds); rebuild the engine.
 
 ## 7. Verify
 - [ ] 7.1 Smoke each page (landing/map/obs/traces serve + their core API calls).
