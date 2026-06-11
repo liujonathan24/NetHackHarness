@@ -2,6 +2,8 @@
 comet_change: web-console
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-06-11-web-console
+status: final
 ---
 
 # Web Console — Technical Design

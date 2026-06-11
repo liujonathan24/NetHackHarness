@@ -12,7 +12,7 @@ verification_report: docs/superpowers/reports/2026-06-11-web-console-verify.md
 branch_status: handled
 created_at: 2026-06-11
 verified_at: 2026-06-11
-archived: false
+archived: true
 handoff_context: openspec/changes/web-console/.comet/handoff/design-context.json
 handoff_hash: 11aeac0922c8aef3ec779c86bd22ddc6fffeded84f0ec19220eb5da0680f88cc
 build_command: ./.venv/bin/python -m pytest environments/nethack/tests/test_obs_creator.py environments/nethack/tests/test_vision_overlay.py -q -p no:cacheprovider

@@ -2,6 +2,7 @@
 change: web-console
 design-doc: docs/superpowers/specs/2026-06-11-web-console-design.md
 base-ref: a59cd468a7037a269fe22131f24d793b1a9c0ace
+archived-with: 2026-06-11-web-console
 ---
 
 # Plan — web-console
