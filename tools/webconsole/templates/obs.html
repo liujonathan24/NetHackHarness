@@ -1,9 +1,139 @@
 {% extends "base.html" %}
 {% block title %}Observation Creator — NetHack Console{% endblock %}
 {% block body %}
-<div class="placeholder">
-  <div class="big">&divonx;</div>
-  <h2>Observation Creator</h2>
-  <p>Coming next — metric composition and plotting over recorded rollouts.</p>
+<style>
+/* The embedded SVG chart fragments from rollout_view.dashboard carry their own
+   classes (.chart .ctitle .svgchart .legend .agg .kpis ...) and reference the
+   rollout_view theme's CSS vars (--panel --line --gold --cyan --dim ...). Map
+   those onto the console palette so the charts match this page's retro theme. */
+#obs-results{
+  --panel:var(--panel-2); --line:var(--line); --line-lt:var(--line-soft);
+  --gold:var(--hero); --cyan:var(--stairs); --dim:var(--ink-dim); --mint:var(--good);
+}
+{{ dash_css }}
+.obs-form{max-width:1180px;margin:0 auto}
+.obs-cols{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start}
+.obs-card{flex:1;min-width:280px;background:var(--panel);border:1px solid var(--line);
+  border-radius:6px;padding:12px 14px}
+.obs-card label{display:block;color:var(--ink);font-size:13px;margin:3px 0;cursor:pointer}
+.obs-card label input{margin-right:6px;vertical-align:middle}
+.obs-list{max-height:240px;overflow:auto}
+.obs-custom-row{display:flex;gap:6px;margin:5px 0}
+.obs-custom-row input{flex:1;background:#10111a;color:var(--ink);border:1px solid var(--line);
+  border-radius:3px;padding:4px 6px;font-family:inherit;font-size:13px}
+.obs-custom-row input.cname{max-width:140px;flex:0 0 140px}
+.obs-actions{margin:14px 0}
+button.obs-btn{
+  background:linear-gradient(180deg,#2f6f4a,#244e38);color:#eafff0;border:1px solid #1c3b2a;
+  padding:9px 16px;cursor:pointer;font-size:13px;border-radius:4px;letter-spacing:.5px;
+}
+button.obs-btn:hover{filter:brightness(1.12)}
+button.obs-mini{background:#23242f;color:var(--ink);border:1px solid var(--line);
+  border-radius:3px;padding:4px 9px;cursor:pointer;font-size:12px}
+.obs-hint{color:var(--ink-faint);font-size:11px;margin-top:6px;line-height:1.4}
+#obs-err{color:var(--danger);min-height:16px;margin:6px 0;font-size:13px}
+#obs-results{margin-top:18px}
+</style>
+
+<div class="wrap obs-form">
+  <h1 style="font-size:18px;color:var(--hero);letter-spacing:1px">OBSERVATION CREATOR</h1>
+  <p class="obs-hint" style="font-size:13px">
+    Compose metrics over recorded <code>.ndjson</code> rollouts and plot them —
+    pick traces + built-in metrics, or write a custom expression
+    (e.g. <code>xp + 10*dlvl</code>) over the existing series.
+  </p>
+
+  <div class="obs-cols">
+    <div class="obs-card">
+      <h3>Traces</h3>
+      <div id="obs-traces" class="obs-list">loading…</div>
+    </div>
+
+    <div class="obs-card">
+      <h3>Built-in metrics</h3>
+      <div id="obs-metrics" class="obs-list">loading…</div>
+    </div>
+
+    <div class="obs-card">
+      <h3>Custom metrics</h3>
+      <div id="obs-customs"></div>
+      <button class="obs-mini" onclick="addCustom()">+ add custom metric</button>
+      <div class="obs-hint">
+        name + expression. Allowed: existing metric names, numbers, parentheses,
+        and <b>+ &minus; * /</b> (and unary &minus;). Names must be existing
+        metrics. No function calls or other Python. e.g. <code>xp + 10*dlvl</code>
+      </div>
+    </div>
+  </div>
+
+  <div class="obs-actions">
+    <button class="obs-btn" onclick="doPlot()">Plot</button>
+  </div>
+  <div id="obs-err"></div>
+  <div id="obs-results"></div>
 </div>
+
+<script>
+let OBS_CUSTOM_N = 0;
+
+async function obsLoadTraces(){
+  const list = await (await fetch('/traces',{headers:{'Accept':'application/json'}})).json();
+  const box = document.getElementById('obs-traces');
+  if(!list.length){box.innerHTML='<div class="obs-hint">no .ndjson traces found. Record one in the Map Viewer.</div>'; return;}
+  box.innerHTML='';
+  list.forEach(f=>{
+    const l=document.createElement('label');
+    l.innerHTML='<input type="checkbox" class="obs-trace" value="'+f.path.replace(/"/g,'&quot;')+'"> '+f.name+' ('+f.turns+')';
+    box.appendChild(l);
+  });
+}
+
+async function obsLoadMetrics(){
+  const r = await (await fetch('/obs/metrics')).json();
+  const box = document.getElementById('obs-metrics');
+  box.innerHTML='';
+  (r.metrics||[]).forEach(m=>{
+    const l=document.createElement('label');
+    const def=(m==='dlvl'||m==='xp')?' checked':'';
+    l.innerHTML='<input type="checkbox" class="obs-metric" value="'+m+'"'+def+'> '+m;
+    box.appendChild(l);
+  });
+}
+
+function addCustom(name, expr){
+  const box=document.getElementById('obs-customs');
+  const row=document.createElement('div');
+  row.className='obs-custom-row';
+  const i=OBS_CUSTOM_N++;
+  row.innerHTML='<input class="cname" placeholder="name" value="'+(name||'')+'">'
+    +'<input class="cexpr" placeholder="xp + 10*dlvl" value="'+(expr||'')+'">'
+    +'<button class="obs-mini" onclick="this.parentNode.remove()">&times;</button>';
+  box.appendChild(row);
+}
+
+function obsCustoms(){
+  const out=[];
+  document.querySelectorAll('#obs-customs .obs-custom-row').forEach(row=>{
+    const name=row.querySelector('.cname').value.trim();
+    const expr=row.querySelector('.cexpr').value.trim();
+    if(name&&expr) out.push({name:name, expr:expr});
+  });
+  return out;
+}
+
+async function doPlot(){
+  const err=document.getElementById('obs-err'); err.textContent='';
+  const paths=[...document.querySelectorAll('.obs-trace:checked')].map(e=>e.value);
+  const metrics=[...document.querySelectorAll('.obs-metric:checked')].map(e=>e.value);
+  const custom=obsCustoms();
+  if(!paths.length){err.textContent='pick at least one trace.'; return;}
+  if(!metrics.length&&!custom.length){err.textContent='pick a metric or add a custom one.'; return;}
+  const res=await post('/obs/plot',{paths:paths, metrics:metrics, custom:custom});
+  if(res.error){err.textContent=res.error; document.getElementById('obs-results').innerHTML=''; return;}
+  document.getElementById('obs-results').innerHTML=res.charts_html||'';
+}
+
+obsLoadTraces();
+obsLoadMetrics();
+</script>
 {% endblock %}

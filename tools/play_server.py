@@ -26,6 +26,7 @@ Headless-friendly:
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import pathlib
 import sys
@@ -33,10 +34,13 @@ import time
 
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT / "environments" / "nethack"))
+sys.path.insert(0, str(_ROOT))  # so `tools.rollout_view` imports when run as a script
 
 from flask import Flask, jsonify, render_template, request, send_from_directory  # noqa: E402
 
 from nethack_core.engine_env import EngineEnv  # noqa: E402
+
+from tools.rollout_view import dashboard, stats  # noqa: E402
 
 _WEB = _ROOT / "tools" / "webconsole"
 app = Flask(
@@ -131,7 +135,10 @@ def page_map():
 
 @app.route("/obs")
 def page_obs():
-    return render_template("obs.html", active="obs")
+    # dashboard._CSS styles the embedded SVG chart fragments (.chart .ctitle
+    # .svgchart .legend .agg .kpis ...) returned by /obs/plot; inject it so they
+    # render correctly inside the page (console.css already supplies the vars).
+    return render_template("obs.html", active="obs", dash_css=dashboard._CSS)
 
 
 @app.route("/catalog")
@@ -285,6 +292,152 @@ def trace():
             "actions": o.get("action_indices", []),
         })
     return jsonify({"turns": turns})
+
+
+# --------------------------------------------------------------------------
+# Observation Creator routes (/obs)
+#
+# Load web-recorded .ndjson rollouts via rollout_view.stats.load_trace, compose
+# custom metrics over the EXISTING built-in series with a RESTRICTED, SAFE
+# expression evaluator (AST whitelist — no eval/exec), then render embeddable SVG
+# charts via rollout_view.dashboard so they sit inline on the retro /obs page.
+# --------------------------------------------------------------------------
+
+# AST node types the composed-metric expression evaluator accepts. Anything else
+# (calls, attribute access, subscripts, comprehensions, names that aren't a known
+# metric, ...) is rejected — this whitelist is the security boundary; NO eval/exec.
+_SAFE_BINOPS = {ast.Add: lambda a, b: a + b, ast.Sub: lambda a, b: a - b,
+                ast.Mult: lambda a, b: a * b, ast.Div: lambda a, b: a / b}
+_SAFE_UNARYOPS = {ast.USub: lambda a: -a, ast.UAdd: lambda a: +a}
+
+
+def _trace_allowed(path: str) -> pathlib.Path | None:
+    """Resolve `path` and return it only if it sits under the _TRACE_DIRS
+    allow-list and is a real file (same check the /trace route enforces)."""
+    rp = pathlib.Path(path).resolve()
+    if rp.is_file() and any(str(rp).startswith(str(d.resolve())) for d in _TRACE_DIRS):
+        return rp
+    return None
+
+
+def _normalize_records(records: list[dict]) -> list[dict]:
+    """Web traces (_record) store status with `xp_lvl`, but stats.py's `xp`
+    metric reads status['xp']. Map xp_lvl -> xp when xp is absent so the series
+    isn't empty for web recordings. Traces that already carry `xp` (or parse it
+    from rendered text) are untouched, so other tools' traces keep working."""
+    for r in records:
+        st = r.get("status") or {}
+        if "xp" not in st and "xp_lvl" in st:
+            st["xp"] = st["xp_lvl"]
+    return records
+
+
+def _compile_metric_expr(expr: str, known: set[str]):
+    """Parse a composed-metric expression into a per-record fn via an AST
+    whitelist. Only +,-,*,/ , unary +/- , numeric literals, parentheses and
+    bare metric names (must be in `known`) are allowed. A referenced metric that
+    is None at a turn makes the whole composed value None for that turn.
+    Raises ValueError on anything outside the whitelist."""
+    try:
+        tree = ast.parse(expr, mode="eval")
+    except SyntaxError as e:
+        raise ValueError(f"could not parse expression: {e}") from None
+
+    # _Missing propagates None: any sub-expression touching a missing metric is None.
+    class _Missing:
+        pass
+    MISSING = _Missing()
+
+    def _ev(node, rec):
+        if isinstance(node, ast.Expression):
+            return _ev(node.body, rec)
+        if isinstance(node, ast.BinOp) and type(node.op) in _SAFE_BINOPS:
+            a, b = _ev(node.left, rec), _ev(node.right, rec)
+            if a is MISSING or b is MISSING:
+                return MISSING
+            if isinstance(node.op, ast.Div) and b == 0:
+                return MISSING
+            return _SAFE_BINOPS[type(node.op)](a, b)
+        if isinstance(node, ast.UnaryOp) and type(node.op) in _SAFE_UNARYOPS:
+            a = _ev(node.operand, rec)
+            return MISSING if a is MISSING else _SAFE_UNARYOPS[type(node.op)](a)
+        # numeric literal only (reject str/bytes/bool constants)
+        if isinstance(node, ast.Constant):
+            if isinstance(node.value, bool) or not isinstance(node.value, (int, float)):
+                raise ValueError("only numeric literals are allowed")
+            return float(node.value)
+        if isinstance(node, ast.Name):
+            if node.id not in known:
+                raise ValueError(f"unknown metric {node.id!r}; known: {sorted(known)}")
+            v = stats.series([rec], node.id)
+            return v[0][1] if v else MISSING
+        raise ValueError(f"disallowed expression element: {type(node).__name__}")
+
+    # Validate the whole tree once (with a dummy record) so bad exprs fail fast,
+    # before any metric is registered.
+    _ev(tree, {"status": {}, "text": "", "raw_grid": None, "raw": {}, "turn": 0})
+
+    def fn(rec):
+        v = _ev(tree, rec)
+        return None if v is MISSING else float(v)
+    return fn
+
+
+@app.route("/obs/metrics")
+def obs_metrics():
+    return jsonify({"metrics": stats.metric_names()})
+
+
+@app.route("/obs/plot", methods=["POST"])
+def obs_plot():
+    data = request.get_json(silent=True) or {}
+    paths = data.get("paths") or []
+    metrics = list(data.get("metrics") or [])
+    custom = data.get("custom") or []
+
+    # 1) register custom composed metrics over the existing series (safe eval).
+    known = set(stats.metric_names())
+    for c in custom:
+        name, expr = (c.get("name") or "").strip(), (c.get("expr") or "").strip()
+        if not name or not expr:
+            return jsonify({"error": "custom metric needs a name and an expr"}), 400
+        try:
+            fn = _compile_metric_expr(expr, known)
+        except ValueError as e:
+            return jsonify({"error": f"metric {name!r}: {e}"}), 400
+        stats.register_metric(name, fn)
+        known.add(name)
+        if name not in metrics:
+            metrics.append(name)
+    if not metrics:
+        return jsonify({"error": "no metrics selected"}), 400
+
+    # 2) load each allow-listed trace into normalized records.
+    runs: list[tuple[str, list[dict]]] = []
+    for p in paths:
+        rp = _trace_allowed(p)
+        if rp is None:
+            return jsonify({"error": f"path not allowed: {p}"}), 400
+        runs.append((rp.stem, _normalize_records(stats.load_trace(rp))))
+    if not runs:
+        return jsonify({"error": "no traces selected"}), 400
+
+    # 3) render embeddable SVG fragments (one chart per metric) + an aggregate
+    # table, so they sit inline on the /obs page (no iframe / full doc).
+    labels = [lbl for lbl, _ in runs]
+    recs = [r for _, r in runs]
+    charts = []
+    for metric in metrics:
+        series_by_run = []
+        for lbl, r in runs:
+            try:
+                series_by_run.append((lbl, stats.series(r, metric)))
+            except KeyError:
+                series_by_run.append((lbl, []))
+        charts.append(dashboard._svg_linechart(metric, series_by_run))
+    html = (dashboard._agg_table(labels, recs) +
+            f'<div class="charts">{"".join(charts)}</div>')
+    return jsonify({"charts_html": html})
 
 
 def main() -> None:
