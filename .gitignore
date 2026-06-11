@@ -31,3 +31,6 @@ skills-lock.json
 # engine crash artifacts (core dumps + sentinel crash logs)
 core.*
 nle_crash_*.txt
+
+# web play recordings (generated)
+/outputs/web_play/
