@@ -19,7 +19,7 @@ The web console SHALL be a multi-page browser app served by one Flask process ov
 - **THEN** the hero moves and the live knob takes effect without a reset, while a reset knob applies on the next Reset
 
 ### Requirement: Observation Creator page (metric composition + plotting)
-`/obs` SHALL revive the rollout observation viewer: it SHALL load recorded rollouts, expose the built-in observation/metric series, let a user define a custom metric as a composition of existing series (e.g. `explevel` combined with a dungeon-depth scaling), and plot the resulting series across one or more rollouts. It SHALL reuse `tools/rollout_view` (`series`, `register_custom_metric`, `run_summary`, `aggregate`) and its SVG line-chart rendering rather than reimplementing metrics or plotting.
+`/obs` SHALL revive the rollout observation viewer: it SHALL load recorded rollouts, expose the built-in observation/metric series, let a user define a custom metric as a composition of existing series (e.g. `explevel` combined with a dungeon-depth scaling), and plot the resulting series across one or more rollouts. It SHALL reuse `tools/rollout_view` (`series`, `register_metric`, `run_summary`, `aggregate`) and its SVG line-chart rendering rather than reimplementing metrics or plotting.
 
 #### Scenario: Compose and plot a metric
 - **WHEN** a user selects rollouts and defines/selects a metric composition on `/obs`

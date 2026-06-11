@@ -37,12 +37,12 @@ Lift the current Traces tab: `/traces` list, scrubber, per-turn render (map + st
 ## 4. Observation Creator (`/obs`) — metric composition + plotting
 
 Revives the rollout observation viewer using the existing `tools/rollout_view`:
-- `tools/rollout_view/stats.py`: `series(records, name)`, `register_custom_metric(...)`, `run_summary`, `aggregate`.
+- `tools/rollout_view/stats.py`: `series(records, name)`, `register_metric(...)`, `run_summary`, `aggregate`.
 - `tools/rollout_view/dashboard.py`: `_svg_linechart(...)`, `render_dashboard(runs, ...)`.
 
 Page flow:
 1. Pick one or more rollouts (the same `.ndjson` list as the Tracer, parsed to the `records` shape `rollout_view` expects).
-2. Choose built-in series and/or define a **custom metric as a composition of existing ones** (e.g. `explevel + k * dungeon_depth`). Wire this through `register_custom_metric` so it is applied post-hoc to the loaded records.
+2. Choose built-in series and/or define a **custom metric as a composition of existing ones** (e.g. `explevel + k * dungeon_depth`). Wire this through `register_metric` (via a safe AST evaluator, no arbitrary eval) so it is applied post-hoc to the loaded records.
 3. Plot via `_svg_linechart` / `render_dashboard` (server renders the SVG; the page embeds it).
 
 New endpoints (thin wrappers over `rollout_view`):
