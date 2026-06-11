@@ -19,7 +19,7 @@ import sys
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT / "environments" / "nethack"))
 
-from flask import Flask, jsonify, request  # noqa: E402
+from flask import Flask, jsonify, request, send_from_directory  # noqa: E402
 
 from nethack_core.engine_env import EngineEnv  # noqa: E402
 
@@ -122,6 +122,31 @@ def set_tune():
     return jsonify({"ok": True})
 
 
+@app.route("/live", methods=["POST"])
+def live():
+    """Set a live knob and refresh the view WITHOUT moving the hero or passing a
+    turn: ctrl-R (redraw) re-runs vision_recalc, so vision changes (reveal_map,
+    fog_of_war, vision_radius) show immediately."""
+    data = request.get_json(silent=True) or {}
+    name, value = data.get("name"), float(data.get("value"))
+    if STATE["env"] is None:
+        return jsonify({"error": "call /reset first"}), 400
+    STATE["env"].set_tune(**{name: value})
+    STATE["tune"][name] = value
+    obs, _, _ = STATE["env"].step(18)  # ^R redraw -> vision_recalc, no move
+    return jsonify(_payload(obs))
+
+
+@app.route("/gifs")
+def gifs():
+    return jsonify([p.name[4:-4] for p in sorted((_ROOT / "videos").glob("gif_*.gif"))])
+
+
+@app.route("/gif/<name>")
+def gif(name):
+    return send_from_directory(_ROOT / "videos", f"gif_{name}.gif")
+
+
 _HTML = r"""<!doctype html><html><head><meta charset="utf-8"><title>NetHack - play</title>
 <style>
   body{background:#0c0c10;color:#ddd;font-family:monospace;margin:0;display:flex}
@@ -155,6 +180,7 @@ _HTML = r"""<!doctype html><html><head><meta charset="utf-8"><title>NetHack - pl
   <div id="status">connecting...</div>
   <div id="hint">Click the screen, then type NetHack commands (h j k l y u b n move,
    &gt; &lt; stairs, s search, i inventory). Arrows = movement. Enter / Esc supported.</div>
+  <div id="demos"></div>
 </div>
 <div id="side">
   <div id="groups"></div>
@@ -196,8 +222,8 @@ function apply(d){
 async function post(url,body){const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});return r.json();}
 async function onChange(name,val){
   curTune[name]=val;
-  if(META[name].reset){ setDirty(true); }                 // staged; applies on Reset
-  else { await post('/set_tune',{name:name,value:val}); }  // live; effect next step
+  if(META[name].reset){ setDirty(true); }                       // staged; applies on Reset
+  else { const d=await post('/live',{name:name,value:val}); apply(d); }  // live; refresh now
 }
 async function doReset(){
   const seed=+document.getElementById('seed').value||42;
@@ -232,13 +258,25 @@ async function build(){
     cat.knobs.filter(m=>m.group===g).forEach(m=>box.appendChild(row(m)));
   });
 }
+async function buildGifs(){
+  const list=await (await fetch('/gifs')).json();
+  if(!list.length) return;
+  const box=document.getElementById('demos');
+  box.innerHTML='<h3 style="margin-top:16px">Knob effect demos</h3>';
+  list.forEach(n=>{
+    const w=document.createElement('div'); w.style.cssText='display:inline-block;margin:6px 10px 6px 0;vertical-align:top';
+    w.innerHTML='<div style="color:#cc8;font-size:12px">'+n+'</div>'+
+      '<img src="/gif/'+n+'" style="max-height:300px;border:1px solid #333;background:#000">';
+    box.appendChild(w);
+  });
+}
 const KEYMAP={'ArrowUp':'k','ArrowDown':'j','ArrowLeft':'h','ArrowRight':'l','Enter':'\r','Escape':'\x1b'};
 document.getElementById('screen').addEventListener('keydown',async e=>{
   let ch=KEYMAP[e.key]; if(!ch&&e.key.length===1)ch=e.key;
   if(!ch)return; e.preventDefault();
   const d=await post('/step',{keys:ch}); apply(d);
 });
-(async()=>{await build(); await doReset();})();
+(async()=>{await build(); await buildGifs(); await doReset();})();
 </script></body></html>"""
 
 
