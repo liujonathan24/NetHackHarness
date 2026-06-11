@@ -130,6 +130,44 @@ class EngineEnv:
     def free_snapshot(self, handle) -> None:
         self._engine.free_snapshot(handle)
 
+    def branch(
+        self,
+        n: int,
+        reseed: bool = True,
+        horizon: int = 40,
+        action: int = ord("s"),
+    ) -> list[list[bytes]]:
+        """Return ``n`` continuations from the current state.
+
+        Takes one snapshot of the current state, then restores it ``n`` times.
+        With ``reseed=True`` each branch reseeds the gameplay RNG AFTER restore
+        (order matters: the snapshot captures the RNG, so reseed must follow
+        restore) so random-chance events diverge across branches.  With
+        ``reseed=False`` the branches replay byte-identically.
+
+        Each branch is rolled out for ``horizon`` steps of ``action`` and
+        returned as a per-step trace of the map ``chars`` (one bytes object per
+        step), so callers can compare branches for divergence.
+
+        The snapshot handle is reused across all ``n`` restores (RawEngine
+        snapshots support repeated restore) and freed before returning.
+        """
+        handle = self.snapshot()
+        try:
+            results: list[list[bytes]] = []
+            for i in range(n):
+                self.restore(handle)
+                if reseed:
+                    self._engine.reseed(core=1000 + i, disp=2000 + i)
+                trace: list[bytes] = []
+                for _ in range(horizon):
+                    obs, _done, _info = self.step(action)
+                    trace.append(obs.chars.tobytes())
+                results.append(trace)
+            return results
+        finally:
+            self.free_snapshot(handle)
+
     # ----- portable level blob save / load -----
 
     def save_level(self, path) -> None:

@@ -313,6 +313,16 @@ class RawEngine:
         lib.nle_get_tune.restype = ctypes.POINTER(ctypes.c_double)
         lib.nle_get_tune.argtypes = [ctypes.c_void_p]
 
+        # Reseed the gameplay/display RNGs.  Used after restore() to make
+        # branches diverge: the 4th arg `reseed` is a C boolean (1 byte).
+        lib.nle_set_seed.argtypes = [
+            ctypes.c_void_p,    # nle_ctx_t*
+            ctypes.c_ulong,     # core
+            ctypes.c_ulong,     # disp
+            ctypes.c_char,      # reseed (boolean, 1 byte)
+        ]
+        lib.nle_set_seed.restype = None
+
     def _build_dat_path(self) -> Path:
         """Return the path to the pre-built dat directory (contains nhdat etc.)."""
         build = _engine_build_dir()
@@ -486,6 +496,22 @@ class RawEngine:
         if handle in self._snapshots:
             self._lib.nle_fr_destroy(handle)
             self._snapshots.discard(handle)
+
+    def reseed(self, core: int, disp: int) -> "RawEngine":
+        """Reseed the RNG (e.g. after restore) so future random-chance events
+        diverge.  Returns self.
+
+        Passing reseed=False to the underlying nle_set_seed forces a fresh
+        ISAAC64 reseed from (core, disp) rather than replaying a saved stream,
+        so two restores of the same snapshot followed by different (core, disp)
+        seeds produce divergent continuations (verified by the branch spike).
+        """
+        if self._ctx is None:
+            raise RuntimeError("reseed() requires an active game; call start() first")
+        self._lib.nle_set_seed(
+            self._ctx, ctypes.c_ulong(core), ctypes.c_ulong(disp), b"\x00"
+        )
+        return self
 
     # ------------------------------------------------------------------
     # Portable level blob save / load
