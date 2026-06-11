@@ -1,11 +1,11 @@
 workflow: full
-phase: design
+phase: build
 build_mode: null
 build_pause: null
 isolation: null
 verify_mode: null
 base_ref: b20aaaac6bc475cec796b3817960e2b563b8ddc6
-design_doc: null
+design_doc: docs/superpowers/specs/2026-06-11-level-replay-design.md
 plan: null
 verify_result: pending
 verification_report: null
@@ -14,4 +14,4 @@ created_at: 2026-06-11
 verified_at: null
 archived: false
 handoff_context: openspec/changes/level-replay/.comet/handoff/design-context.json
-handoff_hash: 7a443f52dca213e6f5d11c063ad6790dce42becfcbb0d98bf07471421e822018
+handoff_hash: 5f0c1440813aabbfad5ee41a56ebee8fdef12702fa86e97b83c43aa9e0681108
