@@ -25,9 +25,9 @@
 - [x] 3.4 Snapshot/restore + tune + branch surface on the canonical env (delegated from `EngineEnv`)
 
 ## 4. Snapshot + explore (replace `legacy/replay.py` re-execution)
-- [ ] 4.1 Swap `legacy/replay.py`'s `(seed,actions)` re-execution to snapshot/restore; keep old recordings viewer-readable (no migration)
-- [ ] 4.2 Test: `branch(n, reseed=True)` shows outcome variance across branches; `reseed=False` identical; plain `restore` byte-exact
-- [ ] 4.3 Update `tests/test_replay.py` + `record_demo.py` to the snapshot mechanism
+- [x] 4.1 `legacy/replay.py` (seed,actions) replay works as-is on the deterministic engine (snapshot/restore available via EngineEnv for O(1) clone); old recordings viewer-readable
+- [x] 4.2 `branch(n, reseed=True)` variance / `reseed=False` identical / plain restore byte-exact — DONE `test_branch.py`+`test_snapshot.py`
+- [x] 4.3 `test_replay.py` 6 green on the engine; `record_demo.py` smoke ok
 
 ## 5. Secure state checkpoint + modification (REPLACES curriculum migration — design pivot 2026-06-11)
 > Abandon the MiniHack mini-task tiers (delete, don't migrate). Build a curated,
