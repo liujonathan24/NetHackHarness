@@ -208,3 +208,29 @@ a:focus-visible,button:focus-visible,input:focus-visible,
   *,*::before,*::after{transition:none !important;animation:none !important}
   .card:hover{transform:none}
 }
+
+/* ---------- responsive (WCAG 1.4.10 reflow) ----------
+   Below ~860px the fixed-width side panels would force horizontal scroll, so
+   stack the two-pane map/tracer layouts vertically and let the panels go
+   full-width. The game grid itself can still scroll horizontally (a literal
+   character map is exempt), but the controls never do. */
+@media (max-width: 860px){
+  .page{flex-direction:column}
+  /* knob sidebar moves below the map */
+  #side{width:auto;max-height:none;border-left:0;border-top:2px solid var(--line)}
+  /* tracer rollout list moves above the viewer */
+  #t-list{width:auto;border-right:0;border-bottom:2px solid var(--line);max-height:40vh}
+  /* let the character grid scroll on its own rather than stretching the page */
+  .screen{overflow-x:auto}
+}
+@media (max-width: 520px){
+  /* single-column knobs when even half-width cells get too tight */
+  #groups{grid-template-columns:1fr}
+  .wrap,.landing{padding-left:14px;padding-right:14px}
+  .cards{gap:12px}
+}
+/* nav wraps instead of overflowing on small screens */
+@media (max-width: 560px){
+  #nav{height:auto;flex-wrap:wrap;padding:6px 10px;gap:2px}
+  #nav .spacer{flex-basis:100%;height:0}
+}
