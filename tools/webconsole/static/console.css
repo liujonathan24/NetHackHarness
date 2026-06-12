@@ -83,16 +83,23 @@ h2,h3{color:var(--good);margin:14px 0 6px;border-bottom:1px solid var(--line);pa
 #hint{color:var(--ink-faint);margin-top:10px;font-size:12px;max-width:640px}
 
 /* ---------- knob sidebar ---------- */
+/* container-type lets #groups respond to the sidebar's OWN width: between ~860
+   and ~1230px the flex layout squishes this fixed 468px panel (e.g. a half-screen
+   browser window), and a viewport media query can't see that. */
 #side{
   width:468px;padding:14px;border-left:2px solid var(--line);
   background:linear-gradient(180deg,var(--panel),var(--panel-2));
   overflow-y:auto;max-height:calc(100vh - 46px);
+  container-type:inline-size;
 }
 /* Two-column knob grid: h2 group headings span the full width; each .knob is a
    single cell with its label stacked above the slider+number so a half-width
    column stays readable. */
 #groups{display:grid;grid-template-columns:1fr 1fr;column-gap:14px;row-gap:2px;align-items:start}
 #groups h2{grid-column:1/-1}
+/* Collapse to one column once the sidebar itself is too narrow for two readable
+   knob cells, regardless of viewport width (catches the flex-squish range). */
+@container (max-width: 380px){ #groups{grid-template-columns:1fr} }
 .knob{display:flex;align-items:center;flex-wrap:wrap;margin:6px 0;gap:4px 6px}
 .knob .name{flex-basis:100%;color:var(--hero);font-size:12px}
 .knob .name .rst{color:var(--warn);font-size:10px}
