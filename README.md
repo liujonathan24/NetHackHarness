@@ -1,9 +1,13 @@
 # nethack-rl
 
-A training-grade RL + evaluation environment for NetHack, built on `nle>=1.3.0`
-+ MiniHack. It ships a skill-based tool interface, a milestone curriculum, a
-dozen+ observation encodings (ASCII / BALROG / JSON / TOON / rendered tiles /
-tty raster), replay capture, and an in-browser rollout viewer.
+A training-grade RL + evaluation environment for NetHack, built on a custom
+NetHack **fork** (the `third_party/NetHack` submodule) driven through a ctypes
+binding — `nle`/`minihack` are no longer used. It ships a skill-based tool
+interface, a milestone curriculum, a dozen+ observation encodings (ASCII /
+BALROG / JSON / TOON / rendered tiles / tty raster), replay capture, and an
+in-browser rollout viewer. The engine adds in-memory snapshot/branch, portable
+level blobs, secure state modification, and parametric difficulty knobs. See
+[`docs/engine-layer.md`](docs/engine-layer.md) for the engine reference.
 
 **Mirrors:**
 - Prime Hub: [`jonathanliu/nethack`](https://app.primeintellect.ai/dashboard/environments/jonathanliu/nethack) (v0.0.66+)
@@ -120,10 +124,16 @@ See [docs/design.md](docs/design.md) for the full design doc, and
 ## Getting started
 
 ```bash
-# system deps for NLE (Debian/Ubuntu)
+# system deps for the NetHack fork build (Debian/Ubuntu)
 sudo apt install -y cmake bison flex libbz2-dev
 
-# install (uv workspace handles all four packages)
+# fetch the NetHack fork submodule + build libnethack.so
+git submodule update --init --recursive
+bash nethack_core/build_engine.sh   # -> third_party/NetHack/src/build/libnethack.so
+
+# install the uv workspace. --all-packages is REQUIRED: numpy/gymnasium used
+# to arrive transitively via nle; with nle/minihack removed they are direct
+# workspace deps and a bare `uv sync` under-installs.
 uv sync --extra dev --all-packages
 
 # smoke test (no API keys)
@@ -229,7 +239,7 @@ configs/endpoints.toml    # vf-eval endpoint registry (OpenAI/Anthropic/pinferen
 docs/                     # design.md, EVAL_RECIPES.md, TRAINING_RECIPE.md, onboarding/ (20)
 openspec/                 # capability specs + change history (current source of truth)
 Tiles16x16-nethack.png    # swappable tileset for the IMG GlyphMapper renderer
-Dockerfile.prime          # NLE-preinstalled image for Prime Sandbox / Hosted Training
+Dockerfile.prime          # builds libnethack.so from the fork submodule; image for Prime Sandbox / Hosted Training
 ```
 
 ## Publishing to the Prime Intellect Environments Hub

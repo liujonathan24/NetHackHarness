@@ -1,0 +1,16 @@
+{
+  "change": "level-replay",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "generated_by": "comet-handoff.sh",
+  "context_hash": "5f0c1440813aabbfad5ee41a56ebee8fdef12702fa86e97b83c43aa9e0681108",
+  "files": [
+    { "path": "openspec/changes/level-replay/proposal.md", "sha256": "1df738f34e6bb1ceb344d6b9745bc38796f98aec98aeff69080282bad18e8a39" },
+    { "path": "openspec/changes/level-replay/design.md", "sha256": "1f708e10807d8c68076ee9123acb8e645ed0459cfbda4346670dbd0854b4a151" },
+    { "path": "openspec/changes/level-replay/tasks.md", "sha256": "191c4a17a4f7281d46b076d4cc4a14d322cc8b967e99a4d5967ff4531f76d303" },
+    { "path": "openspec/changes/level-replay/specs/difficulty-tuning/spec.md", "sha256": "19ca7ed7a352146785a726110e513e50e8c8d8f02720ded90272e4e27a416500" },
+    { "path": "openspec/changes/level-replay/specs/level-customization/spec.md", "sha256": "46561d6d2350a099d5628d534c8f1ae11be30f3b778a4cfb8688f66d608e1291" },
+    { "path": "openspec/changes/level-replay/specs/nethack-engine/spec.md", "sha256": "9e0c6301cd3431d3c83627053a254239a81a88bc13677493fcdaca1dfe062f42" }
+  ]
+}

@@ -71,7 +71,15 @@ def _custom_tiles(path: str, tile_size: int):
 def _render_with_tiles(glyphs, tiles, tile_size: int):
     """Compose the glyph grid from a custom tile array via the glyph->tile map."""
     import numpy as np  # lazy
-    from minihack.tiles import glyph2tile  # lazy
+    try:
+        from minihack.tiles import glyph2tile  # lazy
+    except ImportError as e:
+        raise RuntimeError(
+            "Image tile rendering unavailable: the glyph->tile map "
+            "(minihack.tiles.glyph2tile) is not installed. Install the optional "
+            "'minihack' extra to enable IMG rendering, or use the text/tty render "
+            "path instead."
+        ) from e
 
     h, w = glyphs.shape
     img = np.zeros((h * tile_size, w * tile_size, 3), np.uint8)
@@ -121,7 +129,15 @@ def _png_b64(arr) -> str:
 def _glyph_mapper():
     global _GLYPH_MAPPER
     if _GLYPH_MAPPER is None:
-        from minihack.tiles.glyph_mapper import GlyphMapper  # lazy, may raise
+        try:
+            from minihack.tiles.glyph_mapper import GlyphMapper  # lazy, may raise
+        except ImportError as e:
+            raise RuntimeError(
+                "Image tile rendering unavailable: the built-in MiniHack "
+                "GlyphMapper tileset is not installed. Set a custom tileset via "
+                "set_tileset()/NETHACK_TILESET, install the optional 'minihack' "
+                "extra, or use the text/tty render path instead."
+            ) from e
 
         _GLYPH_MAPPER = GlyphMapper()
     return _GLYPH_MAPPER

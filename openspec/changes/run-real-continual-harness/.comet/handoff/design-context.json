@@ -1,0 +1,14 @@
+{
+  "change": "run-real-continual-harness",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "generated_by": "comet-handoff.sh",
+  "context_hash": "49d2712b567a6cc9d60ca9e4b47255acd7ab52e2fb32abe87c49f89a9f23bd96",
+  "files": [
+    { "path": "openspec/changes/run-real-continual-harness/proposal.md", "sha256": "1f9f12518f36e3c34552ef7a5ecf7b9f916ca73b06f6f83707f0fc15ae1413f2" },
+    { "path": "openspec/changes/run-real-continual-harness/design.md", "sha256": "47653f86fd46f690476344be257d87e31a4742a44ce49cea31f7029edeff2e2f" },
+    { "path": "openspec/changes/run-real-continual-harness/tasks.md", "sha256": "b3a890647997ff7c1b0449b408223d889bd1a58d4a5bf76339c61deb7dedcc9d" },
+    { "path": "openspec/changes/run-real-continual-harness/specs/continual-harness/spec.md", "sha256": "196ee4ec5746071e5ea0396738708638f10136590cecee247980cdb73cb9e1fc" }
+  ]
+}

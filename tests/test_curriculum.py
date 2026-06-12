@@ -23,9 +23,9 @@ def test_every_tier_has_a_consistent_name_field():
 
 
 def test_get_tier_returns_specs_by_name():
-    spec = get_tier("solo_combat")
+    spec = get_tier("corridor_explore")
     assert isinstance(spec, TierSpec)
-    assert spec.nle_task.startswith("MiniHack-") or spec.nle_task.startswith("NetHack")
+    assert spec.nle_task.startswith("NetHack")
 
 
 def test_get_tier_raises_on_unknown():
@@ -41,11 +41,18 @@ def test_milestone_tiers_have_success_milestones_wired():
         assert spec.success_milestone is not None, f"{name} is missing success_milestone"
 
 
-def test_minihack_tiers_have_des_files():
-    """The synthetic tiers we kept must still carry des-file content."""
+def test_minihack_tiers_removed():
+    """The MiniHack des-file tiers were dropped with the nle/minihack deps."""
     for name in ("empty_room", "solo_combat", "multi_combat"):
-        spec = get_tier(name)
-        assert spec.des_file is not None and "MAP" in spec.des_file
+        with pytest.raises(KeyError):
+            get_tier(name)
+
+
+def test_all_tiers_are_native_no_des_files():
+    """Every remaining tier drives a native NetHack task; none carry des-files."""
+    for spec in TIERS.values():
+        assert spec.des_file is None
+        assert spec.nle_task.startswith("NetHack")
 
 
 def test_sample_tier_returns_known_name():
@@ -55,9 +62,9 @@ def test_sample_tier_returns_known_name():
 
 def test_sample_tier_with_weights_respects_weights_deterministic():
     """A weighted call with a single non-zero key always returns that key."""
-    name = sample_tier(weights={"empty_room": 1.0, "solo_combat": 0.0})
+    name = sample_tier(weights={"corridor_explore": 1.0, "mini_dungeon": 0.0})
     # Because random.choices with weights=[1, 0] always returns the first.
-    assert name == "empty_room"
+    assert name == "corridor_explore"
 
 
 def test_list_tiers_matches_TIERS_keys():

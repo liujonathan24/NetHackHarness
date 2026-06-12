@@ -60,7 +60,7 @@ def _rle_grid(glyphs) -> str:
 
 def build_map_model(raw_obs: Any) -> MapModel:
     import numpy as np
-    import nle.nethack as N
+    from nethack_core import glyphs as N
     from nethack_core.observations import _FEATURE_GLYPHS
 
     glyphs = np.asarray(raw_obs.glyphs)
@@ -76,7 +76,7 @@ def build_map_model(raw_obs: Any) -> MapModel:
             if N.glyph_is_monster(g) or N.glyph_is_pet(g):
                 is_pet = bool(N.GLYPH_PET_OFF <= g < N.GLYPH_PET_OFF + _NUMMONS)
                 try:
-                    species = N.permonst(N.glyph_to_mon(g)).mname
+                    species = N.monster_name(N.glyph_to_mon(g))
                 except Exception:
                     species = None
                 entities.append(Entity("monster", g, gx, gy,

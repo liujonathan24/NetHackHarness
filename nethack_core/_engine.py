@@ -293,6 +293,16 @@ class RawEngine:
         lib.nle_fr_destroy.restype = None
         lib.nle_fr_destroy.argtypes = [ctypes.c_void_p]
 
+        # Portable level blob save / load.  nle_save_level mallocs a blob (caller
+        # frees via nle_free_blob).  nle_load_level is TWO-PHASE: it mutates state
+        # but does not render — the caller must step once (ctrl-R) to redraw.
+        lib.nle_save_level.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_long)]
+        lib.nle_save_level.restype = ctypes.c_void_p
+        lib.nle_free_blob.argtypes = [ctypes.c_void_p]
+        lib.nle_free_blob.restype = None
+        lib.nle_load_level.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long]
+        lib.nle_load_level.restype = ctypes.c_int
+
         # Difficulty knob catalog.  nle_get_tune returns nle_tune_t*, which is a
         # flat block of doubles indexed by the name table — so get/set are fully
         # generic (a new knob in the engine appears with no binding change).
@@ -302,6 +312,33 @@ class RawEngine:
         lib.nle_tune_name.argtypes = [ctypes.c_int]
         lib.nle_get_tune.restype = ctypes.POINTER(ctypes.c_double)
         lib.nle_get_tune.argtypes = [ctypes.c_void_p]
+
+        # Secure single-field state mutation + deferred dungeon-level jump.
+        # nle_set_state writes a whitelisted blstats-backed field (rc!=0 on an
+        # unknown name).  nle_goto_depth is TWO-PHASE like nle_load_level: it only
+        # schedules the jump; the actual level change happens on the next step.
+        lib.nle_set_state.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_long]
+        lib.nle_set_state.restype = ctypes.c_int
+        lib.nle_goto_depth.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        lib.nle_goto_depth.restype = ctypes.c_int
+
+        # Seat the hero on the down(1)/up(0) staircase of the current level, and
+        # raise the hero N experience levels with real HP/stat gains.  Both are
+        # TWO-PHASE like nle_goto_depth: the caller must step once to render.
+        lib.nle_seat_on_stair.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        lib.nle_seat_on_stair.restype = ctypes.c_int
+        lib.nle_level_up.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        lib.nle_level_up.restype = ctypes.c_int
+
+        # Reseed the gameplay/display RNGs.  Used after restore() to make
+        # branches diverge: the 4th arg `reseed` is a C boolean (1 byte).
+        lib.nle_set_seed.argtypes = [
+            ctypes.c_void_p,    # nle_ctx_t*
+            ctypes.c_ulong,     # core
+            ctypes.c_ulong,     # disp
+            ctypes.c_char,      # reseed (boolean, 1 byte)
+        ]
+        lib.nle_set_seed.restype = None
 
     def _build_dat_path(self) -> Path:
         """Return the path to the pre-built dat directory (contains nhdat etc.)."""
@@ -476,6 +513,127 @@ class RawEngine:
         if handle in self._snapshots:
             self._lib.nle_fr_destroy(handle)
             self._snapshots.discard(handle)
+
+    def reseed(self, core: int, disp: int) -> "RawEngine":
+        """Reseed the RNG (e.g. after restore) so future random-chance events
+        diverge.  Returns self.
+
+        Passing reseed=False to the underlying nle_set_seed forces a fresh
+        ISAAC64 reseed from (core, disp) rather than replaying a saved stream,
+        so two restores of the same snapshot followed by different (core, disp)
+        seeds produce divergent continuations (verified by the branch spike).
+        """
+        if self._ctx is None:
+            raise RuntimeError("reseed() requires an active game; call start() first")
+        self._lib.nle_set_seed(
+            self._ctx, ctypes.c_ulong(core), ctypes.c_ulong(disp), b"\x00"
+        )
+        return self
+
+    # ------------------------------------------------------------------
+    # Portable level blob save / load
+    # ------------------------------------------------------------------
+
+    def save_level(self) -> bytes:
+        """Serialize the current dungeon level to a portable blob.
+
+        Unlike snapshot(), which captures the full live game and is bound to this
+        instance's ctx, the blob is a self-contained level description that can be
+        loaded into a fresh game on a different floor.
+
+        Raises RuntimeError if no game is active or the C call fails.
+        """
+        if self._ctx is None:
+            raise RuntimeError("save_level() requires an active game; call start() first")
+        n = ctypes.c_long(0)
+        ptr = self._lib.nle_save_level(self._ctx, ctypes.byref(n))
+        if not ptr or n.value <= 0:
+            raise RuntimeError("nle_save_level failed")
+        try:
+            return ctypes.string_at(ptr, n.value)
+        finally:
+            self._lib.nle_free_blob(ptr)
+
+    def load_level(self, blob: bytes) -> "RawEngine":
+        """Load a level blob as the current level.  Returns self.
+
+        Two-phase: the C call mutates state but does not render, so we step once
+        (ctrl-R = action 18, a no-move redraw) to re-render the new level.
+
+        Raises RuntimeError if no game is active or the C call fails.
+        """
+        if self._ctx is None:
+            raise RuntimeError("load_level() requires an active game; call start() first")
+        buf = ctypes.create_string_buffer(blob, len(blob))
+        rc = self._lib.nle_load_level(self._ctx, buf, len(blob))
+        if rc != 0:
+            raise RuntimeError(f"nle_load_level failed (rc={rc})")
+        self.step(18)  # ctrl-R redraw inside the coroutine
+        return self
+
+    # ------------------------------------------------------------------
+    # Secure state mutation (single field) + deferred dungeon-level jump
+    # ------------------------------------------------------------------
+
+    def set_state(self, field: str, value: int) -> "RawEngine":
+        """Set a single whitelisted state field on the engine.  Returns self.
+
+        The C side only accepts a fixed whitelist of field names
+        (``hp``/``max_hp``/``gold``/``xp_level``/``hunger``); an unknown name
+        raises KeyError rather than writing arbitrary memory.  Bounds checking
+        is the caller's responsibility (EngineEnv.modify enforces it).
+
+        Raises RuntimeError if no game is active.
+        """
+        if self._ctx is None:
+            raise RuntimeError("set_state() requires an active game; call start() first")
+        rc = self._lib.nle_set_state(self._ctx, field.encode(), int(value))
+        if rc != 0:
+            raise KeyError(f"unknown state field {field!r}")
+        return self
+
+    def goto_depth(self, n: int) -> "RawEngine":
+        """Jump to dungeon level ``n``.  Returns self.
+
+        Two-phase like load_level: the C call only schedules the jump (the
+        engine runs deferred_goto() after the next rhack), so we step once to
+        process it.  A wait step ('.') runs rhack and triggers the deferred
+        jump; the wait may consume a game turn, which is acceptable for v1.
+
+        Raises ValueError if ``n`` is out of range, RuntimeError if no game.
+        """
+        if self._ctx is None:
+            raise RuntimeError("goto_depth() requires an active game; call start() first")
+        rc = self._lib.nle_goto_depth(self._ctx, int(n))
+        if rc != 0:
+            raise ValueError(f"goto_depth({n}) out of range")
+        self.step(ord("."))  # process the deferred goto (a wait step runs rhack)
+        return self
+
+    def seat_on_stair(self, down: bool = True) -> "RawEngine":
+        """Seat the hero on the down(True)/up(False) staircase of this level.
+
+        Two-phase like goto_depth: the C call schedules the placement and we
+        step once (a wait '.') to render it.  A nonzero return just means the
+        current level has no such staircase, which is a no-op rather than an
+        error.  Returns self.
+        """
+        rc = self._lib.nle_seat_on_stair(self._ctx, 1 if down else 0)
+        self.step(ord("."))  # render the two-phase change
+        return self  # rc nonzero just means no such stair (no-op); not an error
+
+    def level_up(self, n: int = 1) -> "RawEngine":
+        """Raise the hero ``n`` experience levels with real HP/stat gains.
+
+        Two-phase: after the C call we issue a ctrl-R redraw (action 18) to
+        refresh blstats without consuming a game turn.  Returns self.
+
+        Raises RuntimeError if the engine reports failure.
+        """
+        if self._lib.nle_level_up(self._ctx, int(n)) != 0:
+            raise RuntimeError("nle_level_up failed")
+        self.step(18)  # ctrl-R redraw to refresh blstats without a turn
+        return self
 
     # ------------------------------------------------------------------
     # Difficulty knobs (nle_tune_t)

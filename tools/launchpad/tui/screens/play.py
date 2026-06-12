@@ -39,7 +39,6 @@ from nethack_core.engine_env import EngineEnv  # noqa: E402
 # Per-knob slider ranges (lo, hi, step); default for any unlisted knob.
 _RANGES = {
     "reveal_map": (0.0, 1.0, 1.0),
-    "fog_of_war": (0.0, 1.0, 1.0),
     "vision_radius": (0.0, 15.0, 1.0),
     "room_density": (0.0, 1.5, 0.05),
 }

@@ -4,10 +4,15 @@ import base64
 import io
 
 import numpy as np
-import nle.nethack as N
+import pytest
 from PIL import Image
 
+from nethack_core import glyphs as N
 from nethack_harness.prompt import image_render as IR
+
+# The IMG glyph-tile path needs the optional 'img' extra (minihack's GlyphMapper
+# tileset + glyph2tile map). Skip the whole module when it is not installed.
+pytest.importorskip("minihack", reason="IMG tileset rendering needs the 'img' extra (minihack)")
 
 
 class _Raw:

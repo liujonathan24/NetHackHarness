@@ -60,6 +60,8 @@ def test_img_and_img_tty_registered():
 
 
 def test_img_template_emits_multimodal_list(make_structured_obs):
+    import pytest
+    pytest.importorskip("minihack")  # IMG glyph render needs the 'img' extra
     spec = VARIANT_REGISTRY["IMG"]
     state = {"raw_obs": _Obs()}
     content = spec.turn_template(

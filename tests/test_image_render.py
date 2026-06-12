@@ -38,6 +38,9 @@ def test_module_does_not_bind_optional_deps_at_module_level():
 
 
 def test_glyphs_to_png_b64_is_1264x336():
+    # The built-in glyph IMG path needs the optional 'img' extra (minihack
+    # GlyphMapper); skip cleanly when it is not installed.
+    pytest.importorskip("minihack")
     b64 = image_render.glyphs_to_png_b64(_blank_obs())
     img = _decode_png(b64)
     assert img.format == "PNG"
@@ -74,6 +77,7 @@ def test_to_data_uri_prefix():
 
 
 def test_dict_obs_supported():
+    pytest.importorskip("minihack")  # glyph IMG path needs the 'img' extra
     o = _blank_obs()
     d = {"glyphs": o.glyphs, "tty_chars": o.tty_chars, "tty_colors": o.tty_colors}
     assert image_render.glyphs_to_png_b64(d).startswith  # callable, no raise

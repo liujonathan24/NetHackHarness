@@ -650,28 +650,15 @@ def _maybe_distill(state: dict, prior_dlvl: int) -> None:
 
 
 def _to_action_indices(env: NetHackCoreEnv, actions: list[int]) -> list[int]:
-    """Convert NLE action enum values to indices into the task's action set.
+    """Normalize skill action values to the keystroke bytes the engine consumes.
 
-    Skills built before we settled on indices return enum values (107, 108, ...).
-    Skills built via pathfinding go through the same conversion already. This
-    function is the single point that normalizes everything to indices.
-
-    Any enum value not present in the action set is silently dropped — better
-    to lose an action than to crash mid-rollout with `IndexError`.
+    The semantic action enums ARE keystrokes (CompassDirection.N == 107 ==
+    ord('k'), MiscAction.MORE == 13, ...) and ``EngineEnv.step`` takes those
+    bytes directly -- so there is no longer an action-index translation layer.
+    This is an identity pass-through (kept as a named seam, and so callers don't
+    have to change). ``env`` is unused but retained for signature stability.
     """
-    if not actions:
-        return []
-    enum_to_idx = {int(a): i for i, a in enumerate(env.underlying.unwrapped.actions)}
-    out: list[int] = []
-    for a in actions:
-        a = int(a)
-        # If the value is already a small index (< len(actions)) and matches
-        # the action set, accept it. Otherwise look up by enum value.
-        if a in enum_to_idx:
-            out.append(enum_to_idx[a])
-        elif 0 <= a < len(enum_to_idx):
-            out.append(a)
-    return out
+    return [int(a) for a in actions]
 
 
 

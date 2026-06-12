@@ -25,9 +25,22 @@ computed here.
 from __future__ import annotations
 
 import hashlib
+import pathlib
 from typing import Optional
 
-from ._engine import RawEngine
+import numpy as np
+
+from ._engine import (
+    COLNO,
+    NLE_BLSTATS_SIZE,
+    NLE_INVENTORY_SIZE,
+    NLE_INVENTORY_STR_LENGTH,
+    NLE_MESSAGE_SIZE,
+    NLE_TERM_CO,
+    NLE_TERM_LI,
+    ROWNO,
+    RawEngine,
+)
 from .env import CoreObservation, EpisodeMetadata
 
 
@@ -51,10 +64,25 @@ class _TuneProxy:
 class EngineEnv:
     """Deterministic NetHack env over the fork engine with snapshot + tune."""
 
-    def __init__(self) -> None:
+    #: Whitelist of secure-mutable state fields -> inclusive (lo, hi) bounds.
+    #: goto_depth is handled separately (the engine validates its upper bound).
+    _MODIFY_BOUNDS = {
+        "hp": (0, 30000),
+        "max_hp": (1, 30000),
+        "gold": (0, 10_000_000),
+        "xp_level": (1, 30),
+        "hunger": (0, 2000),
+        # level_up is an INCREMENT (gain N experience levels with real HP/stat
+        # gains via the engine's pluslvl), distinct from xp_level (direct set).
+        "level_up": (1, 29),
+    }
+
+    def __init__(self, modify: Optional[dict] = None) -> None:
         self._engine = RawEngine()
         self._pending_seeds: Optional[tuple[int, int]] = None
         self._current_seeds: Optional[tuple[int, int]] = None
+        #: Default modify config applied on every reset() (unless reset overrides).
+        self._default_modify = dict(modify) if modify else None
         #: ``env.tune.get()`` / ``env.tune.set(**knobs)`` difficulty-knob view.
         self.tune = _TuneProxy(self._engine)
 
@@ -72,6 +100,7 @@ class EngineEnv:
         *,
         seeds: Optional[tuple[int, int]] = None,
         tune: Optional[dict] = None,
+        modify: Optional[dict] = None,
     ) -> tuple[CoreObservation, EpisodeMetadata]:
         """Start a fresh game. Seeds must be staged via seed() or passed here.
 
@@ -81,6 +110,12 @@ class EngineEnv:
         ``tune`` applies difficulty-knob overrides before the starting level is
         generated, so generation-time knobs (e.g. room_density) reshape the
         starting floor. This is the "regenerate with these knobs" path.
+
+        ``modify`` applies whitelisted, bounds-checked state mutations (and an
+        optional ``goto_depth`` dungeon jump) AFTER the game has started, via
+        :meth:`modify`. If not passed, the per-instance default from
+        ``__init__(modify=...)`` is applied instead. Pass ``modify={}`` to apply
+        no mutations regardless of the default.
         """
         if seeds is not None:
             self._pending_seeds = seeds
@@ -98,7 +133,61 @@ class EngineEnv:
             seed_hash=_hash_seeds(*self._current_seeds),
             task_name="engine",
         )
-        return self._engine.to_core_observation(), meta
+        obs = self._engine.to_core_observation()
+        effective_modify = modify if modify is not None else self._default_modify
+        if effective_modify:
+            obs = self.modify(**effective_modify)
+        return obs, meta
+
+    # ----- secure state mutation -----
+
+    def modify(self, **changes) -> CoreObservation:
+        """Apply whitelisted, bounds-checked state mutations.
+
+        Validates the WHOLE call first (unknown fields or out-of-range values
+        raise before any engine write happens, so no partial/arbitrary writes),
+        then applies each field via the engine.
+
+        ``goto_depth=n`` jumps the dungeon level (the engine validates the upper
+        bound) AND seats the hero on that level's downstair, so the Map Viewer
+        "skip to level N and spawn on the ``>``" workflow lands on the stair.
+
+        ``level_up=n`` raises the hero ``n`` experience levels with real HP/stat
+        gains (an increment, distinct from ``xp_level`` which is a direct set).
+
+        Returns the refreshed CoreObservation. Exactly one redraw happens:
+        ``goto_depth`` (via seat_on_stair) and ``level_up`` each already render,
+        so the trailing ctrl-R is only issued when neither was requested.
+        """
+        depth = changes.pop("goto_depth", None)
+        for k, v in changes.items():
+            if k not in self._MODIFY_BOUNDS:
+                allowed = sorted(self._MODIFY_BOUNDS) + ["goto_depth"]
+                raise KeyError(
+                    f"unknown modify field {k!r}; allowed: {allowed}"
+                )
+            lo, hi = self._MODIFY_BOUNDS[k]
+            if not (lo <= int(v) <= hi):
+                raise ValueError(f"{k}={v} out of range [{lo},{hi}]")
+        if depth is not None and not (1 <= int(depth) <= 60):
+            raise ValueError(f"goto_depth={depth} out of range")
+        # level_up is an engine action (pluslvl), not a blstats field set.
+        levels = changes.pop("level_up", None)
+        rendered = False
+        for k, v in changes.items():
+            self._engine.set_state(k, int(v))
+        if levels is not None:
+            self._engine.level_up(int(levels))  # renders via ctrl-R
+            rendered = True
+        if depth is not None:
+            self._engine.goto_depth(int(depth))
+            # seat the hero on the level's downstair (also renders)
+            self._engine.seat_on_stair(down=True)
+            rendered = True
+        if not rendered:
+            # ctrl-R redraw so blstats refresh without consuming a game turn.
+            self._engine.step(18)
+        return self._engine.to_core_observation()
 
     def step(self, action: int) -> tuple[CoreObservation, bool, dict]:
         """Advance one action. Returns (observation, done, info)."""
@@ -129,6 +218,60 @@ class EngineEnv:
     def free_snapshot(self, handle) -> None:
         self._engine.free_snapshot(handle)
 
+    def branch(
+        self,
+        n: int,
+        reseed: bool = True,
+        horizon: int = 40,
+        action: int = ord("s"),
+    ) -> list[list[bytes]]:
+        """Return ``n`` continuations from the current state.
+
+        Takes one snapshot of the current state, then restores it ``n`` times.
+        With ``reseed=True`` each branch reseeds the gameplay RNG AFTER restore
+        (order matters: the snapshot captures the RNG, so reseed must follow
+        restore) so random-chance events diverge across branches.  With
+        ``reseed=False`` the branches replay byte-identically.
+
+        Each branch is rolled out for ``horizon`` steps of ``action`` and
+        returned as a per-step trace of the map ``chars`` (one bytes object per
+        step), so callers can compare branches for divergence.
+
+        The snapshot handle is reused across all ``n`` restores (RawEngine
+        snapshots support repeated restore) and freed before returning.
+        """
+        handle = self.snapshot()
+        try:
+            results: list[list[bytes]] = []
+            for i in range(n):
+                self.restore(handle)
+                if reseed:
+                    self._engine.reseed(core=1000 + i, disp=2000 + i)
+                trace: list[bytes] = []
+                for _ in range(horizon):
+                    obs, _done, _info = self.step(action)
+                    trace.append(obs.chars.tobytes())
+                results.append(trace)
+            return results
+        finally:
+            self.free_snapshot(handle)
+
+    # ----- portable level blob save / load -----
+
+    def save_level(self, path) -> None:
+        """Serialize the current level to a portable blob written to ``path``."""
+        pathlib.Path(path).write_bytes(self._engine.save_level())
+
+    def load_level(self, path) -> CoreObservation:
+        """Load a level blob from ``path`` as the current level.
+
+        Returns the re-rendered observation.  The underlying C load is two-phase;
+        RawEngine.load_level steps once (ctrl-R) internally to redraw, so the
+        observation returned here already reflects the loaded level.
+        """
+        self._engine.load_level(pathlib.Path(path).read_bytes())
+        return self._engine.to_core_observation()
+
     # ----- difficulty knobs -----
 
     def get_tune(self) -> dict:
@@ -152,6 +295,44 @@ class EngineEnv:
     def engine(self) -> RawEngine:
         """Escape hatch for the raw engine (snapshot internals, obs buffers)."""
         return self._engine
+
+    @property
+    def observation_space(self):
+        """A gymnasium Dict space describing the CoreObservation buffers.
+
+        Built lazily from the engine layout constants (so it is valid before the
+        first reset and does not require gymnasium at import time). Only
+        gym-shaped consumers (e.g. the PufferLib adapter) need this; the engine
+        itself works on raw numpy buffers.
+        """
+        import gymnasium as gym
+
+        u8 = lambda shape: gym.spaces.Box(  # noqa: E731
+            low=0, high=255, shape=shape, dtype=np.uint8
+        )
+        i16 = lambda shape: gym.spaces.Box(  # noqa: E731
+            low=np.iinfo(np.int16).min, high=np.iinfo(np.int16).max,
+            shape=shape, dtype=np.int16,
+        )
+        i64 = lambda shape: gym.spaces.Box(  # noqa: E731
+            low=np.iinfo(np.int64).min, high=np.iinfo(np.int64).max,
+            shape=shape, dtype=np.int64,
+        )
+        map_shape = (ROWNO, COLNO - 1)
+        tty_shape = (NLE_TERM_LI, NLE_TERM_CO)
+        return gym.spaces.Dict({
+            "tty_chars": u8(tty_shape),
+            "tty_colors": u8(tty_shape),
+            "tty_cursor": u8((2,)),
+            "glyphs": i16(map_shape),
+            "chars": u8(map_shape),
+            "colors": u8(map_shape),
+            "message": u8((NLE_MESSAGE_SIZE,)),
+            "inv_strs": u8((NLE_INVENTORY_SIZE, NLE_INVENTORY_STR_LENGTH)),
+            "inv_letters": u8((NLE_INVENTORY_SIZE,)),
+            "inv_glyphs": i16((NLE_INVENTORY_SIZE,)),
+            "blstats": i64((NLE_BLSTATS_SIZE,)),
+        })
 
 
 def _hash_seeds(core: int, disp: int) -> str:

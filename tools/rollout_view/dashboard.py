@@ -30,7 +30,11 @@ def _svg_linechart(title: str, series_by_run: list[tuple[str, list[tuple[int, fl
     xmin, xmax = min(xs), max(xs) or 1
     ymin, ymax = min(ys), max(ys)
     if ymax == ymin:
-        ymax = ymin + 1
+        # Flat series (constant metric, common in short recordings): pad the
+        # range symmetrically so the line sits mid-chart instead of pinned to
+        # the bottom axis where it reads as "no data".
+        pad = abs(ymin) * 0.5 or 1
+        ymin, ymax = ymin - pad, ymax + pad
     iw, ih = w - pad_l - pad_r, h - pad_t - pad_b
 
     def px(x):
@@ -55,6 +59,12 @@ def _svg_linechart(title: str, series_by_run: list[tuple[str, list[tuple[int, fl
         color = CANDY[i % len(CANDY)]
         pts = " ".join(f"{px(x):.1f},{py(y):.1f}" for x, y in s)
         parts.append(f'<polyline points="{pts}" fill="none" stroke="{color}" stroke-width="2"/>')
+        # Dot markers per point. Crucial for a single-point series, where a
+        # one-vertex <polyline> draws no segment and is otherwise invisible —
+        # so plotting a single short trace would show "nothing". Also makes
+        # flat series legible. Cheap for multi-point series.
+        for x, y in s:
+            parts.append(f'<circle cx="{px(x):.1f}" cy="{py(y):.1f}" r="2.5" fill="{color}"/>')
     parts.append("</svg>")
     legend = " ".join(
         f'<span class="lg" style="color:{CANDY[i%len(CANDY)]}">&#9632; {_html.escape(lbl)}</span>'

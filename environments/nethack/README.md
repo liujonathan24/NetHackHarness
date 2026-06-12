@@ -7,13 +7,21 @@ This is **layer 2** — a thin wrapper around the interface-agnostic `nethack_co
 ## Quickstart
 
 ```bash
-# from the repo root
-uv pip install -e ../../nethack_core
-uv pip install -e .
+# from the repo root: fetch + build the NetHack fork engine first
+# (needs cmake/bison/flex/libbz2-dev). nle/minihack are no longer deps.
+git submodule update --init --recursive
+bash nethack_core/build_engine.sh   # -> third_party/NetHack/src/build/libnethack.so
+
+# install the workspace (--all-packages pulls numpy/gymnasium, formerly
+# transitive via nle)
+uv sync --all-packages
 
 # smoke test against an OpenAI-compatible endpoint
-uv run vf-eval nethack -m gpt-4.1-mini -n 3 -r 1 -a '{"tier": "empty_room"}'
+uv run vf-eval nethack -m gpt-4.1-mini -n 3 -r 1 -a '{"tier": "mini_dungeon"}'
 ```
+
+See [`../../docs/engine-layer.md`](../../docs/engine-layer.md) for the engine
+API (snapshot/branch, level blobs, state modification, difficulty knobs).
 
 ## Arguments
 
@@ -82,10 +90,13 @@ see `experiment_log.md` for the live numbers.
 
 ## Tiers
 
-Tier `nle_task` decides whether you get a real NetHack game or a MiniHack
-synthetic level. The substring `"MiniHack"` in `nle_task` is the marker.
+All tiers now run on the NetHack fork engine. The former MiniHack synthetic
+tiers have been **retired** in the engine migration; a `nle_task` containing
+`"MiniHack"` raises at construction. Synthetic levels are now produced via the
+engine's level-blob load path instead (`save_level`/`load_level`,
+[`../../docs/engine-layer.md`](../../docs/engine-layer.md)).
 
-### Real NLE (no extra deps)
+### Native NetHack tiers
 
 | tier               | nle_task          | max_steps | success milestone                | description                                            |
 |--------------------|-------------------|-----------|----------------------------------|--------------------------------------------------------|
@@ -98,18 +109,14 @@ synthetic level. The substring `"MiniHack"` in `nle_task` is the marker.
 | `full_nle`         | `NetHackScore-v0` | 100,000   | none (ascension via tty markers) | The full game. Ascend.                                 |
 | `dynamic_subgoal`  | `NetHackScore-v0` | 4,000     | per-rollout (LLM-proposed)       | Proposer LLM emits an objective + termination_check; the env compiles it into a Milestone. |
 
-### MiniHack synthetic (requires `pip install nethack[minihack]`)
+### MiniHack synthetic (retired)
 
-| tier            | nle_task                     | max_steps | success milestone   | description                                  |
-|-----------------|------------------------------|-----------|---------------------|----------------------------------------------|
-| `empty_room`    | `MiniHack-Skill-Custom-v0`   | 200       | reach dlvl 2 (tty)  | 3x3 room with a downstair. Descend to win.   |
-| `solo_combat`   | `MiniHack-Skill-Custom-v0`   | 400       | reach dlvl 2 (tty)  | One jackal + a sword in a small room.        |
-| `multi_combat`  | `MiniHack-Skill-Custom-v0`   | 600       | reach dlvl 2 + HP>0 | Three weak monsters in a larger room.        |
-
-MiniHack tiers carry a `des_file` body that's compiled by
-`MiniHack-Skill-Custom-v0`; the NLE tiers leave `des_file=None`. The Hub
-install does not include MiniHack — if you select a MiniHack tier without
-the optional dep installed, `NetHackCoreEnv` raises a friendly install hint.
+The old `empty_room` / `solo_combat` / `multi_combat` MiniHack tiers (formerly
+`MiniHack-Skill-Custom-v0`, gated behind `pip install nethack[minihack]`) have
+been removed. `minihack` is no longer a dependency. Selecting a `"MiniHack"`
+task now raises at `NetHackCoreEnv` construction. The replacement for fixed
+synthetic levels is the engine's concrete level-blob path (generate a floor,
+`save_level` it to an asset, `load_level` it at reset).
 
 ## Rewards
 

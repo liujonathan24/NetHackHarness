@@ -52,7 +52,6 @@ def test_expected_tiers_present():
     from nethack_harness.curriculum.curriculum import list_tiers
 
     expected = {
-        "empty_room", "solo_combat", "multi_combat",
         "corridor_explore", "mini_dungeon",
         "mines_to_minetown", "sokoban_complete", "oracle_consult",
         "full_dungeon_easy", "full_nle",

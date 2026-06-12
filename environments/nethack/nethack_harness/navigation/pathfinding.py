@@ -29,7 +29,7 @@ from typing import Iterator, Optional
 
 import numpy as np
 
-from nle import nethack
+from nethack_core import actions as nethack
 
 from nethack_core.env import CoreObservation
 
