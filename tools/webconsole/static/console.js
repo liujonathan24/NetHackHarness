@@ -58,10 +58,15 @@ async function buildGifs(boxId){
   box.innerHTML='';
   const grid=document.createElement('div'); grid.className='gif-grid';
   list.forEach(n=>{const w=document.createElement('div'); w.className='gif-cell';
-    // Escape the gif name for HTML contexts and percent-encode it for the URL so
-    // a name with a space/quote/&/< doesn't break the markup or the src path.
-    const h=escHtml(n), u=encodeURIComponent(n);
-    w.innerHTML='<div class="glabel">'+h+'</div><img src="/gif/'+u+'" loading="lazy" alt="Animated demo showing the effect of the '+h+' setting">'; grid.appendChild(w);});
+    // Build via DOM: set the label as a text node and the src/alt as properties.
+    // escHtml escapes &<> but NOT quotes, so interpolating the name into a
+    // double-quoted alt="" attribute would let a filename containing a " break
+    // out and inject markup. Property assignment can't be escaped out of.
+    const lbl=document.createElement('div'); lbl.className='glabel'; lbl.textContent=n;
+    const img=document.createElement('img');
+    img.src='/gif/'+encodeURIComponent(n); img.loading='lazy';
+    img.alt='Animated demo showing the effect of the '+n+' setting';
+    w.appendChild(lbl); w.appendChild(img); grid.appendChild(w);});
   box.appendChild(grid);
 }
 
