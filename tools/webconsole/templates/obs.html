@@ -91,8 +91,13 @@ async function obsLoadTraces(){
   if(!list.length){box.innerHTML='<div class="obs-hint">no .ndjson traces found. Record one in the Map Viewer.</div>'; return;}
   box.innerHTML='';
   list.forEach(f=>{
+    // Build via DOM (value as a property, name as a text node) so a trace path
+    // or filename containing quotes/&/< can't break the markup.
     const l=document.createElement('label');
-    l.innerHTML='<input type="checkbox" class="obs-trace" value="'+f.path.replace(/"/g,'&quot;')+'"> '+f.name+' ('+f.turns+')';
+    const cb=document.createElement('input');
+    cb.type='checkbox'; cb.className='obs-trace'; cb.value=f.path;
+    l.appendChild(cb);
+    l.appendChild(document.createTextNode(' '+f.name+' ('+f.turns+')'));
     box.appendChild(l);
   });
 }
