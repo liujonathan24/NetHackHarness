@@ -90,7 +90,11 @@ function apply(d){
   // keep their 'changes pending' state until Reset. (Dirty is cleared in doReset,
   // not here, so a step between changing a reset knob and Reset keeps the marker.)
   for(const k in d.tune){ if(META[k]&&META[k].reset) continue; curTune[k]=d.tune[k]; syncControl(k,d.tune[k]); }
-  document.getElementById('recstat').textContent=d.recording?('● recording '+d.recording):'';
+  const rs=document.getElementById('recstat');
+  // aria-hide the decorative ● so the live region announces 'recording <name>'
+  // rather than 'black circle recording …' (consistent with the record button).
+  if(d.recording) rs.innerHTML='<span aria-hidden="true">●</span> recording '+escHtml(d.recording);
+  else rs.textContent='';
   syncRec(!!d.recording);
 }
 /* Single source of truth for the record button's visual + a11y + label state,
@@ -139,7 +143,9 @@ function toggleRec(){
   return engineCall(()=>post(on?'/record_stop':'/record_start',{}).then(r=>{
     if(r&&r.error){const ms=document.getElementById('recstat'); if(ms)ms.textContent='⚠ '+r.error; return;}
     syncRec(!on);
-    document.getElementById('recstat').textContent=on?('saved '+(r.name||'')+' ('+(r.turns||0)+' turns)'):('● recording '+r.name);
+    const rs=document.getElementById('recstat');
+    if(on) rs.textContent='saved '+(r.name||'')+' ('+(r.turns||0)+' turns)';
+    else rs.innerHTML='<span aria-hidden="true">●</span> recording '+escHtml(r.name);
   }));
 }
 /* ---------- state-modify panel (map page) ---------- */
