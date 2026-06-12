@@ -44,7 +44,7 @@
 - [x] 6.1 Native path imports no nle; pure-Python `nethack_core/glyphs.py` (exact parity vs nle) replaces the last glyph-helper coupling; MiniHack gym branch raises
 - [x] 6.2 `nle`/`minihack` removed from all pyproject; `uv sync --all-packages` resolves clean; nle/minihack uninstalled
 - [x] 6.3 Acceptance grep clean (only comments/docstrings; runtime imports zero) — golden oracle-recorder script left as documentation (not collected)
-- [ ] 6.4 Update `Dockerfile.prime` to build the submodule (`build_engine.sh`) instead of installing the nle wheel
+- [x] 6.4 `Dockerfile.prime` builds the submodule via `build_engine.sh` (no nle wheel) — DONE (not docker-build-tested on this node)
 - [x] 6.5 `image_render.py` degrades gracefully without minihack (IMG path → `img` optional extra); tty path works
 
 ## 7. Verify + docs
@@ -52,4 +52,4 @@
 - [ ] 7.2 Full eval smoke run end-to-end through the new engine
 - [ ] 7.3 Document the engine layer: binding, snapshot/branch/modify API, tune knobs, level blobs; `--recurse-submodules` + `build_engine.sh` steps in README
 - [ ] 7.4 Record OQ resolutions + final API signatures; mark absorbed `custom-nethack-engine` tasks superseded
-- [ ] 7.5 Phase D — `legacy/replay.py`: verify (seed,actions) replay works on the deterministic engine / swap to snapshot-restore; update `test_replay.py`
+- [x] 7.5 Phase D — `legacy/replay.py` (seed,actions) replay works on the deterministic engine; `test_replay.py` 6 green (no rewrite needed)
