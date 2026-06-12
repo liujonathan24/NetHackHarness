@@ -34,10 +34,13 @@ async function loadTraceList(){
       d.setAttribute('aria-current','true');};
     box.appendChild(d);});
 }
+let _traceReq=0;
 async function loadTrace(path){
+  const myReq=++_traceReq;  // ignore a stale response if a newer trace was clicked
   let r;
   try{ r=await(await fetch('/trace?path='+encodeURIComponent(path))).json(); }
   catch(e){ r={error:'could not load trace'}; }
+  if(myReq!==_traceReq) return;  // superseded by a later loadTrace
   if(r.error){ document.getElementById('t-status').textContent='⚠ '+r.error; return; }
   TURNS=r.turns||[];
   const sc=document.getElementById('scrub'); sc.max=Math.max(0,TURNS.length-1); sc.value=0;
