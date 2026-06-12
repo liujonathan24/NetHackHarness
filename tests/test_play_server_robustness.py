@@ -176,3 +176,21 @@ def test_modify_noninteger_change_value_is_400(client):
     for bad in (None, [1], {"x": 1}):
         code, _ = _err(client.post("/modify", json={"changes": {"hp": bad}}))
         assert code == 400, f"changes hp={bad!r} should be 400"
+
+
+# --- /current must not 500 when an env exists but no game is started ----------
+def test_current_unstarted_env_is_200_live_false(client, monkeypatch):
+    """/catalog lazily builds an env (to read the knob list) before the page's
+    first /reset, so on a cold load /current sees a non-None but unstarted env.
+    Reading a frame then raises 'requires an active game' — /current must treat
+    that as no live game (200, live:false) so the page resets, not 500."""
+    class _Engine:
+        def to_core_observation(self):
+            raise RuntimeError("get_tune() requires an active game; call start() first")
+    class _Env:
+        engine = _Engine()
+    monkeypatch.setitem(ps.STATE, "env", _Env())
+    monkeypatch.setitem(ps.STATE, "resumed", False)
+    r = client.get("/current")
+    assert r.status_code == 200
+    assert r.get_json().get("live") is False

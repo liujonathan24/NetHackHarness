@@ -425,8 +425,15 @@ def current():
         return jsonify({"live": False})
     resumed = STATE["resumed"]
     STATE["resumed"] = False  # one-shot: only the first post-resume load skips reset
-    obs = _env().engine.to_core_observation()
-    payload = _payload(obs)
+    # The env can exist without a started game: /catalog lazily constructs one
+    # (to read the knob list) before the page's first /reset. Reading a frame
+    # then raises ("requires an active game"). Treat that like no live game and
+    # let the page do its normal reset, instead of 500-ing on every cold load.
+    try:
+        obs = _env().engine.to_core_observation()
+        payload = _payload(obs)
+    except Exception:
+        return jsonify({"live": False})
     payload["live"] = bool(resumed)
     payload["seed"] = STATE["seed"]
     return jsonify(payload)
