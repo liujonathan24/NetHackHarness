@@ -63,7 +63,9 @@ body{
 /* ---------- generic ---------- */
 a{color:var(--stairs)}
 h1,h2,h3{font-weight:bold}
-h3{color:var(--good);margin:14px 0 6px;border-bottom:1px solid var(--line);padding-bottom:3px;letter-spacing:.5px}
+/* Section headings are <h2> (one level under each page's <h1>) but keep the
+   compact look — explicit font-size so <h2> doesn't balloon to the UA default. */
+h2,h3{color:var(--good);margin:14px 0 6px;border-bottom:1px solid var(--line);padding-bottom:3px;letter-spacing:.5px;font-size:15px}
 .wrap{padding:18px 22px}
 .screen{
   font-size:15px;line-height:1.15;white-space:pre;letter-spacing:0;
@@ -84,11 +86,11 @@ h3{color:var(--good);margin:14px 0 6px;border-bottom:1px solid var(--line);paddi
   background:linear-gradient(180deg,var(--panel),var(--panel-2));
   overflow-y:auto;max-height:calc(100vh - 46px);
 }
-/* Two-column knob grid: h3 group headings span the full width; each .knob is a
+/* Two-column knob grid: h2 group headings span the full width; each .knob is a
    single cell with its label stacked above the slider+number so a half-width
    column stays readable. */
 #groups{display:grid;grid-template-columns:1fr 1fr;column-gap:14px;row-gap:2px;align-items:start}
-#groups h3{grid-column:1/-1}
+#groups h2{grid-column:1/-1}
 .knob{display:flex;align-items:center;flex-wrap:wrap;margin:6px 0;gap:4px 6px}
 .knob .name{flex-basis:100%;color:var(--hero);font-size:12px}
 .knob .name .rst{color:var(--warn);font-size:10px}
@@ -173,7 +175,7 @@ button.act-btn:hover{filter:brightness(1.12)}
 
 /* shared hint text (gallery "loading…"/"none found", obs help) */
 .obs-hint{color:var(--ink-faint);font-size:11px;margin-top:6px;line-height:1.4}
-#demos h3,#gallery h3{margin-top:26px}
+#gallery h2{margin-top:26px}
 .gif-grid{display:flex;flex-wrap:wrap;gap:14px}
 .gif-cell{display:inline-block;vertical-align:top;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:8px}
 .gif-cell .glabel{color:var(--hero);font-size:12px;margin-bottom:5px}

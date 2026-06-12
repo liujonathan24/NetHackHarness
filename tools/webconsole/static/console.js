@@ -120,7 +120,7 @@ function row(m){const div=document.createElement('div'); div.className='knob';
 async function build(){const cat=await(await fetch('/catalog')).json();
   cat.knobs.forEach(m=>{META[m.name]=m; curTune[m.name]=m.default;});
   const box=document.getElementById('groups');
-  cat.groups.forEach(g=>{const h=document.createElement('h3'); h.textContent=g; box.appendChild(h);
+  cat.groups.forEach(g=>{const h=document.createElement('h2'); h.textContent=g; box.appendChild(h);
     cat.knobs.filter(m=>m.group===g).forEach(m=>box.appendChild(row(m)));});}
 
 /* Map page wires the keyboard handler + boots build(). On load it asks /current:
