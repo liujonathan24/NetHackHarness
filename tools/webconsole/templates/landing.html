@@ -2,7 +2,7 @@
 {% block title %}NetHack Console{% endblock %}
 {% block body %}
 <div class="landing">
-  <div class="title"><span class="glyph">&gt;</span> NetHack Web Console</div>
+  <h1 class="title"><span class="glyph" aria-hidden="true">&gt;</span> NetHack Web Console</h1>
 
   <p class="lede">
     An interactive browser front-end over the <b>fork NetHack engine</b>
@@ -22,19 +22,19 @@
 
   <div class="cards">
     <a class="card c-map" href="/map">
-      <div class="cglyph">@</div>
+      <div class="cglyph" aria-hidden="true">@</div>
       <div class="ctitle">Map Viewer</div>
       <div class="cdesc">Live interactive play with the full grouped knob sidebar,
         Reset/regenerate, and the Record toggle.</div>
     </a>
     <a class="card c-obs" href="/obs">
-      <div class="cglyph">&divonx;</div>
+      <div class="cglyph" aria-hidden="true">&divonx;</div>
       <div class="ctitle">Observation Creator</div>
-      <div class="cdesc">Compose metrics over recorded rollouts and plot them.
-        (Coming next.)</div>
+      <div class="cdesc">Compose metrics over recorded rollouts and plot them
+        as labeled time-series.</div>
     </a>
     <a class="card c-trace" href="/traces">
-      <div class="cglyph">&gt;</div>
+      <div class="cglyph" aria-hidden="true">&gt;</div>
       <div class="ctitle">Tracer</div>
       <div class="cdesc">Replay recorded <code>.ndjson</code> rollouts: scrub turns,
         see map + status + reward + messages + LLM panes.</div>
@@ -43,7 +43,7 @@
 
   <div id="gallery">
     <h3>Knob-effect demos</h3>
-    <div id="demos"><div style="color:#5d5f6e">loading GIFs…</div></div>
+    <div id="demos" aria-live="polite"><div class="obs-hint">loading GIFs…</div></div>
   </div>
 </div>
 
