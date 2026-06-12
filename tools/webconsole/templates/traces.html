@@ -58,7 +58,7 @@ function showTurn(i){
   document.getElementById('t-msgs').textContent=(t.messages||[]).join('  ');
   const rz=document.getElementById('t-resume');
   if(t.checkpoint){
-    rz.innerHTML='<button class="act-btn" id="resumebtn"><span aria-hidden="true">&#9658;</span> Resume from this floor</button>'+
+    rz.innerHTML='<button type="button" class="act-btn" id="resumebtn"><span aria-hidden="true">&#9658;</span> Resume from this floor</button>'+
                  '<span id="resumestat" role="status" aria-live="polite"></span>';
     document.getElementById('resumebtn').onclick=()=>resumeFloor(t.checkpoint);
   } else { rz.innerHTML=''; }
