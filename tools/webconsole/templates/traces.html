@@ -33,9 +33,17 @@ async function loadTraceList(){
     box.appendChild(d);});
 }
 async function loadTrace(path){
-  const r=await(await fetch('/trace?path='+encodeURIComponent(path))).json();
+  let r;
+  try{ r=await(await fetch('/trace?path='+encodeURIComponent(path))).json(); }
+  catch(e){ r={error:'could not load trace'}; }
+  if(r.error){ document.getElementById('t-status').textContent='⚠ '+r.error; return; }
   TURNS=r.turns||[];
   const sc=document.getElementById('scrub'); sc.max=Math.max(0,TURNS.length-1); sc.value=0;
+  if(!TURNS.length){  // empty trace: report it instead of leaving stale panes
+    document.getElementById('t-status').textContent='this trace has no turns';
+    ['t-turninfo','t-msgs','t-llm','t-resume','t-map'].forEach(id=>document.getElementById(id).innerHTML='');
+    return;
+  }
   showTurn(0);
 }
 function showTurn(i){
