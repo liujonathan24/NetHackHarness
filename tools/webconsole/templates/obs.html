@@ -29,7 +29,10 @@
 .obs-card label input{margin-right:6px;vertical-align:middle}
 .obs-list{max-height:240px;overflow:auto}
 .obs-custom-row{display:flex;gap:6px;margin:5px 0}
-.obs-custom-row input{flex:1;background:#10111a;color:var(--ink);border:1px solid var(--line);
+/* min-width:0 lets the flex inputs shrink below their intrinsic text-field
+   width; without it the fixed 140px name field + a non-shrinking expr field
+   overflow a narrow card and force horizontal page scroll (WCAG 1.4.10). */
+.obs-custom-row input{flex:1;min-width:0;background:#10111a;color:var(--ink);border:1px solid var(--line);
   border-radius:3px;padding:4px 6px;font-family:inherit;font-size:13px}
 .obs-custom-row input.cname{max-width:140px;flex:0 0 140px}
 .obs-actions{margin:14px 0}
