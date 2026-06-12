@@ -218,6 +218,9 @@ a:focus-visible,button:focus-visible,input:focus-visible,
 }
 .screen:focus-visible{outline:2px solid var(--focus);outline-offset:0}
 #nav a.link:focus-visible{outline-offset:-2px}
+/* The active link has a light (stairs) background, so the gold focus ring drawn
+   inside it would be ~1:1 contrast (invisible). Use a dark ring there instead. */
+#nav a.link.active:focus-visible{outline-color:#10111a}
 
 @media (prefers-reduced-motion: reduce){
   *,*::before,*::after{transition:none !important;animation:none !important}
