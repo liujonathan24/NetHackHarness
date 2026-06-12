@@ -1,5 +1,7 @@
 # Tasks — custom-nethack-engine
 
+> SUPERSEDED: the remaining open tasks (nle cutover §5/§7.5, level loading §3.5/§6, gen knobs, Docker/docs §2.3-2.4/§8) were completed under the `level-replay` change (branch level-replay, 2026-06-11). This change can be archived.
+
 > **Status reconciled 2026-06-11** against the actual branch (`custom-nethack-engine`).
 > Boxes were previously all-unchecked despite the foundation being built; this reflects real state.
 >

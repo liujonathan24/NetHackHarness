@@ -66,3 +66,14 @@ Hard gates (inherited): GATE A parity + determinism must stay green across the c
 
 ## Non-goals
 - Runtime des authoring / `LevelGenerator`; `RewardManager` (we have `milestones.py`); a full search/MCTS harness over snapshots (separate change after the branch primitive); web-console UI for the floor library (engine/Python only here).
+
+## Resolved (level-replay)
+
+Shipped on branch `level-replay` (2026-06-11). Final API as implemented (verified against `nethack_core/engine_env.py` + `_engine.py`):
+
+- `EngineEnv.save_level(path) -> None` / `EngineEnv.load_level(path) -> CoreObservation` — concrete `savelev`/`getlev` level-file blobs. **OQ4 resolved: concrete blobs, not des templates.** Portable across fresh same-build games, not version-portable; hero re-seated on load. Load is two-phase (C mutates state; the binding steps once / ctrl-R to re-render) — handled internally, so the returned obs already reflects the loaded floor.
+- `EngineEnv.branch(n, reseed=True, horizon=40, action=ord("s")) -> list[list[bytes]]` — snapshots once, restores `n` times; `reseed=True` reseeds the gameplay RNG *after* each restore (order matters) so branches diverge, `reseed=False` replays byte-identically. Returns a per-step trace of map `chars` per branch. Built on `RawEngine.snapshot`/`restore`/`reseed` (the binding-only Spike-2 path; no extra fork C).
+- `EngineEnv.modify(**changes) -> CoreObservation` — whitelisted, bounds-checked state mutation: `hp`/`max_hp`/`gold`/`xp_level`/`hunger` (per-field bounds) plus `goto_depth` (1..60). Whole call validated before any write; live or at reset (`reset(modify=...)` / `EngineEnv(modify=...)`).
+- `RawEngine.goto_depth(n) -> RawEngine` — deferred dungeon-level jump (two-phase like load_level; a wait step runs `rhack` to process the scheduled goto). Surfaced through `modify(goto_depth=n)`.
+- **Replay** works on the deterministic engine via snapshot/restore (Spike-2 proven): plain restore is byte-exact (RNG included); old `(seed, actions)` recordings stay viewer-readable, not re-executed.
+- **Curriculum:** MiniHack dropped entirely (state-modification + level-blob pivot). The `NetHackCoreEnv` MiniHack/`des_file` gym backend is removed; a `"MiniHack"` task name now raises at construction. Fixed synthetic levels move to the `save_level`/`load_level` blob path.
