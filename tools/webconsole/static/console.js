@@ -134,6 +134,12 @@ function initMap(){
   document.getElementById('screen').addEventListener('keydown',async e=>{
     let ch=KEYMAP[e.key]; if(!ch&&e.key.length===1)ch=e.key; if(!ch)return; e.preventDefault();
     apply(await post('/step',{keys:ch}));});
+  // Enter to apply, matching type-then-Enter expectations: in the seed box it
+  // regenerates; in a modify-panel number field it triggers that row's button.
+  const seed=document.getElementById('seed');
+  if(seed)seed.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();doReset();}});
+  document.querySelectorAll('#modify .mnum').forEach(inp=>inp.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){e.preventDefault();const b=inp.parentNode.querySelector('button');if(b)b.click();}}));
   (async()=>{
     await build();
     let d=null; try{ d=await(await fetch('/current')).json(); }catch(e){ d=null; }
