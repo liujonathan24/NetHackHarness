@@ -240,10 +240,17 @@ def reset():
     except (KeyError, ValueError) as e:
         return jsonify({"error": str(e)}), 400
     STATE["started"] = True  # a game is now active; play routes may touch the engine
+    # Finalize any in-progress recording before the new game proceeds: keeping the
+    # same trace across a reset collides checkpoints (a new game at the same dlvl
+    # reuses the prior game's <stem>.ckpt.<dlvl>.json), silently corrupting resume.
+    # One recording = one game; the client reflects the stop via apply()->syncRec().
+    if STATE["rec"]:
+        STATE["rec"]["fh"].close()
+        STATE["rec"] = None
     for _ in range(2):
         obs, _, _ = _env().step(ord("."))
     obs = _settle(_env(), obs)
-    _record(obs)
+    _record(obs)  # no-op now if the reset stopped an active recording
     return jsonify(_payload(obs))
 
 
