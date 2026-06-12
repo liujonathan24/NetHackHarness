@@ -143,6 +143,59 @@ def test_plot_endpoint_with_custom_metric(client, trace_path):
     assert "composed" in html
 
 
+def _write_web_trace(path: pathlib.Path, *, n: int, varying: bool):
+    """Real Map-Viewer Record format (status keys hp/max_hp/ac/dlvl/gold/xp_lvl).
+    varying=True -> hp decreases each turn; dlvl/xp_lvl stay constant (the common
+    short-recording case where the player barely descended)."""
+    lines = []
+    for t in range(n):
+        lines.append(json.dumps({
+            "turn": t, "raw_grid": ["@..."],
+            "status": {"hp": (12 - t) if varying else 12, "max_hp": 12, "ac": 7,
+                       "dlvl": 1, "gold": 0, "xp_lvl": 1},
+            "messages": [],
+        }))
+    path.write_text("\n".join(lines) + "\n")
+
+
+def test_single_real_trace_varying_metric_draws_a_line(client, tmp_path, monkeypatch):
+    # Regression: plotting ONE real web trace used to look empty. A varying
+    # metric (hp) must produce a visible polyline.
+    monkeypatch.setattr(ps, "_TRACE_DIRS", [tmp_path])
+    tp = tmp_path / "web_one.ndjson"
+    _write_web_trace(tp, n=8, varying=True)
+    r = client.post("/obs/plot", json={"paths": [str(tp)], "metrics": ["hp"], "custom": []})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    html = r.get_json()["charts_html"]
+    assert "<polyline" in html
+    assert "<circle" in html  # point markers (see _svg_linechart)
+
+
+def test_single_real_trace_constant_metric_is_visible(client, tmp_path, monkeypatch):
+    # The default metrics (dlvl, xp) are often CONSTANT in a short recording.
+    # A flat series must still render a visible mark, not "no data".
+    monkeypatch.setattr(ps, "_TRACE_DIRS", [tmp_path])
+    tp = tmp_path / "web_flat.ndjson"
+    _write_web_trace(tp, n=8, varying=False)
+    r = client.post("/obs/plot", json={"paths": [str(tp)], "metrics": ["dlvl", "xp"], "custom": []})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    html = r.get_json()["charts_html"]
+    # both flat metric charts draw markers (and a flat polyline)
+    assert html.count("<polyline") >= 2
+    assert "<circle" in html
+
+
+def test_single_point_series_renders_a_mark(client, tmp_path, monkeypatch):
+    # A one-turn recording -> one (x,y) point. A 1-vertex <polyline> is invisible;
+    # the marker is what makes the single trace plot show anything at all.
+    monkeypatch.setattr(ps, "_TRACE_DIRS", [tmp_path])
+    tp = tmp_path / "web_oneturn.ndjson"
+    _write_web_trace(tp, n=1, varying=True)
+    r = client.post("/obs/plot", json={"paths": [str(tp)], "metrics": ["hp"], "custom": []})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    assert "<circle" in r.get_json()["charts_html"]
+
+
 def test_plot_endpoint_path_safety(client):
     r = client.post("/obs/plot", json={
         "paths": ["/etc/passwd"], "metrics": ["dlvl"], "custom": [],

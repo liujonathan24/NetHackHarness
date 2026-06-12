@@ -79,16 +79,23 @@ h3{color:var(--good);margin:14px 0 6px;border-bottom:1px solid var(--line);paddi
 
 /* ---------- knob sidebar ---------- */
 #side{
-  width:372px;padding:14px;border-left:2px solid var(--line);
+  width:468px;padding:14px;border-left:2px solid var(--line);
   background:linear-gradient(180deg,var(--panel),var(--panel-2));
   overflow-y:auto;max-height:calc(100vh - 46px);
 }
-.knob{display:flex;align-items:center;flex-wrap:wrap;margin:6px 0;gap:6px}
-.knob .name{width:152px;color:var(--hero);font-size:12px}
+/* Two-column knob grid: h3 group headings span the full width; each .knob is a
+   single cell with its label stacked above the slider+number so a half-width
+   column stays readable. */
+#groups{display:grid;grid-template-columns:1fr 1fr;column-gap:14px;row-gap:2px;align-items:start}
+#groups h3{grid-column:1/-1}
+.knob{display:flex;align-items:center;flex-wrap:wrap;margin:6px 0;gap:4px 6px}
+.knob .name{flex-basis:100%;color:var(--hero);font-size:12px}
 .knob .name .rst{color:var(--warn);font-size:10px}
-.knob input[type=range]{flex:1;accent-color:var(--stairs)}
-.knob input.num{width:56px;background:#10111a;color:var(--good);border:1px solid var(--line);text-align:right;border-radius:3px;padding:2px 4px}
-.knob .note{flex-basis:100%;color:var(--ink-faint);font-size:10px;margin-left:152px}
+.knob input[type=range]{flex:1;min-width:0;accent-color:var(--stairs)}
+.knob input.num{width:48px;background:#10111a;color:var(--good);border:1px solid var(--line);text-align:right;border-radius:3px;padding:2px 4px}
+/* bool toggles keep label + switch on one line within the cell */
+.knob .sw{margin-left:auto}
+.knob .note{flex-basis:100%;color:var(--ink-faint);font-size:10px;margin-left:0}
 
 /* toggle switch */
 .sw{position:relative;width:42px;height:20px;display:inline-block}
