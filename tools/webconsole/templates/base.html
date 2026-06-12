@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <title>{% block title %}NetHack Console{% endblock %}</title>
+  <!-- Inline SVG favicon (the @ hero glyph) — avoids a /favicon.ico 404 on every
+       page load without adding a route or a binary asset. -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%3E%3Crect%20width='16'%20height='16'%20fill='%2315161c'/%3E%3Ctext%20x='8'%20y='12'%20font-family='monospace'%20font-size='12'%20text-anchor='middle'%20fill='%23ffe08a'%3E@%3C/text%3E%3C/svg%3E">
+  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%3E%3Crect%20width='16'%20height='16'%20fill='%2315161c'/%3E%3Ctext%20x='8'%20y='12'%20font-family='monospace'%20font-size='12'%20text-anchor='middle'%20fill='%23ffe08a'%3E@%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="{{ url_for('static', filename='console.css') }}">
   <!-- loaded in <head> (not deferred) so global handlers exist before the
        per-page inline initMap()/init calls run during body parse. -->
