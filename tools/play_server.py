@@ -429,6 +429,11 @@ def resume():
     except Exception as e:  # malformed/incompatible checkpoint -> clean 400
         return jsonify({"error": f"could not resume: {e}"}), 400
     STATE["started"] = True  # resume starts a live game
+    # Like /reset: a resume loads a different game, so finalize any in-progress
+    # recording rather than append the resumed game to it (checkpoint collision).
+    if STATE["rec"]:
+        STATE["rec"]["fh"].close()
+        STATE["rec"] = None
     obs = _settle(_env(), obs)
     # Reflect the resumed game in the Map Viewer's state: the env now owns its
     # seed/tune; mirror them so the seed box + knob panel match what's playing.
