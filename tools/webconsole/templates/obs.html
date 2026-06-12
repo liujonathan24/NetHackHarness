@@ -34,7 +34,7 @@ button.obs-btn{
 button.obs-btn:hover{filter:brightness(1.12)}
 button.obs-mini{background:#23242f;color:var(--ink);border:1px solid var(--line);
   border-radius:3px;padding:4px 9px;cursor:pointer;font-size:12px}
-.obs-hint{color:var(--ink-faint);font-size:11px;margin-top:6px;line-height:1.4}
+/* .obs-hint is defined in the shared stylesheet (console.css) */
 #obs-err{color:var(--danger);min-height:16px;margin:6px 0;font-size:13px}
 #obs-results{margin-top:18px}
 </style>
@@ -49,19 +49,21 @@ button.obs-mini{background:#23242f;color:var(--ink);border:1px solid var(--line)
 
   <div class="obs-cols">
     <div class="obs-card">
-      <h3>Traces</h3>
-      <div id="obs-traces" class="obs-list">loading…</div>
+      <h3 id="obs-traces-h">Traces</h3>
+      <div id="obs-traces" class="obs-list" role="group" aria-labelledby="obs-traces-h"
+           aria-busy="true">loading…</div>
     </div>
 
     <div class="obs-card">
-      <h3>Built-in metrics</h3>
-      <div id="obs-metrics" class="obs-list">loading…</div>
+      <h3 id="obs-metrics-h">Built-in metrics</h3>
+      <div id="obs-metrics" class="obs-list" role="group" aria-labelledby="obs-metrics-h"
+           aria-busy="true">loading…</div>
     </div>
 
     <div class="obs-card">
       <h3>Custom metrics</h3>
       <div id="obs-customs"></div>
-      <button class="obs-mini" onclick="addCustom()">+ add custom metric</button>
+      <button class="obs-mini" type="button" onclick="addCustom()">+ add custom metric</button>
       <div class="obs-hint">
         name + expression. Allowed: existing metric names, numbers, parentheses,
         and <b>+ &minus; * /</b> (and unary &minus;). Names must be existing
@@ -71,9 +73,9 @@ button.obs-mini{background:#23242f;color:var(--ink);border:1px solid var(--line)
   </div>
 
   <div class="obs-actions">
-    <button class="obs-btn" onclick="doPlot()">Plot</button>
+    <button class="obs-btn" type="button" onclick="doPlot()">Plot</button>
   </div>
-  <div id="obs-err"></div>
+  <div id="obs-err" role="alert"></div>
   <div id="obs-results"></div>
 </div>
 
@@ -83,6 +85,7 @@ let OBS_CUSTOM_N = 0;
 async function obsLoadTraces(){
   const list = await (await fetch('/traces',{headers:{'Accept':'application/json'}})).json();
   const box = document.getElementById('obs-traces');
+  box.setAttribute('aria-busy','false');
   if(!list.length){box.innerHTML='<div class="obs-hint">no .ndjson traces found. Record one in the Map Viewer.</div>'; return;}
   box.innerHTML='';
   list.forEach(f=>{
@@ -95,6 +98,7 @@ async function obsLoadTraces(){
 async function obsLoadMetrics(){
   const r = await (await fetch('/obs/metrics')).json();
   const box = document.getElementById('obs-metrics');
+  box.setAttribute('aria-busy','false');
   box.innerHTML='';
   (r.metrics||[]).forEach(m=>{
     const l=document.createElement('label');
@@ -109,9 +113,9 @@ function addCustom(name, expr){
   const row=document.createElement('div');
   row.className='obs-custom-row';
   const i=OBS_CUSTOM_N++;
-  row.innerHTML='<input class="cname" placeholder="name" value="'+(name||'')+'">'
-    +'<input class="cexpr" placeholder="xp + 10*dlvl" value="'+(expr||'')+'">'
-    +'<button class="obs-mini" onclick="this.parentNode.remove()">&times;</button>';
+  row.innerHTML='<input class="cname" placeholder="name" aria-label="Custom metric name" value="'+(name||'')+'">'
+    +'<input class="cexpr" placeholder="xp + 10*dlvl" aria-label="Custom metric expression" value="'+(expr||'')+'">'
+    +'<button class="obs-mini" type="button" aria-label="Remove this custom metric" onclick="this.parentNode.remove()"><span aria-hidden="true">&times;</span></button>';
   box.appendChild(row);
 }
 
