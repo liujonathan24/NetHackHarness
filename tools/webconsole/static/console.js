@@ -53,7 +53,10 @@ async function buildGifs(boxId){
   box.innerHTML='';
   const grid=document.createElement('div'); grid.className='gif-grid';
   list.forEach(n=>{const w=document.createElement('div'); w.className='gif-cell';
-    w.innerHTML='<div class="glabel">'+n+'</div><img src="/gif/'+n+'" loading="lazy" alt="Animated demo showing the effect of the '+n+' setting">'; grid.appendChild(w);});
+    // Escape the gif name for HTML contexts and percent-encode it for the URL so
+    // a name with a space/quote/&/< doesn't break the markup or the src path.
+    const h=escHtml(n), u=encodeURIComponent(n);
+    w.innerHTML='<div class="glabel">'+h+'</div><img src="/gif/'+u+'" loading="lazy" alt="Animated demo showing the effect of the '+h+' setting">'; grid.appendChild(w);});
   box.appendChild(grid);
 }
 
