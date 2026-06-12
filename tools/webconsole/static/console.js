@@ -74,7 +74,11 @@ function apply(d){
 async function onChange(name,val){curTune[name]=val;
   if(META[name].reset) setDirty(true);
   else {const d=await post('/live',{name:name,value:val}); apply(d);}}
-async function doReset(){const seed=+document.getElementById('seed').value||42;
+async function doReset(){
+  // Parse the seed without an `||42` fallback — that would turn a valid seed of
+  // 0 into 42 (0 is falsy). Only blank/non-numeric input falls back to 42.
+  const raw=document.getElementById('seed').value.trim();
+  const seed=(raw!==''&&Number.isFinite(+raw))?Math.trunc(+raw):42;
   const d=await post('/reset',{seed:seed,tune:curTune}); apply(d); document.getElementById('screen').focus();}
 async function toggleRec(){
   const rb=document.getElementById('recbtn');
