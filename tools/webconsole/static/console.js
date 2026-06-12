@@ -211,10 +211,20 @@ function row(m){const div=document.createElement('div'); div.className='knob';
     n.addEventListener('change',e=>{let x=+e.target.value; if(!Number.isFinite(x))x=+r.value;  // non-numeric -> keep last valid, no NaN
       let v=Math.max(m.lo,Math.min(m.hi,x)); n.value=v.toFixed(dec); r.value=v; onChange(m.name,v);});}
   if(m.note){const nt=document.createElement('span'); nt.className='note'; nt.textContent=m.note; div.appendChild(nt);} return div;}
-async function build(){const cat=await(await fetch('/catalog')).json();
-  cat.knobs.forEach(m=>{META[m.name]=m; curTune[m.name]=m.default;});
+async function build(){
+  // Tolerate a failed/odd /catalog like the other list loaders: show a notice
+  // instead of throwing, which would reject initMap's IIFE and skip the initial
+  // reset — leaving the map blank with no message.
+  let cat;
+  try{ cat=await(await fetch('/catalog')).json(); }
+  catch(e){ cat=null; }
   const box=document.getElementById('groups');
-  cat.groups.forEach(g=>{const h=document.createElement('h2'); h.textContent=g; box.appendChild(h);
+  if(!cat||!Array.isArray(cat.knobs)){
+    if(box) box.innerHTML='<div class="obs-hint">could not load controls.</div>';
+    return;
+  }
+  cat.knobs.forEach(m=>{META[m.name]=m; curTune[m.name]=m.default;});
+  (cat.groups||[]).forEach(g=>{const h=document.createElement('h2'); h.textContent=g; box.appendChild(h);
     cat.knobs.filter(m=>m.group===g).forEach(m=>box.appendChild(row(m)));});}
 
 /* Map page wires the keyboard handler + boots build(). On load it asks /current:
