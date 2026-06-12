@@ -29,7 +29,7 @@ _DASHES = ("", "6 3", "2 3", "8 3 2 3", "1 3", "10 4")
 def _svg_linechart(title: str, series_by_run: list[tuple[str, list[tuple[int, float]]]],
                    *, w: int = 560, h: int = 180) -> str:
     """One chart: x=turn, y=value, one polyline per run. series_by_run = [(label, [(x,y)..])]."""
-    pad_l, pad_b, pad_t, pad_r = 38, 22, 14, 12
+    pad_b, pad_t, pad_r = 22, 14, 12
     xs = [x for _, s in series_by_run for x, _ in s]
     ys = [y for _, s in series_by_run for _, y in s]
     if not xs or not ys:
@@ -44,6 +44,11 @@ def _svg_linechart(title: str, series_by_run: list[tuple[str, list[tuple[int, fl
         # the bottom axis where it reads as "no data".
         pad = abs(ymin) * 0.5 or 1
         ymin, ymax = ymin - pad, ymax + pad
+    # Size the left gutter to the widest y-tick label so large values (e.g. xp in
+    # the hundreds of thousands) aren't clipped off the chart's left edge; small
+    # ranges keep the original 38px. ~6.6px per monospace char + the 5px tick gap.
+    _ylab = [f"{yy:g}" for yy in (ymin, (ymin + ymax) / 2, ymax)]
+    pad_l = max(38, round(10 + max(len(s) for s in _ylab) * 6.6))
     iw, ih = w - pad_l - pad_r, h - pad_t - pad_b
 
     def px(x):
