@@ -83,40 +83,57 @@ function apply(d){
 function syncRec(on){const rb=document.getElementById('recbtn'); if(!rb)return;
   rb.classList.toggle('on',on); rb.setAttribute('aria-pressed',on);
   const l=document.getElementById('reclabel'); if(l)l.textContent=on?'Stop recording':'Record trace';}
+/* Serialize every engine-mutating request through one ordered queue. The server
+   shares a single EngineEnv and the C engine is not reentrant, so two in-flight
+   /step (e.g. from key-repeat or fast typing), or a /live arriving during a
+   /step, could corrupt engine state or render frames out of order. Each call
+   waits for the previous to settle, preserving input order; failures don't stall
+   the queue (post() never rejects and apply() is error-safe, but guard anyway). */
+let _engineQueue=Promise.resolve();
+function engineCall(fn){
+  const run=_engineQueue.then(fn,fn);
+  _engineQueue=run.catch(()=>{});
+  return run;
+}
 /* Debounce the /live posts per knob: dragging a slider fires `input` per pixel
    and each /live does an engine step + full redraw, so without this a single
-   drag floods the server with dozens of requests that can also render out of
-   order. The number readout still updates instantly (in the input handler);
-   only the network call is coalesced to the trailing value. */
+   drag floods the queue with dozens of requests. The number readout still
+   updates instantly (in the input handler); only the network call is coalesced
+   to the trailing value, then serialized through engineCall. */
 const _liveTimers={};
 function postLive(name,val){
   clearTimeout(_liveTimers[name]);
-  _liveTimers[name]=setTimeout(async()=>{ apply(await post('/live',{name:name,value:val})); }, 90);
+  _liveTimers[name]=setTimeout(()=>{ engineCall(()=>post('/live',{name:name,value:val}).then(apply)); }, 90);
 }
 async function onChange(name,val){curTune[name]=val;
   if(META[name].reset) setDirty(true);
   else postLive(name,val);}
-async function doReset(){
+function doReset(){
   // Parse the seed without an `||42` fallback — that would turn a valid seed of
   // 0 into 42 (0 is falsy). Only blank/non-numeric input falls back to 42.
   const raw=document.getElementById('seed').value.trim();
   const seed=(raw!==''&&Number.isFinite(+raw))?Math.trunc(+raw):42;
-  const d=await post('/reset',{seed:seed,tune:curTune}); apply(d); document.getElementById('screen').focus();}
-async function toggleRec(){
+  return engineCall(()=>post('/reset',{seed:seed,tune:curTune}).then(d=>{
+    apply(d); document.getElementById('screen').focus();}));}
+function toggleRec(){
   const rb=document.getElementById('recbtn');
   const on=rb.classList.contains('on');
-  const r=await post(on?'/record_stop':'/record_start',{});
-  if(r&&r.error){const ms=document.getElementById('recstat'); if(ms)ms.textContent='⚠ '+r.error; return;}
-  syncRec(!on);
-  document.getElementById('recstat').textContent=on?('saved '+(r.name||'')+' ('+(r.turns||0)+' turns)'):('● recording '+r.name);
+  // Serialized with steps so a record_start/stop captures a settled frame, not
+  // one mid-step on the shared env.
+  return engineCall(()=>post(on?'/record_stop':'/record_start',{}).then(r=>{
+    if(r&&r.error){const ms=document.getElementById('recstat'); if(ms)ms.textContent='⚠ '+r.error; return;}
+    syncRec(!on);
+    document.getElementById('recstat').textContent=on?('saved '+(r.name||'')+' ('+(r.turns||0)+' turns)'):('● recording '+r.name);
+  }));
 }
 /* ---------- state-modify panel (map page) ---------- */
 function modErr(msg){const e=document.getElementById('modstat'); if(e)e.textContent=msg||'';
   const m=document.getElementById('message'); if(m&&msg)m.textContent=msg;}
-async function doModify(changes){
-  const d=await post('/modify',{changes:changes});
-  if(d&&d.error){modErr('modify error: '+d.error); return;}
-  modErr(''); apply(d);
+function doModify(changes){
+  return engineCall(()=>post('/modify',{changes:changes}).then(d=>{
+    if(d&&d.error){modErr('modify error: '+d.error); return;}
+    modErr(''); apply(d);
+  }));
 }
 async function goLevel(){const v=Number(document.getElementById('m_goto').value);
   if(!Number.isFinite(v)){modErr('enter a level'); return;} await doModify({goto_depth:v});}
@@ -147,9 +164,9 @@ async function build(){const cat=await(await fetch('/catalog')).json();
  * so navigating from the Tracer's "Resume from this floor" keeps the resumed game.
  * Otherwise it does the normal fresh /reset. */
 function initMap(){
-  document.getElementById('screen').addEventListener('keydown',async e=>{
+  document.getElementById('screen').addEventListener('keydown',e=>{
     let ch=KEYMAP[e.key]; if(!ch&&e.key.length===1)ch=e.key; if(!ch)return; e.preventDefault();
-    apply(await post('/step',{keys:ch}));});
+    engineCall(()=>post('/step',{keys:ch}).then(apply));});
   // Enter to apply, matching type-then-Enter expectations: in the seed box it
   // regenerates; in a modify-panel number field it triggers that row's button.
   const seed=document.getElementById('seed');
