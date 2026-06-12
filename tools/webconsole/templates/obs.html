@@ -9,6 +9,10 @@
 #obs-results{
   --panel:var(--panel-2); --line:var(--line); --line-lt:var(--line-soft);
   --gold:var(--hero); --cyan:var(--stairs); --dim:var(--ink-dim); --mint:var(--good);
+  /* the rollout_view chart cycles --pink,--cyan,--gold,--violet,--mint per run;
+     --pink/--violet were unmapped so the first/4th lines fell back to BLACK.
+     Primary line is white (per request); --violet kept distinct for extra runs. */
+  --pink:#ffffff; --violet:#bda6ff;
 }
 {{ dash_css }}
 .obs-form{max-width:1180px;margin:0 auto}
