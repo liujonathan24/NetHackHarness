@@ -16,6 +16,11 @@
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to main content</a>
+  <noscript>
+    <p style="margin:0;padding:10px 14px;background:#7c2626;color:#fff;text-align:center">
+      This console needs JavaScript — the map, knobs, traces, and charts all render client-side.
+    </p>
+  </noscript>
   <nav id="nav" aria-label="Primary">
     <a class="brand" href="/"><span class="glyph" aria-hidden="true">@</span>NetHack Console</a>
     <a class="link {{ 'active' if active=='map' else '' }}" href="/map"{{ ' aria-current=page' if active=='map' }}>Map Viewer</a>
