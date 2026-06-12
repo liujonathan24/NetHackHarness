@@ -1,20 +1,27 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
   <title>{% block title %}NetHack Console{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='console.css') }}">
+  <!-- loaded in <head> (not deferred) so global handlers exist before the
+       per-page inline initMap()/init calls run during body parse. -->
   <script src="{{ url_for('static', filename='console.js') }}"></script>
 </head>
 <body>
-  <nav id="nav">
-    <a class="brand" href="/"><span class="glyph">@</span>NetHack Console</a>
-    <a class="link {{ 'active' if active=='map' else '' }}" href="/map">Map Viewer</a>
-    <a class="link {{ 'active' if active=='obs' else '' }}" href="/obs">Observation Creator</a>
-    <a class="link {{ 'active' if active=='traces' else '' }}" href="/traces">Tracer</a>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+  <nav id="nav" aria-label="Primary">
+    <a class="brand" href="/"><span class="glyph" aria-hidden="true">@</span>NetHack Console</a>
+    <a class="link {{ 'active' if active=='map' else '' }}" href="/map"{{ ' aria-current=page' if active=='map' }}>Map Viewer</a>
+    <a class="link {{ 'active' if active=='obs' else '' }}" href="/obs"{{ ' aria-current=page' if active=='obs' }}>Observation Creator</a>
+    <a class="link {{ 'active' if active=='traces' else '' }}" href="/traces"{{ ' aria-current=page' if active=='traces' }}>Tracer</a>
     <span class="spacer"></span>
-    <a class="link {{ 'active' if active=='home' else '' }}" href="/">Home</a>
+    <a class="link {{ 'active' if active=='home' else '' }}" href="/"{{ ' aria-current=page' if active=='home' }}>Home</a>
   </nav>
-  {% block body %}{% endblock %}
+  <main id="main-content">
+    {% block body %}{% endblock %}
+  </main>
 </body>
 </html>
