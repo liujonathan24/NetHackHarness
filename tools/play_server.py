@@ -12,7 +12,8 @@ This is the primary interface (the Textual launchpad is legacy). Pages
   * /traces  Tracer - replay recorded .ndjson rollouts (the TraceTurn format the
              launchpad tracer uses): scrub turns, see the map + status + reward +
              any LLM messages. Web recordings show up here too.
-  * /obs     Observation Creator - placeholder (filled in by a later task).
+  * /obs     Observation Creator - compose built-in + custom metrics over
+             recorded .ndjson rollouts and render inline SVG charts.
 
 The JSON API (/reset /step /live /set_tune /catalog /record_* /traces /trace
 /gif*) is unchanged; this is a presentation/navigation refactor only.
@@ -68,6 +69,12 @@ _META = {
     "monster_difficulty_scale": dict(group="Dungeon & spawns", kind="scale", reset=True,  lo=0, hi=10, step=0.5, default=1, note="RESET to reshape this floor; live for new spawns"),
     "ongoing_spawn_scale":      dict(group="Dungeon & spawns", kind="scale", reset=False, lo=0, hi=20, step=0.5, default=1),
     "monster_speed_scale":      dict(group="Dungeon & spawns", kind="scale", reset=False, lo=0, hi=4, step=0.25, default=1),
+    # Generation knobs (consumed in mklev.c during floor build) — all reset.
+    "mob_spawn":                dict(group="Dungeon & spawns", kind="scale", reset=True,  lo=0, hi=3, step=0.25, default=1, note="initial sleeping monsters per room; 0 = none"),
+    "trap_density":             dict(group="Dungeon & spawns", kind="scale", reset=True,  lo=0, hi=3, step=0.25, default=1, note="traps per room; 0 = none"),
+    "locked_door":              dict(group="Dungeon & spawns", kind="scale", reset=True,  lo=0, hi=3, step=0.25, default=1, note="door-lock chance; 0 = never locked"),
+    "corridor_connectivity":    dict(group="Dungeon & spawns", kind="scale", reset=True,  lo=0, hi=3, step=0.25, default=1, note="extra/redundant corridors between rooms"),
+    "room_size":                dict(group="Dungeon & spawns", kind="scale", reset=True,  lo=0.25, hi=3, step=0.25, default=1, note="room dimensions"),
 }
 _DEFAULT_META = dict(group="Stat-based", kind="scale", reset=False, lo=0, hi=3, step=0.25, default=1, note="")
 
@@ -242,12 +249,33 @@ def modify():
     return jsonify(_payload(obs))
 
 
+def _tune_args(data):
+    """Validate a {name, value} tune request. Returns (name, value) on success
+    or a (json_response, status) tuple to return directly. A missing/non-numeric
+    value or non-string name yields a clean 400 instead of a 500 — the engine's
+    set_tune still enforces the knob allow-list + bounds on top of this."""
+    name = data.get("name")
+    if not isinstance(name, str) or not name:
+        return None, (jsonify({"error": "tune name must be a non-empty string"}), 400)
+    try:
+        value = float(data.get("value"))
+    except (TypeError, ValueError):
+        return None, (jsonify({"error": "tune value must be a number"}), 400)
+    return (name, value), None
+
+
 @app.route("/set_tune", methods=["POST"])
 def set_tune():
     data = request.get_json(silent=True) or {}
-    name, value = data.get("name"), float(data.get("value"))
+    parsed, err = _tune_args(data)
+    if err:
+        return err
+    name, value = parsed
     if STATE["env"] is not None:
-        STATE["env"].set_tune(**{name: value})
+        try:
+            STATE["env"].set_tune(**{name: value})
+        except (KeyError, ValueError) as e:
+            return jsonify({"error": str(e)}), 400
     STATE["tune"][name] = value
     return jsonify({"ok": True})
 
@@ -255,10 +283,16 @@ def set_tune():
 @app.route("/live", methods=["POST"])
 def live():
     data = request.get_json(silent=True) or {}
-    name, value = data.get("name"), float(data.get("value"))
     if STATE["env"] is None:
         return jsonify({"error": "call /reset first"}), 400
-    STATE["env"].set_tune(**{name: value})
+    parsed, err = _tune_args(data)
+    if err:
+        return err
+    name, value = parsed
+    try:
+        STATE["env"].set_tune(**{name: value})
+    except (KeyError, ValueError) as e:
+        return jsonify({"error": str(e)}), 400
     STATE["tune"][name] = value
     obs, _, _ = STATE["env"].step(18)  # ctrl-R redraw -> vision_recalc, no move
     obs = _settle(STATE["env"], obs)
