@@ -232,6 +232,11 @@ async function build(){
  * so navigating from the Tracer's "Resume from this floor" keeps the resumed game.
  * Otherwise it does the normal fresh /reset. */
 function initMap(){
+  // Don't send /step until the initial reset/resume has started a game. The
+  // server now rejects pre-start steps (so they can't crash it), but bailing
+  // here avoids a flash of "call /reset first" and wasted requests if the user
+  // types on the screen while the page is still loading.
+  let _ready=false;
   document.getElementById('screen').addEventListener('keydown',e=>{
     // Let browser/OS shortcuts through (Ctrl/Cmd+C copy, Ctrl/Cmd+R reload,
     // paste, devtools, ...). The single-char path would otherwise swallow the
@@ -239,6 +244,7 @@ function initMap(){
     // NetHack control code anyway.
     if(e.ctrlKey||e.metaKey||e.altKey) return;
     let ch=KEYMAP[e.key]; if(!ch&&e.key.length===1)ch=e.key; if(!ch)return; e.preventDefault();
+    if(!_ready) return;  // game not started yet — ignore the keystroke
     engineCall(()=>post('/step',{keys:ch}).then(apply));});
   // Enter to apply, matching type-then-Enter expectations: in the seed box it
   // regenerates; in a modify-panel number field it triggers that row's button.
@@ -259,5 +265,6 @@ function initMap(){
       apply(d); document.getElementById('screen').focus();
     }
     else { await doReset(); }
+    _ready=true;  // a game is started (via resume or reset) — keystrokes now play
   })();
 }
