@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import functools
 import json
 import math
 import pathlib
@@ -58,6 +59,21 @@ _TRACE_DIRS = [_REC_DIR, _ROOT / "outputs", _ROOT / "environments" / "nethack" /
 # Serializes /obs/plot's register/render/unregister against the process-global
 # custom-metric registry (Flask runs threaded).
 _OBS_PLOT_LOCK = threading.Lock()
+
+# The server shares ONE EngineEnv and the C engine is not reentrant, so no two
+# engine-touching requests may run at once (e.g. the map open in two tabs, or a
+# /step racing a Tracer /resume). Every route that reads or mutates the engine is
+# wrapped with @_engine_locked. The client also serializes its own requests, but
+# this is the cross-client safety net. RLock so a locked route may call another.
+_ENGINE_LOCK = threading.RLock()
+
+
+def _engine_locked(fn):
+    @functools.wraps(fn)
+    def _wrapped(*a, **k):
+        with _ENGINE_LOCK:
+            return fn(*a, **k)
+    return _wrapped
 
 _GROUPS = ["Vision", "Stat-based", "Dungeon & spawns"]
 _META = {
@@ -174,6 +190,7 @@ def page_obs():
 
 
 @app.route("/catalog")
+@_engine_locked
 def catalog():
     out = []
     for name in _env().tune.catalog():
@@ -186,6 +203,7 @@ def catalog():
 
 
 @app.route("/reset", methods=["POST"])
+@_engine_locked
 def reset():
     data = request.get_json(silent=True) or {}
     # Validate before touching the engine so malformed input is a clean 400,
@@ -227,6 +245,7 @@ def _settle(env, obs, max_iter=12):
 
 
 @app.route("/step", methods=["POST"])
+@_engine_locked
 def step():
     data = request.get_json(silent=True) or {}
     keys = data.get("keys", "")
@@ -245,6 +264,7 @@ def step():
 
 
 @app.route("/modify", methods=["POST"])
+@_engine_locked
 def modify():
     data = request.get_json(silent=True) or {}
     if STATE["env"] is None:
@@ -277,6 +297,7 @@ def _tune_args(data):
 
 
 @app.route("/set_tune", methods=["POST"])
+@_engine_locked
 def set_tune():
     data = request.get_json(silent=True) or {}
     parsed, err = _tune_args(data)
@@ -293,6 +314,7 @@ def set_tune():
 
 
 @app.route("/live", methods=["POST"])
+@_engine_locked
 def live():
     data = request.get_json(silent=True) or {}
     if STATE["env"] is None:
@@ -312,6 +334,7 @@ def live():
 
 
 @app.route("/record_start", methods=["POST"])
+@_engine_locked
 def record_start():
     if STATE["rec"]:
         return jsonify({"name": STATE["rec"]["name"]})
@@ -327,6 +350,7 @@ def record_start():
 
 
 @app.route("/record_stop", methods=["POST"])
+@_engine_locked
 def record_stop():
     rec = STATE["rec"]
     if rec:
@@ -337,6 +361,7 @@ def record_stop():
 
 
 @app.route("/resume", methods=["POST"])
+@_engine_locked
 def resume():
     """Resume play from a recorded floor-entry checkpoint.
 
@@ -366,6 +391,7 @@ def resume():
 
 
 @app.route("/current", methods=["GET"])
+@_engine_locked
 def current():
     """Return the current live env frame WITHOUT stepping or resetting.
 
