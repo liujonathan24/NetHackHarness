@@ -32,7 +32,9 @@ def _svg_linechart(title: str, series_by_run: list[tuple[str, list[tuple[int, fl
     ys = [y for _, s in series_by_run for _, y in s]
     if not xs or not ys:
         return f'<div class="chart"><div class="ctitle">{_html.escape(title)}</div><div class="dim">no data</div></div>'
-    xmin, xmax = min(xs), max(xs) or 1
+    # NB: no `or 1` on xmax — px()'s divisor has its own zero guard, and bumping
+    # a single-point-at-turn-0 series to xmax=1 would mislabel its x-axis range.
+    xmin, xmax = min(xs), max(xs)
     ymin, ymax = min(ys), max(ys)
     if ymax == ymin:
         # Flat series (constant metric, common in short recordings): pad the
