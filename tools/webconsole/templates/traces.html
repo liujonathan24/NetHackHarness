@@ -27,8 +27,9 @@ async function loadTraceList(){
   if(!list.length){box.innerHTML='<div class="obs-hint">no .ndjson traces found.<br>Record one in the Map Viewer.</div>'; return;}
   box.innerHTML='<h2 id="t-list-h">Rollouts</h2>';
   list.forEach(f=>{const d=document.createElement('button'); d.className='f'; d.type='button';
-    d.textContent=f.name+'  ('+f.turns+' turns)';
-    d.setAttribute('aria-label','Load trace '+f.name+', '+f.turns+' turns');
+    const turns=f.turns+' turn'+(f.turns===1?'':'s');  // "1 turn" not "1 turns"
+    d.textContent=f.name+'  ('+turns+')';
+    d.setAttribute('aria-label','Load trace '+f.name+', '+turns);
     d.onclick=()=>{loadTrace(f.path);
       box.querySelectorAll('.f').forEach(b=>b.removeAttribute('aria-current'));
       d.setAttribute('aria-current','true');};

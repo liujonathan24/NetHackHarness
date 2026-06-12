@@ -148,7 +148,7 @@ function toggleRec(){
     if(r&&r.error){const ms=document.getElementById('recstat'); if(ms)ms.textContent='⚠ '+r.error; return;}
     syncRec(!on);
     const rs=document.getElementById('recstat');
-    if(on) rs.textContent='saved '+(r.name||'')+' ('+(r.turns||0)+' turns)';
+    if(on){const n=r.turns||0; rs.textContent='saved '+(r.name||'')+' ('+n+' turn'+(n===1?'':'s')+')';}
     else rs.innerHTML='<span aria-hidden="true">●</span> recording '+escHtml(r.name);
   }));
 }
