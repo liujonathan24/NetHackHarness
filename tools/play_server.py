@@ -49,7 +49,8 @@ app = Flask(
     template_folder=str(_WEB / "templates"),
     static_folder=str(_WEB / "static"),
 )
-STATE: dict = {"env": None, "seed": 42, "tune": {}, "rec": None, "turn": 0}
+STATE: dict = {"env": None, "seed": 42, "tune": {}, "rec": None, "turn": 0,
+               "ckpt_dlvl": None, "ckpt_path": None, "resumed": False}
 _REC_DIR = _ROOT / "outputs" / "web_play"
 _TRACE_DIRS = [_REC_DIR, _ROOT / "outputs", _ROOT / "environments" / "nethack" / "outputs"]
 
@@ -96,11 +97,30 @@ def _payload(obs) -> dict:
 
 
 def _record(obs, action_key=None):
-    """Append a TraceTurn-format line if recording (compatible with the tracer)."""
+    """Append a TraceTurn-format line if recording (compatible with the tracer).
+
+    Checkpoints are taken on floor entry: on the first recorded turn and
+    whenever dlvl changes, EngineEnv.checkpoint() writes a resumable
+    {seed, level, player} blob alongside the ndjson as
+    ``<stem>.ckpt.<dlvl>.json``. Every recorded turn then carries the CURRENT
+    floor's entry-checkpoint path in ``turn["checkpoint"]`` so the Tracer can
+    resume from ANY selected step via that floor's entry checkpoint.
+    """
     rec = STATE["rec"]
     if not rec:
         return
     s = _status(obs)
+    dlvl = s["dlvl"]
+    # Floor entry (first recorded turn or dlvl changed) -> write a checkpoint.
+    if STATE["ckpt_dlvl"] != dlvl:
+        stem = rec["name"][:-len(".ndjson")] if rec["name"].endswith(".ndjson") else rec["name"]
+        ckpt = _REC_DIR / f"{stem}.ckpt.{dlvl}.json"
+        try:
+            _env().checkpoint(ckpt)
+            STATE["ckpt_path"] = str(ckpt)
+        except Exception:  # pragma: no cover - never let a checkpoint failure break recording
+            STATE["ckpt_path"] = None
+        STATE["ckpt_dlvl"] = dlvl
     msg = bytes(int(c) for c in obs.message).split(b"\x00")[0].decode("latin1", "replace")
     turn = {
         "turn": STATE["turn"], "t_wall": time.time(), "variant": "web_play",
@@ -109,6 +129,7 @@ def _record(obs, action_key=None):
         "reward": 0.0, "messages": [msg] if msg else [],
         "action_indices": [ord(action_key)] if action_key else [],
         "rendered_user_message": "", "assistant_message": "", "tool_calls": [],
+        "checkpoint": STATE["ckpt_path"],
     }
     rec["fh"].write(json.dumps(turn) + "\n")
     rec["fh"].flush()
@@ -158,6 +179,7 @@ def reset():
     data = request.get_json(silent=True) or {}
     STATE["seed"] = int(data.get("seed", STATE["seed"]))
     STATE["tune"] = {k: float(v) for k, v in (data.get("tune") or {}).items()}
+    STATE["resumed"] = False  # an explicit reset supersedes any prior resume
     obs, _ = _env().reset(seeds=(STATE["seed"], STATE["seed"]), tune=dict(STATE["tune"]))
     for _ in range(2):
         obs, _, _ = _env().step(ord("."))
@@ -251,6 +273,8 @@ def record_start():
     name = f"web_{int(time.time())}.ndjson"
     STATE["rec"] = {"name": name, "fh": open(_REC_DIR / name, "w")}
     STATE["turn"] = 0
+    STATE["ckpt_dlvl"] = None  # force a floor-entry checkpoint on the first turn
+    STATE["ckpt_path"] = None
     if STATE["env"] is not None:
         _record(_env().engine.to_core_observation())  # capture current as turn 0
     return jsonify({"name": name})
@@ -264,6 +288,54 @@ def record_stop():
         STATE["rec"] = None
         return jsonify({"name": rec["name"], "turns": STATE["turn"]})
     return jsonify({"name": None})
+
+
+@app.route("/resume", methods=["POST"])
+def resume():
+    """Resume play from a recorded floor-entry checkpoint.
+
+    The checkpoint path is validated against the trace-dirs allow-list (same
+    safety check as /trace), so arbitrary paths are rejected with 400. On
+    success the env is restored to the checkpoint state; the user then keeps
+    playing through the normal /step. Sets STATE["resumed"] so the Map Viewer's
+    initial load renders this state instead of auto-resetting (see /current).
+    """
+    data = request.get_json(silent=True) or {}
+    rp = _trace_allowed(data.get("checkpoint") or "")
+    if rp is None:
+        return jsonify({"error": "checkpoint not allowed"}), 400
+    try:
+        obs = _env().resume(rp)
+    except Exception as e:  # malformed/incompatible checkpoint -> clean 400
+        return jsonify({"error": f"could not resume: {e}"}), 400
+    obs = _settle(_env(), obs)
+    # Reflect the resumed game in the Map Viewer's state: the env now owns its
+    # seed/tune; mirror them so the seed box + knob panel match what's playing.
+    seeds = _env().current_seeds
+    if seeds is not None:
+        STATE["seed"] = int(seeds[0])
+    STATE["tune"] = dict(_env().get_tune())
+    STATE["resumed"] = True
+    return jsonify(_payload(obs))
+
+
+@app.route("/current", methods=["GET"])
+def current():
+    """Return the current live env frame WITHOUT stepping or resetting.
+
+    The Map Viewer calls this on load: if a resume just happened (or any live
+    env exists) it renders that frame; otherwise it signals the page to do a
+    normal /reset. Consumes the one-shot ``resumed`` flag so a later manual
+    reload behaves normally."""
+    if STATE["env"] is None:
+        return jsonify({"live": False})
+    resumed = STATE["resumed"]
+    STATE["resumed"] = False  # one-shot: only the first post-resume load skips reset
+    obs = _env().engine.to_core_observation()
+    payload = _payload(obs)
+    payload["live"] = bool(resumed)
+    payload["seed"] = STATE["seed"]
+    return jsonify(payload)
 
 
 @app.route("/gifs")
@@ -329,6 +401,7 @@ def trace():
             "assistant": o.get("assistant_message", ""),
             "tool_calls": o.get("tool_calls", []),
             "actions": o.get("action_indices", []),
+            "checkpoint": o.get("checkpoint"),
         })
     return jsonify({"turns": turns})
 

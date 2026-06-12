@@ -102,10 +102,21 @@ async function build(){const cat=await(await fetch('/catalog')).json();
   cat.groups.forEach(g=>{const h=document.createElement('h3'); h.textContent=g; box.appendChild(h);
     cat.knobs.filter(m=>m.group===g).forEach(m=>box.appendChild(row(m)));});}
 
-/* Map page wires the keyboard handler + boots build()+doReset(). */
+/* Map page wires the keyboard handler + boots build(). On load it asks /current:
+ * if a resume just happened (d.live) it renders that state instead of resetting,
+ * so navigating from the Tracer's "Resume from this floor" keeps the resumed game.
+ * Otherwise it does the normal fresh /reset. */
 function initMap(){
   document.getElementById('screen').addEventListener('keydown',async e=>{
     let ch=KEYMAP[e.key]; if(!ch&&e.key.length===1)ch=e.key; if(!ch)return; e.preventDefault();
     apply(await post('/step',{keys:ch}));});
-  (async()=>{await build(); await doReset();})();
+  (async()=>{
+    await build();
+    let d=null; try{ d=await(await fetch('/current')).json(); }catch(e){ d=null; }
+    if(d&&d.live){
+      if(d.seed!==undefined){const sb=document.getElementById('seed'); if(sb)sb.value=d.seed;}
+      apply(d); document.getElementById('screen').focus();
+    }
+    else { await doReset(); }
+  })();
 }

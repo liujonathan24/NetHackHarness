@@ -6,6 +6,7 @@
   <div id="t-main">
     <div id="t-status">pick a trace on the left</div>
     <input type="range" id="scrub" min="0" max="0" value="0" oninput="showTurn(+this.value)">
+    <div id="t-resume"></div>
     <div id="t-turninfo"></div>
     <div id="t-msgs"></div>
     <div id="t-map" class="screen"></div>
@@ -34,11 +35,23 @@ function showTurn(i){
   document.getElementById('t-status').textContent='HP '+(s.hp??'?')+'/'+(s.max_hp??'?')+'   Dlvl '+(s.dlvl??'?')+'   reward '+(t.reward||0).toFixed(2);
   document.getElementById('t-turninfo').textContent='turn '+t.turn+'  ('+(i+1)+'/'+TURNS.length+')';
   document.getElementById('t-msgs').textContent=(t.messages||[]).join('  ');
+  const rz=document.getElementById('t-resume');
+  if(t.checkpoint){
+    rz.innerHTML='<button class="act-btn" id="resumebtn">&#9658; Resume from this floor</button>'+
+                 '<span id="resumestat" style="margin-left:8px;color:#8a8c9c"></span>';
+    document.getElementById('resumebtn').onclick=()=>resumeFloor(t.checkpoint);
+  } else { rz.innerHTML=''; }
   document.getElementById('t-map').innerHTML=colorize(t.raw_grid||[],null);
   let llm=''; if(t.user) llm+='<div class="lbl">user</div><pre>'+t.user.replace(/</g,'&lt;')+'</pre>';
   if(t.assistant) llm+='<div class="lbl">assistant</div><pre>'+t.assistant.replace(/</g,'&lt;')+'</pre>';
   if(t.tool_calls&&t.tool_calls.length) llm+='<div class="lbl">tool_calls</div><pre>'+JSON.stringify(t.tool_calls,null,1).replace(/</g,'&lt;')+'</pre>';
   document.getElementById('t-llm').innerHTML=llm;
+}
+async function resumeFloor(ckpt){
+  const stat=document.getElementById('resumestat'); if(stat)stat.textContent='resuming...';
+  const r=await post('/resume',{checkpoint:ckpt});
+  if(r&&r.error){ if(stat)stat.textContent='error: '+r.error; return; }
+  window.location='/map';  // Map Viewer renders the resumed state (see /current)
 }
 loadTraceList();
 </script>
