@@ -2,7 +2,7 @@
 {% block title %}Tracer — NetHack Console{% endblock %}
 {% block body %}
 <div class="page">
-  <nav id="t-list" aria-label="Recorded rollouts">loading...</nav>
+  <nav id="t-list" aria-label="Recorded rollouts">loading…</nav>
   <main id="main-content" class="t-main" tabindex="-1">
     <h1 class="sr-only">Tracer — replay recorded rollouts</h1>
     <div id="t-status" role="status" aria-live="polite">pick a trace on the left</div>
@@ -74,7 +74,7 @@ function showTurn(i){
   document.getElementById('t-llm').innerHTML=llm;
 }
 async function resumeFloor(ckpt){
-  const stat=document.getElementById('resumestat'); if(stat)stat.textContent='resuming...';
+  const stat=document.getElementById('resumestat'); if(stat)stat.textContent='resuming…';
   const r=await post('/resume',{checkpoint:ckpt});
   if(r&&r.error){ if(stat)stat.textContent='error: '+r.error; return; }
   window.location='/map';  // Map Viewer renders the resumed state (see /current)
