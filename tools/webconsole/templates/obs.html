@@ -151,6 +151,10 @@ function addCustom(name, expr){
     const add=document.getElementById('add-custom'); if(add)add.focus();
   });
   box.appendChild(row);
+  // Focus the new name field so a keyboard user can type straight away instead of
+  // tabbing from the +add button (mirrors the remove->+add focus handling above).
+  // Skip when pre-filling (name passed) so programmatic adds don't grab focus.
+  if(!name) row.querySelector('.cname').focus();
 }
 
 function obsCustoms(){
