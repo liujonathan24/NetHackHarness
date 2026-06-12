@@ -72,3 +72,20 @@ def test_reset_bad_seed_is_400(client):
 def test_reset_bad_tune_value_is_400(client):
     code, err = _err(client.post("/reset", json={"seed": 1, "tune": {"vision_radius": "x"}}))
     assert code == 400 and "tune" in err
+
+
+# --- knob metadata invariants (engine-free; pure _META/_GROUPS config) --------
+def test_every_meta_group_is_a_known_group():
+    # A typo'd group would render a knob under a heading that doesn't exist.
+    for name, m in ps._META.items():
+        assert m["group"] in ps._GROUPS, f"{name} has unknown group {m['group']!r}"
+
+
+def test_generation_knobs_grouped_under_dungeon_and_reset():
+    # Regression: these floor-generation knobs once fell back to _DEFAULT_META
+    # and rendered under 'Stat-based'. They reshape the floor, so they belong in
+    # 'Dungeon & spawns' and must be reset knobs.
+    for name in ("mob_spawn", "trap_density", "locked_door",
+                 "corridor_connectivity", "room_size"):
+        assert ps._META[name]["group"] == "Dungeon & spawns"
+        assert ps._META[name]["reset"] is True
