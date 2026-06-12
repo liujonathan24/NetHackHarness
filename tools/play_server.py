@@ -184,8 +184,16 @@ def catalog():
 @app.route("/reset", methods=["POST"])
 def reset():
     data = request.get_json(silent=True) or {}
-    STATE["seed"] = int(data.get("seed", STATE["seed"]))
-    STATE["tune"] = {k: float(v) for k, v in (data.get("tune") or {}).items()}
+    # Validate before touching the engine so malformed input is a clean 400,
+    # consistent with /live /set_tune /modify (was a 500 from int()/float()).
+    try:
+        STATE["seed"] = int(data.get("seed", STATE["seed"]))
+    except (TypeError, ValueError):
+        return jsonify({"error": "seed must be an integer"}), 400
+    try:
+        STATE["tune"] = {k: float(v) for k, v in (data.get("tune") or {}).items()}
+    except (TypeError, ValueError):
+        return jsonify({"error": "tune values must be numbers"}), 400
     STATE["resumed"] = False  # an explicit reset supersedes any prior resume
     obs, _ = _env().reset(seeds=(STATE["seed"], STATE["seed"]), tune=dict(STATE["tune"]))
     for _ in range(2):
