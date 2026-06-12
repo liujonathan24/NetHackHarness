@@ -53,7 +53,10 @@ async function buildGifs(boxId){
 const KEYMAP={'ArrowUp':'k','ArrowDown':'j','ArrowLeft':'h','ArrowRight':'l','Enter':'\r','Escape':'\x1b'};
 let curTune={}, META={};
 
-function setDirty(v){const r=document.getElementById('reset'); if(r)r.classList.toggle('dirty',v);}
+function setDirty(v){const r=document.getElementById('reset'); if(r)r.classList.toggle('dirty',v);
+  // Non-color cue (WCAG 1.4.1): the orange tint isn't the only signal that a
+  // reset knob changed — surface a text marker too.
+  const f=document.getElementById('dirtyflag'); if(f)f.hidden=!v;}
 function syncControl(name,val){const m=META[name]; if(!m)return;
   if(m.kind==='bool'){const c=document.getElementById('k_'+name); if(c)c.checked=val>=0.5;}
   else {const r=document.getElementById('k_'+name), n=document.getElementById('n_'+name);

@@ -115,6 +115,7 @@ button.act-btn{
 }
 button.act-btn:hover{filter:brightness(1.12)}
 #reset.dirty{background:linear-gradient(180deg,#a8602e,#7c4521);border-color:#5c3318}
+.dirtyflag{font-weight:bold;letter-spacing:0}
 #recbtn.on{background:linear-gradient(180deg,#a83a3a,#7c2626);border-color:#5c1c1c}
 #recstat{color:var(--danger);font-size:12px;height:16px;margin-top:4px}
 
