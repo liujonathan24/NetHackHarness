@@ -143,5 +143,12 @@ async function doPlot(){
 
 obsLoadTraces();
 obsLoadMetrics();
+
+// Enter in any of the form inputs (e.g. a custom-metric expression) plots,
+// matching the usual "type, press Enter" expectation instead of forcing a
+// trip to the Plot button.
+document.querySelector('.obs-form').addEventListener('keydown', e=>{
+  if(e.key==='Enter' && e.target.tagName==='INPUT'){ e.preventDefault(); doPlot(); }
+});
 </script>
 {% endblock %}
