@@ -68,7 +68,8 @@ def _svg_linechart(title: str, series_by_run: list[tuple[str, list[tuple[int, fl
     # always turn 0 — a trace may start partway through), and to match the y-axis
     # which labels min/mid/max.
     parts.append(f'<text x="{pad_l}" y="{pad_t+ih+18}" class="xtick" text-anchor="start">turn {xmin:g}</text>')
-    parts.append(f'<text x="{pad_l+iw}" y="{pad_t+ih+18}" class="xtick" text-anchor="end">{xmax:g}</text>')
+    if xmax != xmin:  # single-point series sits at the left edge — one label only
+        parts.append(f'<text x="{pad_l+iw}" y="{pad_t+ih+18}" class="xtick" text-anchor="end">{xmax:g}</text>')
     for i, (label, s) in enumerate(series_by_run):
         if not s:
             continue
