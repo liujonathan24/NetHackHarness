@@ -260,7 +260,10 @@ main[tabindex="-1"]:focus{outline:none}
 /* High-contrast preference: brighten the dim text + borders and thicken the
    focus ring so low-vision users get more separation than the default theme. */
 @media (prefers-contrast: more){
-  :root{--ink-dim:#c4c6d4;--ink-faint:#b6b8c6;--line:#4a4d5e;--line-soft:#3a3c4a}
+  :root{--ink-dim:#c4c6d4;--ink-faint:#b6b8c6;--line:#4a4d5e;--line-soft:#3a3c4a;
+        /* lift the input-field border too (base 3.4:1 -> ~6:1) so form fields
+           stay maximally distinct in high-contrast mode, like the other borders */
+        --ctl-border:#8e91a6}
   a:focus-visible,button:focus-visible,input:focus-visible,
   [tabindex]:not([tabindex="-1"]):focus-visible,.sw input:focus-visible + span,.screen:focus-visible{
     outline-width:3px;
