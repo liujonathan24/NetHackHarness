@@ -44,9 +44,10 @@
 
   <div id="gallery">
     <h2>Knob-effect demos</h2>
+    <button type="button" id="gif-toggle" aria-controls="demos" aria-expanded="true">Hide animated demos</button>
     <div id="demos" aria-live="polite"><div class="obs-hint">loading GIFs…</div></div>
   </div>
 </main>
 
-<script>buildGifs('demos');</script>
+<script>buildGifs('demos'); initGifToggle();</script>
 {% endblock %}

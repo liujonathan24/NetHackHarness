@@ -155,3 +155,15 @@ def test_obs_dash_css_not_html_escaped(client):
         "dash_css single-quotes were HTML-escaped inside <style> (drop |safe?)"
     assert "font-family:'Press Start 2P'" in html, \
         "dashboard CSS not injected intact into the obs page"
+
+
+def test_landing_gif_gallery_has_hide_control(client):
+    """The landing demo gallery auto-plays looping GIFs; WCAG 2.2.2 (Level A)
+    needs a pause/stop/hide mechanism. Assert a toggle exists, is a real button,
+    and its aria-controls points at the gallery container it shows/hides."""
+    html = _html(client, "/")
+    c = _collect(html)
+    assert 'id="gif-toggle"' in html, "no gallery hide/show control on landing"
+    assert 'aria-controls="demos"' in html, "toggle missing aria-controls"
+    assert 'aria-expanded=' in html, "toggle missing aria-expanded state"
+    assert "demos" in set(c.ids), "aria-controls target #demos does not exist"

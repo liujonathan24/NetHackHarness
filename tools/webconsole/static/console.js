@@ -70,6 +70,25 @@ async function buildGifs(boxId){
   box.appendChild(grid);
 }
 
+/* The demo gallery auto-plays looping animated GIFs. WCAG 2.2.2 (Pause, Stop,
+ * Hide, Level A) requires a way to stop animation that starts automatically and
+ * lasts >5s; this toggle hides/shows the gallery (the "hide" mechanism, and a
+ * hidden GIF doesn't animate). Reduced-motion users (WCAG 2.3.3) start with it
+ * hidden so no animation plays until they opt in. Gallery content is built into
+ * #demos either way; only the container's visibility is toggled. */
+function initGifToggle(){
+  const btn=document.getElementById('gif-toggle'), demos=document.getElementById('demos');
+  if(!btn||!demos) return;
+  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function set(shown){
+    demos.hidden=!shown;
+    btn.setAttribute('aria-expanded', shown?'true':'false');
+    btn.textContent = shown ? 'Hide animated demos' : 'Show animated demos';
+  }
+  set(!reduce);
+  btn.addEventListener('click',()=>set(demos.hidden));
+}
+
 /* ---------- knob + play machinery (map page) ---------- */
 const KEYMAP={'ArrowUp':'k','ArrowDown':'j','ArrowLeft':'h','ArrowRight':'l','Enter':'\r','Escape':'\x1b'};
 let curTune={}, META={};

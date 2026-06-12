@@ -191,6 +191,12 @@ button.act-btn:hover{filter:brightness(1.12)}
 /* shared hint text (gallery "loading…"/"none found", obs help) */
 .obs-hint{color:var(--ink-faint);font-size:11px;margin-top:6px;line-height:1.4}
 #gallery h2{margin-top:26px}
+/* Pause/hide control for the auto-playing demo GIFs (WCAG 2.2.2). Small,
+   subtle, theme-matched; 24px min target (WCAG 2.5.8). */
+#gif-toggle{margin:0 0 10px;min-height:24px;background:#23242f;color:var(--ink);
+  border:1px solid var(--line);border-radius:3px;padding:4px 11px;font-family:inherit;
+  font-size:12px;letter-spacing:.5px;cursor:pointer}
+#gif-toggle:hover{background:#2b2d3a}
 .gif-grid{display:flex;flex-wrap:wrap;gap:14px}
 /* min-width:0 lets the flex cell shrink below the GIF's intrinsic width so a
    wide demo (the served gif_*.gif are 560–648px) doesn't force horizontal page
