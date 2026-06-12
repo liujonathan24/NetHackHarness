@@ -14,7 +14,12 @@
      Restore the real theme pink/violet so the lines keep their colors. */
   --pink:#ff9ecb; --violet:#bda6ff;
 }
-{{ dash_css }}
+{# dash_css is trusted server-generated CSS (rollout_view.dashboard._CSS), not
+   user input. Render it |safe: Jinja autoescape would turn its single quotes
+   (font-family:'Press Start 2P') into &#39;, and char references aren't decoded
+   inside <style>, so the CSS parser would see literal &#39; and drop the
+   declaration — silently stripping the retro font from chart titles/KPIs. #}
+{{ dash_css|safe }}
 .obs-form{max-width:1180px;margin:0 auto}
 .obs-cols{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start}
 .obs-card{flex:1;min-width:280px;background:var(--panel);border:1px solid var(--line);

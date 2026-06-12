@@ -141,3 +141,17 @@ def test_labelledby_targets_exist(client, path):
     ids = set(c.ids)
     for ref in c.labelledby:
         assert ref in ids, f"aria-labelledby points at missing id {ref!r} on {path}"
+
+
+def test_obs_dash_css_not_html_escaped(client):
+    """The obs page injects the trusted rollout_view dashboard CSS via Jinja.
+    It must be rendered |safe: that CSS has single quotes
+    (font-family:'Press Start 2P'), and Jinja autoescape would turn them into
+    &#39;. HTML character references are NOT decoded inside a <style> element,
+    so the CSS parser would see literal &#39;, drop the declaration, and the
+    chart titles/KPIs would silently lose their retro font."""
+    html = _html(client, "/obs")
+    assert "font-family:&#39;" not in html and "&#x27;" not in html, \
+        "dash_css single-quotes were HTML-escaped inside <style> (drop |safe?)"
+    assert "font-family:'Press Start 2P'" in html, \
+        "dashboard CSS not injected intact into the obs page"
