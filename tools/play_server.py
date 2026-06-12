@@ -339,7 +339,10 @@ def record_start():
     if STATE["rec"]:
         return jsonify({"name": STATE["rec"]["name"]})
     _REC_DIR.mkdir(parents=True, exist_ok=True)
-    name = f"web_{int(time.time())}.ndjson"
+    # Millisecond precision: a second-resolution stamp collides if you stop one
+    # recording and start another within the same second (the new file would
+    # overwrite the just-saved .ndjson + its checkpoints).
+    name = f"web_{int(time.time() * 1000)}.ndjson"
     STATE["rec"] = {"name": name, "fh": open(_REC_DIR / name, "w")}
     STATE["turn"] = 0
     STATE["ckpt_dlvl"] = None  # force a floor-entry checkpoint on the first turn
