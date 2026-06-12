@@ -2,6 +2,7 @@
 change: level-replay
 design-doc: docs/superpowers/specs/2026-06-11-level-replay-design.md
 base-ref: a8a17d9320abb3440ee2f820a5f655b75f2b352c
+archived-with: 2026-06-11-level-replay
 ---
 
 # Level-Replay Implementation Plan
@@ -18,6 +19,7 @@ base-ref: a8a17d9320abb3440ee2f820a5f655b75f2b352c
 
 **Reference:** the proven spike diff for save/load is at `docs/superpowers/spikes/2026-06-11-level-replay-spike01-savelevel.diff` (productionize it in Task A1, dropping the SPIKE/THROWAWAY framing). Build the engine with `bash nethack_core/build_engine.sh`; the `.so` is `third_party/NetHack/src/build/libnethack.so`. Run tests from repo root: `./.venv/bin/python -m pytest environments/nethack/tests/<file> -q -p no:cacheprovider`.
 
+archived-with: 2026-06-11-level-replay
 ---
 
 ## Phase A — Fork C API (fork branch `feature/level-replay`)
@@ -130,6 +132,7 @@ git add third_party/NetHack
 git commit -m "build: bump NetHack submodule — level save/load + generation knobs"
 ```
 
+archived-with: 2026-06-11-level-replay
 ---
 
 ## Phase B — Binding (`nethack_core/_engine.py`, `engine_env.py`)
@@ -374,6 +377,7 @@ git add environments/nethack/tests/test_generation.py
 git commit -m "test(engine): new generation knobs settable + safe at start"
 ```
 
+archived-with: 2026-06-11-level-replay
 ---
 
 ## Phase C — Make `EngineEnv` canonical
@@ -466,6 +470,7 @@ git add nethack_core/env.py environments/nethack/tests/test_core_env_parity.py
 git commit -m "feat(env): snapshot/restore/tune/branch surface on NetHackCoreEnv (delegated)"
 ```
 
+archived-with: 2026-06-11-level-replay
 ---
 
 ## Phase D — Snapshot + explore (replace `legacy/replay.py` re-execution)
@@ -494,6 +499,7 @@ git add legacy/replay.py tests/test_replay.py tools/record_demo.py
 git commit -m "refactor(replay): snapshot/restore reconstruct; frames stay viewer-readable"
 ```
 
+archived-with: 2026-06-11-level-replay
 ---
 
 ## Phase E — Curriculum migration (drop MiniHack)
@@ -578,6 +584,7 @@ git add nethack_core/pyproject.toml nethack_core/env.py uv.lock
 git commit -m "build: drop the minihack dependency (curriculum runs on level blobs)"
 ```
 
+archived-with: 2026-06-11-level-replay
 ---
 
 ## Phase F — The nle cutover
@@ -643,6 +650,7 @@ git add environments/nethack/nethack_harness/prompt/image_render.py nethack_core
 git commit -m "feat(render): bundle a tileset; drop the MiniHack GlyphMapper dependency"
 ```
 
+archived-with: 2026-06-11-level-replay
 ---
 
 ## Phase G — Verify + docs
@@ -681,6 +689,7 @@ git add environments/nethack/README.md docs/ openspec/changes/custom-nethack-eng
 git commit -m "docs(level-replay): engine layer, snapshot/branch, level blobs; supersede parent tasks"
 ```
 
+archived-with: 2026-06-11-level-replay
 ---
 
 ## Self-review notes (coverage map)

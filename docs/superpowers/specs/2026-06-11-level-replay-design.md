@@ -2,6 +2,8 @@
 comet_change: level-replay
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-06-11-level-replay
+status: final
 ---
 
 # Level-Replay — Technical Design

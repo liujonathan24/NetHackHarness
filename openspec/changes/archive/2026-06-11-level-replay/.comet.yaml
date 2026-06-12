@@ -12,7 +12,7 @@ verification_report: docs/superpowers/reports/2026-06-11-level-replay-verify.md
 branch_status: handled
 created_at: 2026-06-11
 verified_at: 2026-06-11
-archived: false
+archived: true
 handoff_context: openspec/changes/level-replay/.comet/handoff/design-context.json
 handoff_hash: 5f0c1440813aabbfad5ee41a56ebee8fdef12702fa86e97b83c43aa9e0681108
 build_command: ./.venv/bin/python -m pytest environments/nethack/tests/ -q -p no:cacheprovider
