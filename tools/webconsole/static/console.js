@@ -15,7 +15,10 @@ const PALETTE=['#1a1a1a','#c44','#4b4','#b83','#46c','#b5b','#5bb','#bbb',
                '#666','#f66','#6f6','#fd5','#6af','#f6f','#6ff','#fff'];
 const CHARCOL={'@':'#fd5','>':'#6ff','<':'#6ff','$':'#fd5','#':'#777','.':'#556',
                '|':'#bbb','-':'#bbb','+':'#4b4'};
-function esc(ch){return ch==='<'?'&lt;':(ch==='>'?'&gt;':ch);}
+// Escape HTML metacharacters before injecting a glyph into innerHTML. `&` must
+// come first (NetHack draws major demons as '&'); '<'/'>' guard against the map
+// stairs glyphs being parsed as tags.
+function esc(ch){return ch==='&'?'&amp;':(ch==='<'?'&lt;':(ch==='>'?'&gt;':ch));}
 function colorize(rows,colors){
   let h='';
   for(let y=0;y<rows.length;y++){for(let x=0;x<rows[y].length;x++){
