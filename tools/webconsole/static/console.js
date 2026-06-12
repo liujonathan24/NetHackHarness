@@ -29,9 +29,16 @@ function esc(ch){return ch==='&'?'&amp;':(ch==='<'?'&lt;':(ch==='>'?'&gt;':ch));
 function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function colorize(rows,colors){
   let h='';
-  for(let y=0;y<rows.length;y++){for(let x=0;x<rows[y].length;x++){
-    let ch=rows[y][x]; if(ch===' '){h+=' ';continue;}
-    let c=colors?colors[y][x]:-1; let col=(c>=0&&c<16)?PALETTE[c]:(CHARCOL[ch]||(/[a-zA-Z]/.test(ch)?'#d6d':'#aaa'));
+  if(!Array.isArray(rows)) return h;
+  for(let y=0;y<rows.length;y++){
+    // A row must be indexable (string/array). A foreign trace's raw_grid could
+    // carry a null/number row; skip it rather than throw on null.length and
+    // blank the whole render.
+    const row=rows[y]; if(typeof row!=='string'&&!Array.isArray(row)){h+='\n';continue;}
+    const crow=Array.isArray(colors)?colors[y]:null;
+    for(let x=0;x<row.length;x++){
+    let ch=row[x]; if(ch===' '){h+=' ';continue;}
+    let c=crow?crow[x]:-1; let col=(c>=0&&c<16)?PALETTE[c]:(CHARCOL[ch]||(/[a-zA-Z]/.test(ch)?'#d6d':'#aaa'));
     h+='<span style="color:'+col+'">'+esc(ch)+'</span>';
   } h+='\n';} return h;
 }
