@@ -165,7 +165,7 @@ async function setField(name){const el=document.getElementById('m_'+name); const
   await doModify({[name]:v});}
 
 function row(m){const div=document.createElement('div'); div.className='knob';
-  const rst=m.reset?' <span class="rst">&#8635;reset</span>':'';
+  const rst=m.reset?' <span class="rst"><span aria-hidden="true">&#8635;</span>reset</span>':'';
   if(m.kind==='bool'){
     div.innerHTML='<span class="name">'+m.name+rst+'</span><label class="sw"><input type="checkbox" id="k_'+m.name+'" aria-label="'+m.name+'" '+(m.default>=0.5?'checked':'')+'><span></span></label>';
     div.querySelector('input').addEventListener('change',e=>onChange(m.name,e.target.checked?1:0));
