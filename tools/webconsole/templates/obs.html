@@ -157,12 +157,15 @@ async function doPlot(){
   const custom=obsCustoms();
   if(!paths.length){err.textContent='pick at least one trace.'; return;}
   if(!metrics.length&&!custom.length){err.textContent='pick a metric or add a custom one.'; return;}
-  _plotting=true; const btn=document.querySelector('.obs-btn'); if(btn)btn.disabled=true;
+  // Show progress via the label (not disabled): the _plotting flag already
+  // blocks re-entrancy, and disabling a button that has keyboard focus would
+  // drop focus to <body>.
+  _plotting=true; const btn=document.querySelector('.obs-btn'); if(btn)btn.textContent='Plotting…';
   try{
     const res=await post('/obs/plot',{paths:paths, metrics:metrics, custom:custom});
     if(res.error){err.textContent=res.error; document.getElementById('obs-results').innerHTML=''; return;}
     document.getElementById('obs-results').innerHTML=res.charts_html||'';
-  } finally { _plotting=false; if(btn)btn.disabled=false; }
+  } finally { _plotting=false; if(btn)btn.textContent='Plot'; }
 }
 
 obsLoadTraces();
