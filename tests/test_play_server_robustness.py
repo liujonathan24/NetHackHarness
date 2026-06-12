@@ -147,3 +147,19 @@ def test_trace_coerces_nonnumeric_reward_and_bad_field_types(client, tmp_path, m
     assert t0["messages"] == [] and t0["raw_grid"] == [] and t0["tool_calls"] == []
     assert t0["status"] == {}
     assert t1["reward"] == 0.0  # None -> 0.0, never a crash
+
+
+# --- _trace_allowed callers must 400 (not 500) on a non-string path -----------
+def test_resume_nonstring_checkpoint_is_400(client, no_engine):
+    """A foreign trace could carry a non-string `checkpoint`; /resume forwards it
+    to _trace_allowed -> pathlib.Path(), which would raise on a non-str. Must be
+    a clean 400 (the allow-list check runs before the engine, so no env needed)."""
+    code, _ = _err(client.post("/resume", json={"checkpoint": 12345}))
+    assert code == 400
+
+
+def test_obs_plot_nonstring_path_is_400(client):
+    """Client-supplied paths flow into _trace_allowed; a non-string must 400."""
+    code, err = _err(client.post("/obs/plot",
+                                 json={"paths": [12345], "metrics": ["dlvl"], "custom": []}))
+    assert code == 400

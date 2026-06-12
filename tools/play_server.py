@@ -531,9 +531,16 @@ def _under_trace_dirs(rp: pathlib.Path) -> bool:
     return any(rp.is_relative_to(d.resolve()) for d in _TRACE_DIRS)
 
 
-def _trace_allowed(path: str) -> pathlib.Path | None:
+def _trace_allowed(path) -> pathlib.Path | None:
     """Resolve `path` and return it only if it sits under the _TRACE_DIRS
-    allow-list and is a real file (same check the /trace route enforces)."""
+    allow-list and is a real file (same check the /trace route enforces).
+
+    Callers pass untrusted values: /resume forwards a checkpoint string from a
+    trace file (a foreign trace could carry a non-string), and /obs/plot forwards
+    client-supplied paths. A non-string would make pathlib.Path() raise, turning
+    bad input into a 500 — so reject non-string/empty here and return None."""
+    if not isinstance(path, str) or not path:
+        return None
     rp = pathlib.Path(path).resolve()
     if rp.is_file() and _under_trace_dirs(rp):
         return rp
