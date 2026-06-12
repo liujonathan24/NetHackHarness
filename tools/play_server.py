@@ -161,8 +161,28 @@ def reset():
     obs, _ = _env().reset(seeds=(STATE["seed"], STATE["seed"]), tune=dict(STATE["tune"]))
     for _ in range(2):
         obs, _, _ = _env().step(ord("."))
+    obs = _settle(_env(), obs)
     _record(obs)
     return jsonify(_payload(obs))
+
+
+def _settle(env, obs, max_iter=12):
+    """Auto-dismiss pending ``--More--`` prompts so the frame settles after a
+    step that queues messages (e.g. "You descend the stairs.--More--" on a level
+    change, which otherwise leaves the new floor half-drawn until the user
+    presses a key). Mimics auto-pressing escape. NEVER auto-answers a real
+    question: only acts when waiting-for-space is set and no yn/getlin prompt is
+    active (obs.misc = [in_yn_function, in_getlin, waitingforspace])."""
+    for _ in range(max_iter):
+        misc = getattr(obs, "misc", None)
+        if misc is None:
+            break
+        in_yn, in_getlin, waiting = int(misc[0]), int(misc[1]), int(misc[2])
+        if waiting and not in_yn and not in_getlin:
+            obs, _, _ = env.step(27)  # ESC flushes the --More-- queue
+        else:
+            break
+    return obs
 
 
 @app.route("/step", methods=["POST"])
@@ -178,6 +198,7 @@ def step():
         last = ch
     if obs is None:
         return jsonify({"error": "no keys"}), 400
+    obs = _settle(STATE["env"], obs)
     _record(obs, last)
     return jsonify(_payload(obs))
 
@@ -201,6 +222,7 @@ def live():
     STATE["env"].set_tune(**{name: value})
     STATE["tune"][name] = value
     obs, _, _ = STATE["env"].step(18)  # ctrl-R redraw -> vision_recalc, no move
+    obs = _settle(STATE["env"], obs)
     return jsonify(_payload(obs))
 
 
