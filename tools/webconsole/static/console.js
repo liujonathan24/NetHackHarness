@@ -26,17 +26,26 @@ function colorize(rows,colors){
 }
 
 /* ---------- API helper ---------- */
-async function post(u,b){const r=await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});return r.json();}
+/* Always resolves to an object; on transport/HTTP/parse failure returns
+   {error:"..."} so callers can surface it instead of throwing. */
+async function post(u,b){
+  try{
+    const r=await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+    const d=await r.json().catch(()=>({error:'bad response ('+r.status+')'}));
+    if(!r.ok&&!d.error) d.error='request failed ('+r.status+')';
+    return d;
+  }catch(e){ return {error:'network error: '+(e&&e.message||e)}; }
+}
 
 /* ---------- GIF gallery (landing) ---------- */
 async function buildGifs(boxId){
   const list=await(await fetch('/gifs')).json();
   const box=document.getElementById(boxId); if(!box) return;
-  if(!list.length){box.innerHTML='<div style="color:#5d5f6e">no GIFs found in videos/.</div>'; return;}
+  if(!list.length){box.innerHTML='<div class="obs-hint">no GIFs found in videos/.</div>'; return;}
   box.innerHTML='';
   const grid=document.createElement('div'); grid.className='gif-grid';
   list.forEach(n=>{const w=document.createElement('div'); w.className='gif-cell';
-    w.innerHTML='<div class="glabel">'+n+'</div><img src="/gif/'+n+'">'; grid.appendChild(w);});
+    w.innerHTML='<div class="glabel">'+n+'</div><img src="/gif/'+n+'" loading="lazy" alt="Animated demo showing the effect of the '+n+' setting">'; grid.appendChild(w);});
   box.appendChild(grid);
 }
 
@@ -50,6 +59,8 @@ function syncControl(name,val){const m=META[name]; if(!m)return;
   else {const r=document.getElementById('k_'+name), n=document.getElementById('n_'+name);
         if(r)r.value=val; if(n)n.value=(+val).toFixed(m.kind==='int'?0:2);}}
 function apply(d){
+  if(!d||d.error||!d.map){const m=document.getElementById('message');
+    if(m)m.textContent=(d&&d.error)?('⚠ '+d.error):'⚠ no response from engine'; return;}
   document.getElementById('screen').innerHTML=colorize(d.map,d.colors);
   document.getElementById('message').textContent=d.message||' ';
   let s=d.status;
@@ -57,7 +68,8 @@ function apply(d){
   for(const k in d.tune) syncControl(k,d.tune[k]);
   setDirty(false);
   document.getElementById('recstat').textContent=d.recording?('● recording '+d.recording):'';
-  document.getElementById('recbtn').classList.toggle('on',!!d.recording);
+  const rb=document.getElementById('recbtn');
+  rb.classList.toggle('on',!!d.recording); rb.setAttribute('aria-pressed',!!d.recording);
 }
 async function onChange(name,val){curTune[name]=val;
   if(META[name].reset) setDirty(true);
@@ -65,9 +77,11 @@ async function onChange(name,val){curTune[name]=val;
 async function doReset(){const seed=+document.getElementById('seed').value||42;
   const d=await post('/reset',{seed:seed,tune:curTune}); apply(d); document.getElementById('screen').focus();}
 async function toggleRec(){
-  const on=document.getElementById('recbtn').classList.contains('on');
+  const rb=document.getElementById('recbtn');
+  const on=rb.classList.contains('on');
   const r=await post(on?'/record_stop':'/record_start',{});
-  document.getElementById('recbtn').classList.toggle('on',!on);
+  if(r&&r.error){const ms=document.getElementById('recstat'); if(ms)ms.textContent='⚠ '+r.error; return;}
+  rb.classList.toggle('on',!on); rb.setAttribute('aria-pressed',!on);
   document.getElementById('recstat').textContent=on?('saved '+(r.name||'')+' ('+(r.turns||0)+' turns)'):('● recording '+r.name);
 }
 /* ---------- state-modify panel (map page) ---------- */
@@ -88,10 +102,10 @@ async function setField(name){const el=document.getElementById('m_'+name); const
 function row(m){const div=document.createElement('div'); div.className='knob';
   const rst=m.reset?' <span class="rst">&#8635;reset</span>':'';
   if(m.kind==='bool'){
-    div.innerHTML='<span class="name">'+m.name+rst+'</span><label class="sw"><input type="checkbox" id="k_'+m.name+'" '+(m.default>=0.5?'checked':'')+'><span></span></label>';
+    div.innerHTML='<span class="name">'+m.name+rst+'</span><label class="sw"><input type="checkbox" id="k_'+m.name+'" aria-label="'+m.name+'" '+(m.default>=0.5?'checked':'')+'><span></span></label>';
     div.querySelector('input').addEventListener('change',e=>onChange(m.name,e.target.checked?1:0));
   } else {const dec=m.kind==='int'?0:2;
-    div.innerHTML='<span class="name">'+m.name+rst+'</span><input type="range" id="k_'+m.name+'" min="'+m.lo+'" max="'+m.hi+'" step="'+m.step+'" value="'+m.default+'"><input type="number" class="num" id="n_'+m.name+'" min="'+m.lo+'" max="'+m.hi+'" step="'+m.step+'" value="'+(+m.default).toFixed(dec)+'">';
+    div.innerHTML='<span class="name">'+m.name+rst+'</span><input type="range" id="k_'+m.name+'" aria-label="'+m.name+'" min="'+m.lo+'" max="'+m.hi+'" step="'+m.step+'" value="'+m.default+'"><input type="number" class="num" id="n_'+m.name+'" aria-label="'+m.name+' value" min="'+m.lo+'" max="'+m.hi+'" step="'+m.step+'" value="'+(+m.default).toFixed(dec)+'">';
     const r=div.querySelector('input[type=range]'),n=div.querySelector('input.num');
     r.addEventListener('input',e=>{n.value=(+e.target.value).toFixed(dec); onChange(m.name,+e.target.value);});
     n.addEventListener('change',e=>{let v=Math.max(m.lo,Math.min(m.hi,+e.target.value)); n.value=v.toFixed(dec); r.value=v; onChange(m.name,v);});}
