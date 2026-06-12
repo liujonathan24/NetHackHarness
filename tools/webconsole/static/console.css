@@ -192,9 +192,15 @@ button.act-btn:hover{filter:brightness(1.12)}
 .obs-hint{color:var(--ink-faint);font-size:11px;margin-top:6px;line-height:1.4}
 #gallery h2{margin-top:26px}
 .gif-grid{display:flex;flex-wrap:wrap;gap:14px}
-.gif-cell{display:inline-block;vertical-align:top;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:8px}
+/* min-width:0 lets the flex cell shrink below the GIF's intrinsic width so a
+   wide demo (the served gif_*.gif are 560–648px) doesn't force horizontal page
+   scroll on a narrow viewport (WCAG 1.4.10 reflow). */
+.gif-cell{display:inline-block;vertical-align:top;min-width:0;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:8px}
 .gif-cell .glabel{color:var(--hero);font-size:12px;margin-bottom:5px}
-.gif-cell img{max-height:280px;display:block;background:#000;border:1px solid var(--line-soft);border-radius:3px}
+/* max-width:100% pairs with max-height; with auto width/height the browser fits
+   both bounds while preserving aspect ratio, so the GIF scales down to the cell
+   on small screens instead of overflowing. */
+.gif-cell img{max-width:100%;max-height:280px;display:block;background:#000;border:1px solid var(--line-soft);border-radius:3px}
 
 /* ---------- accessibility ---------- */
 /* Screen-reader-only: present for assistive tech, hidden visually. */
