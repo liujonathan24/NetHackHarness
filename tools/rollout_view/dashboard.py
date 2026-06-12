@@ -96,8 +96,9 @@ def _svg_linechart(title: str, series_by_run: list[tuple[str, list[tuple[int, fl
         c = CANDY[i % len(CANDY)]
         d = _DASHES[i % len(_DASHES)]
         da = f' stroke-dasharray="{d}"' if d else ''
-        return (f'<svg width="20" height="8" style="vertical-align:middle" aria-hidden="true">'
-                f'<line x1="0" y1="4" x2="20" y2="4" stroke="{c}" stroke-width="2"{da}/></svg>')
+        # 28px wide so the longer dash patterns show ~2 cycles and stay legible.
+        return (f'<svg width="28" height="8" style="vertical-align:middle" aria-hidden="true">'
+                f'<line x1="0" y1="4" x2="28" y2="4" stroke="{c}" stroke-width="2"{da}/></svg>')
     legend = " ".join(
         f'<span class="lg">{_swatch(i)} {_html.escape(lbl)}</span>'
         for i, (lbl, _) in enumerate(series_by_run))
