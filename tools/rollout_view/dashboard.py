@@ -43,7 +43,14 @@ def _svg_linechart(title: str, series_by_run: list[tuple[str, list[tuple[int, fl
     def py(y):
         return pad_t + ih - (y - ymin) / (ymax - ymin) * ih
 
-    parts = [f'<svg viewBox="0 0 {w} {h}" class="svgchart" role="img">']
+    # Accessible name for the chart: a bare role="img" is announced as just
+    # "image". Describe the metric, the runs plotted, and the value range so a
+    # screen reader conveys the chart's content. The <title> is the SVG-native
+    # accessible name; aria-label backs it up for engines that don't map <title>.
+    runs_txt = ", ".join(lbl for lbl, s in series_by_run if s) or "no runs"
+    desc = f"Line chart: {title} over turns. Runs: {runs_txt}. Range {ymin:g} to {ymax:g}."
+    parts = [f'<svg viewBox="0 0 {w} {h}" class="svgchart" role="img" '
+             f'aria-label="{_html.escape(desc)}"><title>{_html.escape(desc)}</title>']
     # axes
     parts.append(f'<line x1="{pad_l}" y1="{pad_t}" x2="{pad_l}" y2="{pad_t+ih}" class="axis"/>')
     parts.append(f'<line x1="{pad_l}" y1="{pad_t+ih}" x2="{pad_l+iw}" y2="{pad_t+ih}" class="axis"/>')
