@@ -480,16 +480,28 @@ def trace():
                 continue
             if not isinstance(o, dict):  # valid-JSON but non-object line (bad export) -> skip, don't 500
                 continue
+            # Coerce field types: the Tracer loads ANY .ndjson under the trace
+            # dirs (not just web-recorded ones), so a foreign trace might carry
+            # e.g. a string `reward` or non-list `messages`. The client does
+            # reward.toFixed() and messages.join(), which throw on the wrong
+            # type and break scrubbing — so normalize at this boundary.
+            try:
+                reward = float(o.get("reward", 0.0))
+            except (TypeError, ValueError):
+                reward = 0.0
+            def _list(key):
+                v = o.get(key)
+                return v if isinstance(v, list) else []
             turns.append({
                 "turn": o.get("turn", len(turns)),
-                "raw_grid": o.get("raw_grid", []),
-                "status": o.get("status", {}),
-                "reward": o.get("reward", 0.0),
-                "messages": o.get("messages", []),
+                "raw_grid": _list("raw_grid"),
+                "status": o.get("status") if isinstance(o.get("status"), dict) else {},
+                "reward": reward,
+                "messages": _list("messages"),
                 "user": o.get("rendered_user_message", ""),
                 "assistant": o.get("assistant_message", ""),
-                "tool_calls": o.get("tool_calls", []),
-                "actions": o.get("action_indices", []),
+                "tool_calls": _list("tool_calls"),
+                "actions": _list("action_indices"),
                 "checkpoint": o.get("checkpoint"),
             })
     return jsonify({"turns": turns})

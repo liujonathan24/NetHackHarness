@@ -54,7 +54,7 @@ async function loadTrace(path){
 }
 function showTurn(i){
   if(!TURNS.length)return; const t=TURNS[i]||TURNS[0]; const s=t.status||{};
-  document.getElementById('t-status').textContent='HP '+(s.hp??'?')+'/'+(s.max_hp??'?')+'   Dlvl '+(s.dlvl??'?')+'   reward '+(t.reward||0).toFixed(2);
+  document.getElementById('t-status').textContent='HP '+(s.hp??'?')+'/'+(s.max_hp??'?')+'   Dlvl '+(s.dlvl??'?')+'   reward '+(+t.reward||0).toFixed(2);  // +coerce: a foreign trace's non-numeric reward must not throw on .toFixed
   document.getElementById('t-turninfo').textContent='turn '+t.turn+'  ('+(i+1)+'/'+TURNS.length+')';
   // The slider value is a 0-based index, not the (possibly skipping) turn number;
   // announce the meaningful turn + position so a screen reader doesn't just read

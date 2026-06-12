@@ -125,3 +125,25 @@ def test_reset_unknown_tune_knob_is_400(client):
     # set_tune raises KeyError during reset), not an uncaught 500.
     code, err = _err(client.post("/reset", json={"seed": 1, "tune": {"bogus_knob": 1.0}}))
     assert code == 400 and "bogus_knob" in (err or "")
+
+
+# --- /trace coerces field types from foreign/malformed traces -----------------
+def test_trace_coerces_nonnumeric_reward_and_bad_field_types(client, tmp_path, monkeypatch):
+    """The Tracer loads ANY .ndjson under the trace dirs, so a foreign trace may
+    carry a string `reward` or a non-list `messages`. The client does
+    reward.toFixed() / messages.join(), which throw on the wrong type. /trace
+    must normalize: numeric reward, list messages/raw_grid, dict status."""
+    monkeypatch.setattr(ps, "_TRACE_DIRS", [tmp_path])
+    tp = tmp_path / "foreign.ndjson"
+    tp.write_text("\n".join([
+        json.dumps({"turn": 0, "reward": "1.5", "messages": "hello",
+                    "status": "notadict", "raw_grid": "xx", "tool_calls": 7}),
+        json.dumps({"turn": 1, "reward": None}),
+    ]))
+    r = client.get("/trace?path=" + str(tp.resolve()))
+    assert r.status_code == 200
+    t0, t1 = r.get_json()["turns"]
+    assert isinstance(t0["reward"], float) and t0["reward"] == 1.5
+    assert t0["messages"] == [] and t0["raw_grid"] == [] and t0["tool_calls"] == []
+    assert t0["status"] == {}
+    assert t1["reward"] == 0.0  # None -> 0.0, never a crash
