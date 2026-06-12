@@ -193,10 +193,6 @@ button.act-btn:hover{filter:brightness(1.12)}
 .gif-cell .glabel{color:var(--hero);font-size:12px;margin-bottom:5px}
 .gif-cell img{max-height:280px;display:block;background:#000;border:1px solid var(--line-soft);border-radius:3px}
 
-.placeholder{max-width:760px;margin:60px auto;text-align:center;color:var(--ink-dim)}
-.placeholder .big{font-size:46px;color:var(--item);margin-bottom:14px}
-.placeholder h2{color:var(--hero);letter-spacing:1px}
-
 /* ---------- accessibility ---------- */
 /* Screen-reader-only: present for assistive tech, hidden visually. */
 .sr-only{
