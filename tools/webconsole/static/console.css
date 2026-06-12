@@ -160,7 +160,7 @@ button.act-btn:hover{filter:brightness(1.12)}
 #t-msgs{color:var(--good);margin:5px 0;min-height:18px}
 #t-llm{margin-top:12px;font-size:12px}
 #t-llm .lbl{color:var(--good)}
-#t-llm pre{white-space:pre-wrap;background:var(--panel-2);padding:7px;border:1px solid var(--line);max-height:220px;overflow:auto;border-radius:3px}
+#t-llm pre{white-space:pre-wrap;overflow-wrap:break-word;background:var(--panel-2);padding:7px;border:1px solid var(--line);max-height:220px;overflow:auto;border-radius:3px}
 
 /* ---------- landing ---------- */
 .landing{max-width:980px;margin:0 auto;padding:26px 22px}
