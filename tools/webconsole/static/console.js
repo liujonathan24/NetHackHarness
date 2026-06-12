@@ -71,7 +71,7 @@ function apply(d){
     if(m)m.textContent=(d&&d.error)?('⚠ '+d.error):'⚠ no response from engine'; return;}
   document.getElementById('screen').innerHTML=colorize(d.map,d.colors);
   document.getElementById('message').textContent=d.message||' ';
-  let s=d.status;
+  let s=d.status||{};  // defensive: render even if status is somehow absent
   document.getElementById('status').textContent='HP '+s.hp+'/'+s.max_hp+'   AC '+s.ac+'   Dlvl '+s.dlvl+'   $'+s.gold+'   XP-lvl '+s.xp_lvl+(d.done?'   [GAME OVER]':'');
   for(const k in d.tune) syncControl(k,d.tune[k]);
   setDirty(false);
