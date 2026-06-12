@@ -90,6 +90,9 @@ button.obs-mini{background:#23242f;color:var(--ink);border:1px solid var(--line)
     <button class="obs-btn" type="button" onclick="doPlot()">Plot</button>
   </div>
   <div id="obs-err" role="alert"></div>
+  <!-- Polite status so a screen reader is told the charts rendered (the results
+       region itself isn't live); the error path already uses role=alert. WCAG 4.1.3 -->
+  <div id="obs-status" role="status" aria-live="polite" class="sr-only"></div>
   <div id="obs-results"></div>
 </main>
 
@@ -173,10 +176,14 @@ async function doPlot(){
   // blocks re-entrancy, and disabling a button that has keyboard focus would
   // drop focus to <body>.
   _plotting=true; const btn=document.querySelector('.obs-btn'); if(btn)btn.textContent='Plotting…';
+  const status=document.getElementById('obs-status'); if(status)status.textContent='';
   try{
     const res=await post('/obs/plot',{paths:paths, metrics:metrics, custom:custom});
     if(res.error){err.textContent=res.error; document.getElementById('obs-results').innerHTML=''; return;}
     document.getElementById('obs-results').innerHTML=res.charts_html||'';
+    // Announce completion for screen readers (the results region isn't live).
+    if(status){const nm=metrics.length+custom.length;
+      status.textContent='Plotted '+nm+' metric'+(nm===1?'':'s')+' across '+paths.length+' trace'+(paths.length===1?'':'s')+'.';}
   } finally { _plotting=false; if(btn)btn.textContent='Plot'; }
 }
 
