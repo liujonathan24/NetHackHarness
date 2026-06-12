@@ -83,9 +83,19 @@ function apply(d){
 function syncRec(on){const rb=document.getElementById('recbtn'); if(!rb)return;
   rb.classList.toggle('on',on); rb.setAttribute('aria-pressed',on);
   const l=document.getElementById('reclabel'); if(l)l.textContent=on?'Stop recording':'Record trace';}
+/* Debounce the /live posts per knob: dragging a slider fires `input` per pixel
+   and each /live does an engine step + full redraw, so without this a single
+   drag floods the server with dozens of requests that can also render out of
+   order. The number readout still updates instantly (in the input handler);
+   only the network call is coalesced to the trailing value. */
+const _liveTimers={};
+function postLive(name,val){
+  clearTimeout(_liveTimers[name]);
+  _liveTimers[name]=setTimeout(async()=>{ apply(await post('/live',{name:name,value:val})); }, 90);
+}
 async function onChange(name,val){curTune[name]=val;
   if(META[name].reset) setDirty(true);
-  else {const d=await post('/live',{name:name,value:val}); apply(d);}}
+  else postLive(name,val);}
 async function doReset(){
   // Parse the seed without an `||42` fallback — that would turn a valid seed of
   // 0 into 42 (0 is falsy). Only blank/non-numeric input falls back to 42.
