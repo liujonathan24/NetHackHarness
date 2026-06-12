@@ -79,7 +79,11 @@ function syncControl(name,val){const m=META[name]; if(!m)return;
         if(r)r.value=val; if(n)n.value=(+val).toFixed(m.kind==='int'?0:2);}}
 function apply(d){
   if(!d||d.error||!d.map){const m=document.getElementById('message');
-    if(m)m.textContent=(d&&d.error)?('⚠ '+d.error):'⚠ no response from engine'; return;}
+    if(m)m.textContent=(d&&d.error)?('⚠ '+d.error):'⚠ no response from engine';
+    // Clear the initial 'connecting...' placeholder on a failed first load so it
+    // doesn't linger misleadingly; a real status line from prior play is kept.
+    const st=document.getElementById('status'); if(st&&st.textContent==='connecting...')st.textContent='—';
+    return;}
   document.getElementById('screen').innerHTML=colorize(d.map,d.colors);
   document.getElementById('message').textContent=d.message||' ';
   let s=d.status||{};  // defensive: render even if status is somehow absent
