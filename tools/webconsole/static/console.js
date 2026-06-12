@@ -156,7 +156,8 @@ function row(m){const div=document.createElement('div'); div.className='knob';
     div.innerHTML='<span class="name">'+m.name+rst+'</span><input type="range" id="k_'+m.name+'" aria-label="'+m.name+'" min="'+m.lo+'" max="'+m.hi+'" step="'+m.step+'" value="'+m.default+'"><input type="number" class="num" id="n_'+m.name+'" aria-label="'+m.name+' value" min="'+m.lo+'" max="'+m.hi+'" step="'+m.step+'" value="'+(+m.default).toFixed(dec)+'">';
     const r=div.querySelector('input[type=range]'),n=div.querySelector('input.num');
     r.addEventListener('input',e=>{n.value=(+e.target.value).toFixed(dec); onChange(m.name,+e.target.value);});
-    n.addEventListener('change',e=>{let v=Math.max(m.lo,Math.min(m.hi,+e.target.value)); n.value=v.toFixed(dec); r.value=v; onChange(m.name,v);});}
+    n.addEventListener('change',e=>{let x=+e.target.value; if(!Number.isFinite(x))x=+r.value;  // non-numeric -> keep last valid, no NaN
+      let v=Math.max(m.lo,Math.min(m.hi,x)); n.value=v.toFixed(dec); r.value=v; onChange(m.name,v);});}
   if(m.note){const nt=document.createElement('span'); nt.className='note'; nt.textContent=m.note; div.appendChild(nt);} return div;}
 async function build(){const cat=await(await fetch('/catalog')).json();
   cat.knobs.forEach(m=>{META[m.name]=m; curTune[m.name]=m.default;});
