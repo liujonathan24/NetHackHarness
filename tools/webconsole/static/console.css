@@ -213,9 +213,12 @@ button.act-btn:hover{filter:brightness(1.12)}
 
 /* Visible keyboard focus everywhere (mouse clicks stay clean via :focus-visible). */
 a:focus-visible,button:focus-visible,input:focus-visible,
-[tabindex]:focus-visible,.sw input:focus-visible + span{
+[tabindex]:not([tabindex="-1"]):focus-visible,.sw input:focus-visible + span{
   outline:2px solid var(--focus);outline-offset:2px;border-radius:3px;
 }
+/* The skip-link target <main tabindex="-1"> receives focus programmatically; it's
+   a jump destination, not a control, so don't ring the whole content block. */
+main[tabindex="-1"]:focus{outline:none}
 .screen:focus-visible{outline:2px solid var(--focus);outline-offset:0}
 #nav a.link:focus-visible{outline-offset:-2px}
 /* The active link has a light (stairs) background, so the gold focus ring drawn
@@ -232,7 +235,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,
 @media (prefers-contrast: more){
   :root{--ink-dim:#c4c6d4;--ink-faint:#b6b8c6;--line:#4a4d5e;--line-soft:#3a3c4a}
   a:focus-visible,button:focus-visible,input:focus-visible,
-  [tabindex]:focus-visible,.sw input:focus-visible + span,.screen:focus-visible{
+  [tabindex]:not([tabindex="-1"]):focus-visible,.sw input:focus-visible + span,.screen:focus-visible{
     outline-width:3px;
   }
   #hint,.knob .note,.obs-hint,#t-turninfo{color:var(--ink-dim)}
