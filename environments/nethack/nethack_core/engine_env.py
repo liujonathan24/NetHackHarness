@@ -72,6 +72,9 @@ class EngineEnv:
         "gold": (0, 10_000_000),
         "xp_level": (1, 30),
         "hunger": (0, 2000),
+        # level_up is an INCREMENT (gain N experience levels with real HP/stat
+        # gains via the engine's pluslvl), distinct from xp_level (direct set).
+        "level_up": (1, 29),
     }
 
     def __init__(self, modify: Optional[dict] = None) -> None:
@@ -143,9 +146,18 @@ class EngineEnv:
 
         Validates the WHOLE call first (unknown fields or out-of-range values
         raise before any engine write happens, so no partial/arbitrary writes),
-        then applies each field via the engine. ``goto_depth=n`` jumps the
-        dungeon level (the engine validates the upper bound). Returns the
-        refreshed CoreObservation.
+        then applies each field via the engine.
+
+        ``goto_depth=n`` jumps the dungeon level (the engine validates the upper
+        bound) AND seats the hero on that level's downstair, so the Map Viewer
+        "skip to level N and spawn on the ``>``" workflow lands on the stair.
+
+        ``level_up=n`` raises the hero ``n`` experience levels with real HP/stat
+        gains (an increment, distinct from ``xp_level`` which is a direct set).
+
+        Returns the refreshed CoreObservation. Exactly one redraw happens:
+        ``goto_depth`` (via seat_on_stair) and ``level_up`` each already render,
+        so the trailing ctrl-R is only issued when neither was requested.
         """
         depth = changes.pop("goto_depth", None)
         for k, v in changes.items():
@@ -159,11 +171,20 @@ class EngineEnv:
                 raise ValueError(f"{k}={v} out of range [{lo},{hi}]")
         if depth is not None and not (1 <= int(depth) <= 60):
             raise ValueError(f"goto_depth={depth} out of range")
+        # level_up is an engine action (pluslvl), not a blstats field set.
+        levels = changes.pop("level_up", None)
+        rendered = False
         for k, v in changes.items():
             self._engine.set_state(k, int(v))
+        if levels is not None:
+            self._engine.level_up(int(levels))  # renders via ctrl-R
+            rendered = True
         if depth is not None:
             self._engine.goto_depth(int(depth))
-        else:
+            # seat the hero on the level's downstair (also renders)
+            self._engine.seat_on_stair(down=True)
+            rendered = True
+        if not rendered:
             # ctrl-R redraw so blstats refresh without consuming a game turn.
             self._engine.step(18)
         return self._engine.to_core_observation()

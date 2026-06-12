@@ -322,6 +322,14 @@ class RawEngine:
         lib.nle_goto_depth.argtypes = [ctypes.c_void_p, ctypes.c_int]
         lib.nle_goto_depth.restype = ctypes.c_int
 
+        # Seat the hero on the down(1)/up(0) staircase of the current level, and
+        # raise the hero N experience levels with real HP/stat gains.  Both are
+        # TWO-PHASE like nle_goto_depth: the caller must step once to render.
+        lib.nle_seat_on_stair.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        lib.nle_seat_on_stair.restype = ctypes.c_int
+        lib.nle_level_up.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        lib.nle_level_up.restype = ctypes.c_int
+
         # Reseed the gameplay/display RNGs.  Used after restore() to make
         # branches diverge: the 4th arg `reseed` is a C boolean (1 byte).
         lib.nle_set_seed.argtypes = [
@@ -600,6 +608,31 @@ class RawEngine:
         if rc != 0:
             raise ValueError(f"goto_depth({n}) out of range")
         self.step(ord("."))  # process the deferred goto (a wait step runs rhack)
+        return self
+
+    def seat_on_stair(self, down: bool = True) -> "RawEngine":
+        """Seat the hero on the down(True)/up(False) staircase of this level.
+
+        Two-phase like goto_depth: the C call schedules the placement and we
+        step once (a wait '.') to render it.  A nonzero return just means the
+        current level has no such staircase, which is a no-op rather than an
+        error.  Returns self.
+        """
+        rc = self._lib.nle_seat_on_stair(self._ctx, 1 if down else 0)
+        self.step(ord("."))  # render the two-phase change
+        return self  # rc nonzero just means no such stair (no-op); not an error
+
+    def level_up(self, n: int = 1) -> "RawEngine":
+        """Raise the hero ``n`` experience levels with real HP/stat gains.
+
+        Two-phase: after the C call we issue a ctrl-R redraw (action 18) to
+        refresh blstats without consuming a game turn.  Returns self.
+
+        Raises RuntimeError if the engine reports failure.
+        """
+        if self._lib.nle_level_up(self._ctx, int(n)) != 0:
+            raise RuntimeError("nle_level_up failed")
+        self.step(18)  # ctrl-R redraw to refresh blstats without a turn
         return self
 
     # ------------------------------------------------------------------
