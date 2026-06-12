@@ -19,6 +19,9 @@ const CHARCOL={'@':'#fd5','>':'#6ff','<':'#6ff','$':'#fd5','#':'#777','.':'#556'
 // come first (NetHack draws major demons as '&'); '<'/'>' guard against the map
 // stairs glyphs being parsed as tags.
 function esc(ch){return ch==='&'?'&amp;':(ch==='<'?'&lt;':(ch==='>'?'&gt;':ch));}
+// String-level HTML escape for injecting recorded text (e.g. Tracer LLM panes,
+// which may come from shared eval traces) into innerHTML. `&` first.
+function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function colorize(rows,colors){
   let h='';
   for(let y=0;y<rows.length;y++){for(let x=0;x<rows[y].length;x++){

@@ -60,9 +60,9 @@ function showTurn(i){
     document.getElementById('resumebtn').onclick=()=>resumeFloor(t.checkpoint);
   } else { rz.innerHTML=''; }
   document.getElementById('t-map').innerHTML=colorize(t.raw_grid||[],null);
-  let llm=''; if(t.user) llm+='<div class="lbl">user</div><pre>'+t.user.replace(/</g,'&lt;')+'</pre>';
-  if(t.assistant) llm+='<div class="lbl">assistant</div><pre>'+t.assistant.replace(/</g,'&lt;')+'</pre>';
-  if(t.tool_calls&&t.tool_calls.length) llm+='<div class="lbl">tool_calls</div><pre>'+JSON.stringify(t.tool_calls,null,1).replace(/</g,'&lt;')+'</pre>';
+  let llm=''; if(t.user) llm+='<div class="lbl">user</div><pre>'+escHtml(t.user)+'</pre>';
+  if(t.assistant) llm+='<div class="lbl">assistant</div><pre>'+escHtml(t.assistant)+'</pre>';
+  if(t.tool_calls&&t.tool_calls.length) llm+='<div class="lbl">tool_calls</div><pre>'+escHtml(JSON.stringify(t.tool_calls,null,1))+'</pre>';
   document.getElementById('t-llm').innerHTML=llm;
 }
 async function resumeFloor(ckpt){
