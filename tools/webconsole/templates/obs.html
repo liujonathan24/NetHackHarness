@@ -19,7 +19,8 @@
 .obs-cols{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start}
 .obs-card{flex:1;min-width:280px;background:var(--panel);border:1px solid var(--line);
   border-radius:6px;padding:12px 14px}
-.obs-card label{display:block;color:var(--ink);font-size:13px;margin:3px 0;cursor:pointer}
+/* trace labels are slash-paths (no spaces); wrap so a long path doesn't overflow */
+.obs-card label{display:block;color:var(--ink);font-size:13px;margin:3px 0;cursor:pointer;overflow-wrap:anywhere}
 .obs-card label input{margin-right:6px;vertical-align:middle}
 .obs-list{max-height:240px;overflow:auto}
 .obs-custom-row{display:flex;gap:6px;margin:5px 0}
