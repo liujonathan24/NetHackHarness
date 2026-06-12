@@ -203,6 +203,23 @@ def step():
     return jsonify(_payload(obs))
 
 
+@app.route("/modify", methods=["POST"])
+def modify():
+    data = request.get_json(silent=True) or {}
+    if STATE["env"] is None:
+        return jsonify({"error": "call /reset first"}), 400
+    changes = data.get("changes") or {}
+    # coerce values to int; EngineEnv.modify validates names + bounds (secure)
+    try:
+        clean = {k: int(v) for k, v in changes.items()}
+        obs = STATE["env"].modify(**clean)
+    except (KeyError, ValueError) as e:
+        return jsonify({"error": str(e)}), 400
+    obs = _settle(STATE["env"], obs)
+    _record(obs)
+    return jsonify(_payload(obs))
+
+
 @app.route("/set_tune", methods=["POST"])
 def set_tune():
     data = request.get_json(silent=True) or {}

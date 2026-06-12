@@ -110,6 +110,17 @@ button.act-btn:hover{filter:brightness(1.12)}
 #recbtn.on{background:linear-gradient(180deg,#a83a3a,#7c2626);border-color:#5c1c1c}
 #recstat{color:var(--danger);font-size:12px;height:16px;margin-top:4px}
 
+/* ---------- state-modify panel ---------- */
+#modify{margin-top:14px;padding-top:10px;border-top:1px solid var(--line)}
+.mrow{display:flex;align-items:center;gap:6px;margin:5px 0}
+.mrow .mname{width:96px;color:var(--hero);font-size:12px}
+.mrow .mnum{flex:1;min-width:0;background:#10111a;color:var(--good);border:1px solid var(--line);text-align:right;border-radius:3px;padding:3px 5px}
+.mbtn{background:linear-gradient(180deg,#2f6f4a,#244e38);color:#eafff0;border:1px solid #1c3b2a;
+  padding:4px 10px;cursor:pointer;font-size:12px;border-radius:3px;text-shadow:0 1px 0 #0008}
+.mbtn.wide{flex:1}
+.mbtn:hover{filter:brightness(1.12)}
+#modstat{color:var(--warn);font-size:11px;min-height:14px;margin-top:4px}
+
 /* ---------- traces ---------- */
 #t-list{width:312px;border-right:2px solid var(--line);padding:12px;overflow-y:auto;max-height:calc(100vh - 46px);background:var(--panel-2)}
 #t-list .f{padding:6px;cursor:pointer;font-size:12px;color:var(--ink);border-bottom:1px solid var(--line-soft);border-radius:3px}

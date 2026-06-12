@@ -70,6 +70,21 @@ async function toggleRec(){
   document.getElementById('recbtn').classList.toggle('on',!on);
   document.getElementById('recstat').textContent=on?('saved '+(r.name||'')+' ('+(r.turns||0)+' turns)'):('● recording '+r.name);
 }
+/* ---------- state-modify panel (map page) ---------- */
+function modErr(msg){const e=document.getElementById('modstat'); if(e)e.textContent=msg||'';
+  const m=document.getElementById('message'); if(m&&msg)m.textContent=msg;}
+async function doModify(changes){
+  const d=await post('/modify',{changes:changes});
+  if(d&&d.error){modErr('modify error: '+d.error); return;}
+  modErr(''); apply(d);
+}
+async function goLevel(){const v=Number(document.getElementById('m_goto').value);
+  if(!Number.isFinite(v)){modErr('enter a level'); return;} await doModify({goto_depth:v});}
+async function plusLevel(){await doModify({level_up:1});}
+async function setField(name){const el=document.getElementById('m_'+name); const v=Number(el.value);
+  if(el.value===''||!Number.isFinite(v)){modErr('enter a value for '+name); return;}
+  await doModify({[name]:v});}
+
 function row(m){const div=document.createElement('div'); div.className='knob';
   const rst=m.reset?' <span class="rst">&#8635;reset</span>':'';
   if(m.kind==='bool'){
