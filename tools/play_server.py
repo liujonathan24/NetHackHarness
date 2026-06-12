@@ -444,7 +444,8 @@ def traces():
                 continue
             seen.add(rp)
             try:
-                n = sum(1 for _ in open(p))
+                with open(p) as fh:
+                    n = sum(1 for _ in fh)
             except OSError:
                 n = 0
             out.append({"path": rp, "name": str(p.relative_to(_ROOT)), "turns": n})
@@ -458,28 +459,29 @@ def trace():
     if not _under_trace_dirs(rp) or not rp.is_file():
         return jsonify({"error": "not allowed"}), 400
     turns = []
-    for line in open(rp):
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            o = json.loads(line)
-        except ValueError:
-            continue
-        if not isinstance(o, dict):  # a valid-JSON but non-object line (bad export) -> skip, don't 500
-            continue
-        turns.append({
-            "turn": o.get("turn", len(turns)),
-            "raw_grid": o.get("raw_grid", []),
-            "status": o.get("status", {}),
-            "reward": o.get("reward", 0.0),
-            "messages": o.get("messages", []),
-            "user": o.get("rendered_user_message", ""),
-            "assistant": o.get("assistant_message", ""),
-            "tool_calls": o.get("tool_calls", []),
-            "actions": o.get("action_indices", []),
-            "checkpoint": o.get("checkpoint"),
-        })
+    with open(rp) as fh:  # context-managed so the fd is closed deterministically
+        for line in fh:   # streamed line-by-line (don't slurp a huge trace into memory)
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                o = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(o, dict):  # valid-JSON but non-object line (bad export) -> skip, don't 500
+                continue
+            turns.append({
+                "turn": o.get("turn", len(turns)),
+                "raw_grid": o.get("raw_grid", []),
+                "status": o.get("status", {}),
+                "reward": o.get("reward", 0.0),
+                "messages": o.get("messages", []),
+                "user": o.get("rendered_user_message", ""),
+                "assistant": o.get("assistant_message", ""),
+                "tool_calls": o.get("tool_calls", []),
+                "actions": o.get("action_indices", []),
+                "checkpoint": o.get("checkpoint"),
+            })
     return jsonify({"turns": turns})
 
 
