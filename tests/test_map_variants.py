@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import numpy as np
-import nle.nethack as N
+from nethack_core import glyphs as N
 
 from nethack_harness.prompt.prompt_spec import VARIANT_REGISTRY
 

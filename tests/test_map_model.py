@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import numpy as np
-import nle.nethack as N
+from nethack_core import glyphs as N
 
 from nethack_core.map_model import build_map_model, MapModel, Entity
 
@@ -35,7 +35,7 @@ def test_monster_entity_has_species_and_pet_flag():
     mons = [e for e in m.entities if e.kind == "monster"]
     by_xy = {(e.x, e.y): e for e in mons}
     assert (10, 5) in by_xy and (11, 6) in by_xy
-    assert by_xy[(10, 5)].species == N.permonst(N.glyph_to_mon(wild)).mname
+    assert by_xy[(10, 5)].species == N.monster_name(N.glyph_to_mon(wild))
     assert by_xy[(10, 5)].is_pet is False
     assert by_xy[(11, 6)].is_pet is True
 

@@ -1126,37 +1126,18 @@ def _ead_cmap_lut():
     Also caches the closed-door cmap set. Cached."""
     global _EAD_CMAP_LUT, _EAD_CLOSED_CMAPS
     if _EAD_CMAP_LUT is None:
-        import numpy as np
-        import nle.nethack as N
-        lut = np.full(N.MAXPCHARS, ord('|'), np.uint8)  # default: wall/rock/hazard
-        lut[0] = ord(' ')                               # cmap 0 = dark/unexplored
-        closed = set()
-        for i in range(1, N.MAXPCHARS):
-            exp = N.symdef.from_idx(i).explanation
-            if 'closed door' in exp:
-                closed.add(i)
-            if ('staircase down' in exp) or ('ladder down' in exp):
-                lut[i] = ord('>')
-            elif ('staircase up' in exp) or ('ladder up' in exp):
-                lut[i] = ord('<')
-            elif 'closed door' in exp:
-                lut[i] = ord('|')  # BLOCKED for pathing (a_star must not route through
-                                   # a closed door and bump). Detected separately
-                                   # from glyphs for the open-the-door step.
-            elif any(k in exp for k in ('doorway', 'open door', 'floor', 'corridor',
-                                        'dark part of a room', 'staircase', 'ladder',
-                                        'altar', 'sink', 'fountain', 'ice',
-                                        'lowered drawbridge', 'throne')):
-                lut[i] = ord('.')
-        _EAD_CMAP_LUT = lut
-        _EAD_CLOSED_CMAPS = closed
+        from nethack_core import glyphs as N
+        # Baked from the fork's cmap symbol table; closed-door cmaps are BLOCKED
+        # for pathing (a_star must not route through a closed door and bump).
+        _EAD_CMAP_LUT = N.cmap_clean_char_lut().copy()
+        _EAD_CLOSED_CMAPS = set(N.CMAP_CLOSED_DOOR_INDICES)
     return _EAD_CMAP_LUT
 
 
 def _closed_door_positions(glyphs):
     """List of (x, y) closed-door tiles, from glyphs (vectorized)."""
     import numpy as np
-    import nle.nethack as N
+    from nethack_core import glyphs as N
     _ead_cmap_lut()  # ensure _EAD_CLOSED_CMAPS is built
     if not _EAD_CLOSED_CMAPS:
         return []
@@ -1174,7 +1155,7 @@ def _glyph_clean_chars(glyphs):
     The tty char layer renders an open door identically to a wall; glyphs
     disambiguate (the way NetPlay tracks the map)."""
     import numpy as np
-    import nle.nethack as N
+    from nethack_core import glyphs as N
     lut = _ead_cmap_lut()
     g = np.asarray(glyphs, dtype=np.int64)
     out = np.full(g.shape, ord(' '), np.uint8)
@@ -1217,9 +1198,8 @@ def explore_and_descend(env: NetHackCoreEnv, obs: StructuredObservation,
     searches dead-ends / room perimeters for hidden passages."""
     import numpy as np
     from nethack_core import actions as _nh
-    # Glyph predicates (glyph_is_monster/pet) are C-backed nle helpers with no
-    # nethack_core equivalent yet; the action vocabulary above is nle-free.
-    import nle.nethack as _glyph
+    # Glyph predicates (glyph_is_monster/pet) -- pure-Python, nle-free.
+    from nethack_core import glyphs as _glyph
     from nethack_harness.navigation.pathfinding import a_star, find_frontiers
 
     # The engine consumes keystroke bytes directly, so each action IS its enum

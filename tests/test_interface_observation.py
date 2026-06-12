@@ -1,4 +1,5 @@
-import numpy as np, nle.nethack as N
+import numpy as np
+from nethack_core import glyphs as N
 from nethack_interface.observation import Observation, observation_spec
 
 

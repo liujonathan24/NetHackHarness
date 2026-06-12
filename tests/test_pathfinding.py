@@ -10,7 +10,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from nle import nethack
+from nethack_core import actions as nethack
 
 from nethack_harness.navigation.pathfinding import (
     a_star,
