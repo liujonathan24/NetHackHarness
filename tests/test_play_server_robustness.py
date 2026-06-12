@@ -194,3 +194,19 @@ def test_current_unstarted_env_is_200_live_false(client, monkeypatch):
     r = client.get("/current")
     assert r.status_code == 200
     assert r.get_json().get("live") is False
+
+
+# --- play routes must gate on "started", not just env!=None (unstarted = crash) -
+def test_play_routes_reject_unstarted_env(client, monkeypatch):
+    """An env can exist without a started game: /catalog lazily builds one to read
+    the knob list. Engine ops (step/modify/live) on an unstarted game crash the C
+    library, so they must 400 based on STATE['started'], not just env-None. A
+    page-load race (typing before the first /reset finishes) could otherwise crash
+    the server."""
+    monkeypatch.setitem(ps.STATE, "env", object())   # non-None but unstarted
+    monkeypatch.setitem(ps.STATE, "started", False)
+    for path, body in [("/step", {"keys": "l"}),
+                       ("/live", {"name": "vision_radius", "value": 1}),
+                       ("/modify", {"changes": {"hp": 5}})]:
+        code, err = _err(client.post(path, json=body))
+        assert code == 400 and "reset" in (err or "").lower(), f"{path} must 400 when unstarted"

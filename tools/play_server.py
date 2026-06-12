@@ -53,7 +53,13 @@ app = Flask(
     static_folder=str(_WEB / "static"),
 )
 STATE: dict = {"env": None, "seed": 42, "tune": {}, "rec": None, "turn": 0,
-               "ckpt_dlvl": None, "ckpt_path": None, "resumed": False}
+               "ckpt_dlvl": None, "ckpt_path": None, "resumed": False,
+               # "started" is True only after a /reset or /resume actually starts
+               # a game. The env alone isn't enough: /catalog lazily constructs an
+               # (unstarted) env to read the knob list, and calling engine ops on
+               # an unstarted game crashes the C library — so the play routes gate
+               # on this, not just `env is not None`.
+               "started": False}
 _REC_DIR = _ROOT / "outputs" / "web_play"
 _TRACE_DIRS = [_REC_DIR, _ROOT / "outputs", _ROOT / "environments" / "nethack" / "outputs"]
 # Serializes /obs/plot's register/render/unregister against the process-global
@@ -103,6 +109,16 @@ def _env() -> EngineEnv:
     if STATE["env"] is None:
         STATE["env"] = EngineEnv()
     return STATE["env"]
+
+
+def _need_started():
+    """Return a (response, 400) tuple if no game has been started yet, else None.
+    Engine ops (step/modify/set_tune) on an env that exists but was never started
+    crash the C library, so play routes must gate on this — `env is not None` is
+    not enough because /catalog lazily builds an unstarted env."""
+    if STATE["env"] is None or not STATE["started"]:
+        return jsonify({"error": "call /reset first"}), 400
+    return None
 
 
 def _rows(obs):
@@ -223,6 +239,7 @@ def reset():
         obs, _ = _env().reset(seeds=(STATE["seed"], STATE["seed"]), tune=dict(STATE["tune"]))
     except (KeyError, ValueError) as e:
         return jsonify({"error": str(e)}), 400
+    STATE["started"] = True  # a game is now active; play routes may touch the engine
     for _ in range(2):
         obs, _, _ = _env().step(ord("."))
     obs = _settle(_env(), obs)
@@ -259,8 +276,8 @@ def step():
     # Matches the 400-not-500 contract the other mutating routes already honor.
     if not isinstance(keys, str):
         return jsonify({"error": "keys must be a string"}), 400
-    if STATE["env"] is None:
-        return jsonify({"error": "call /reset first"}), 400
+    if (g := _need_started()):  # stepping an unstarted engine crashes the C lib
+        return g
     obs = None
     last = None
     for ch in keys:
@@ -288,8 +305,8 @@ def modify():
         clean = {k: int(v) for k, v in changes.items()}
     except (TypeError, ValueError):
         return jsonify({"error": "change values must be integers"}), 400
-    if STATE["env"] is None:
-        return jsonify({"error": "call /reset first"}), 400
+    if (g := _need_started()):
+        return g
     # EngineEnv.modify validates names + bounds (secure); unknown name -> KeyError.
     try:
         obs = STATE["env"].modify(**clean)
@@ -323,7 +340,10 @@ def set_tune():
     if err:
         return err
     name, value = parsed
-    if STATE["env"] is not None:
+    # set_tune persists to STATE["tune"] for the next reset; only push it to the
+    # live engine if a game is actually started (gate on "started", not just a
+    # non-None env, since /catalog leaves an unstarted env that would crash).
+    if STATE["started"]:
         try:
             STATE["env"].set_tune(**{name: value})
         except (KeyError, ValueError) as e:
@@ -336,8 +356,8 @@ def set_tune():
 @_engine_locked
 def live():
     data = request.get_json(silent=True) or {}
-    if STATE["env"] is None:
-        return jsonify({"error": "call /reset first"}), 400
+    if (g := _need_started()):  # set_tune + redraw-step crash on an unstarted engine
+        return g
     parsed, err = _tune_args(data)
     if err:
         return err
@@ -366,7 +386,7 @@ def record_start():
     STATE["turn"] = 0
     STATE["ckpt_dlvl"] = None  # force a floor-entry checkpoint on the first turn
     STATE["ckpt_path"] = None
-    if STATE["env"] is not None:
+    if STATE["started"]:  # only capture turn 0 if a game is live (not just /catalog's env)
         _record(_env().engine.to_core_observation())  # capture current as turn 0
     return jsonify({"name": name})
 
@@ -401,6 +421,7 @@ def resume():
         obs = _env().resume(rp)
     except Exception as e:  # malformed/incompatible checkpoint -> clean 400
         return jsonify({"error": f"could not resume: {e}"}), 400
+    STATE["started"] = True  # resume starts a live game
     obs = _settle(_env(), obs)
     # Reflect the resumed game in the Map Viewer's state: the env now owns its
     # seed/tune; mirror them so the seed box + knob panel match what's playing.
