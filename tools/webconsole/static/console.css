@@ -150,6 +150,9 @@ button.act-btn:hover{filter:brightness(1.12)}
    full-width and left-aligned, while keeping keyboard focus + activation. */
 #t-list .f{display:block;width:100%;text-align:left;padding:6px;cursor:pointer;
   font-size:12px;font-family:inherit;color:var(--ink);background:none;
+  /* trace names are slash-paths (no spaces); wrap them so a long/deep path
+     doesn't overflow the fixed-width list. */
+  overflow-wrap:anywhere;
   border:0;border-bottom:1px solid var(--line-soft);border-radius:3px}
 #t-list .f:hover{background:#23242f}
 #t-list .f[aria-current=true]{background:#23242f;color:var(--stairs);font-weight:bold}
