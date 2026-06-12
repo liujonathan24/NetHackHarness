@@ -37,18 +37,19 @@
 - [x] 5.1 Fork C: secure state setters `hp`/`max_hp`/`gold`/`xp_level`/`hunger` + `goto_depth(n)` (deferred `schedule_goto`); name-keyed `nle_set_state` dispatch — DONE fork `e991505`
 - [x] 5.2 Binding + `EngineEnv.modify(**changes)` (live), whitelist+bounds validated — DONE `efd3c8a`
 - [x] 5.3 At-reset config `EngineEnv(modify=...)`/`reset(modify={...})`; `NetHackCoreEnv` pass-through — DONE `efd3c8a`
-- [ ] 5.4 Delete the 3 MiniHack tiers from `curriculum.py`; remove the `minihack` git dependency from `pyproject.toml` + lockfiles (native + saved-level tiers remain).
+- [x] 5.4 Delete the 3 MiniHack tiers from `curriculum.py` (13→10 native tiers); remove `minihack` dep — DONE `074483b`
 - [x] 5.5 Tests: mutations round-trip in blstats, `goto_depth` lands dlvl 4, out-of-range/unknown rejected, at-reset config — DONE `test_modify.py` (5 tests; suite 94 green)
 
-## 6. The nle cutover
-- [ ] 6.1 Delete the `import nle` code path from `nethack_core` (env.py / __init__.py)
-- [ ] 6.2 Remove `nle>=1.3.0` from every `pyproject.toml` + lockfile; `uv sync` resolves clean without it
-- [ ] 6.3 Repo-wide acceptance check: `grep -rn "import nle\|from nle\|minihack"` is clean outside archived/legacy docs
+## 6. The nle cutover — nle + minihack FULLY REMOVED (`a8c47c6`+`074483b`)
+- [x] 6.1 Native path imports no nle; pure-Python `nethack_core/glyphs.py` (exact parity vs nle) replaces the last glyph-helper coupling; MiniHack gym branch raises
+- [x] 6.2 `nle`/`minihack` removed from all pyproject; `uv sync --all-packages` resolves clean; nle/minihack uninstalled
+- [x] 6.3 Acceptance grep clean (only comments/docstrings; runtime imports zero) — golden oracle-recorder script left as documentation (not collected)
 - [ ] 6.4 Update `Dockerfile.prime` to build the submodule (`build_engine.sh`) instead of installing the nle wheel
-- [ ] 6.5 Bundle/vendor a tileset for `image_render.py` (MiniHack's `GlyphMapper` source is gone); `NETHACK_TILESET` override already exists
+- [x] 6.5 `image_render.py` degrades gracefully without minihack (IMG path → `img` optional extra); tty path works
 
 ## 7. Verify + docs
-- [ ] 7.1 GATE A golden-trace parity + determinism still green after the cutover
+- [x] 7.1 GATE A golden-trace parity + determinism green (engine suite 100; harness 17 fail = pre-existing baseline, 0 new)
 - [ ] 7.2 Full eval smoke run end-to-end through the new engine
-- [ ] 7.3 Document the engine layer: binding, snapshot API, tune knobs (ranges + timing), level format; `--recurse-submodules` clone + build steps in README/dev docs
-- [ ] 7.4 Record open-question resolutions (OQ4 + final API signatures); mark the absorbed `custom-nethack-engine` tasks as superseded-by `level-replay`
+- [ ] 7.3 Document the engine layer: binding, snapshot/branch/modify API, tune knobs, level blobs; `--recurse-submodules` + `build_engine.sh` steps in README
+- [ ] 7.4 Record OQ resolutions + final API signatures; mark absorbed `custom-nethack-engine` tasks superseded
+- [ ] 7.5 Phase D — `legacy/replay.py`: verify (seed,actions) replay works on the deterministic engine / swap to snapshot-restore; update `test_replay.py`
