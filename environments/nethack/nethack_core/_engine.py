@@ -303,6 +303,15 @@ class RawEngine:
         lib.nle_load_level.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long]
         lib.nle_load_level.restype = ctypes.c_int
 
+        # Portable hero blob save / load (u + inventory + attributes).  Same
+        # malloc/free + TWO-PHASE contract as the level blob.  Hard ordering:
+        # load the LEVEL first (nle_load_level), THEN the player
+        # (nle_load_player), then render once.
+        lib.nle_save_player.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_long)]
+        lib.nle_save_player.restype = ctypes.c_void_p
+        lib.nle_load_player.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long]
+        lib.nle_load_player.restype = ctypes.c_int
+
         # Difficulty knob catalog.  nle_get_tune returns nle_tune_t*, which is a
         # flat block of doubles indexed by the name table — so get/set are fully
         # generic (a new knob in the engine appears with no binding change).
@@ -569,6 +578,57 @@ class RawEngine:
         if rc != 0:
             raise RuntimeError(f"nle_load_level failed (rc={rc})")
         self.step(18)  # ctrl-R redraw inside the coroutine
+        return self
+
+    def load_level_raw(self, blob: bytes) -> "RawEngine":
+        """Install a level blob WITHOUT rendering (caller renders later).
+
+        Used by resume to do level -> player -> ONE render.  Returns self.
+
+        Raises RuntimeError if no game is active or the C call fails.
+        """
+        if self._ctx is None:
+            raise RuntimeError("load_level_raw() requires an active game; call start() first")
+        buf = ctypes.create_string_buffer(blob, len(blob))
+        rc = self._lib.nle_load_level(self._ctx, buf, len(blob))
+        if rc != 0:
+            raise RuntimeError(f"nle_load_level failed (rc={rc})")
+        return self
+
+    def save_player(self) -> bytes:
+        """Serialize the hero (u + inventory + attributes) to a blob.  Returns bytes.
+
+        Like save_level, the blob is self-contained and the C call mallocs it
+        (we free via nle_free_blob).
+
+        Raises RuntimeError if no game is active or the C call fails.
+        """
+        if self._ctx is None:
+            raise RuntimeError("save_player() requires an active game; call start() first")
+        n = ctypes.c_long(0)
+        ptr = self._lib.nle_save_player(self._ctx, ctypes.byref(n))
+        if not ptr or n.value <= 0:
+            raise RuntimeError("nle_save_player failed")
+        try:
+            return ctypes.string_at(ptr, n.value)
+        finally:
+            self._lib.nle_free_blob(ptr)
+
+    def load_player_raw(self, blob: bytes) -> "RawEngine":
+        """Restore the hero onto the already-loaded level WITHOUT rendering.
+
+        Two-phase: the C call mutates state but does not render.  The hard
+        ordering contract is LEVEL first (load_level_raw), THEN player
+        (load_player_raw), then a single step(18) render.  Returns self.
+
+        Raises RuntimeError if no game is active or the C call fails.
+        """
+        if self._ctx is None:
+            raise RuntimeError("load_player_raw() requires an active game; call start() first")
+        buf = ctypes.create_string_buffer(blob, len(blob))
+        rc = self._lib.nle_load_player(self._ctx, buf, len(blob))
+        if rc != 0:
+            raise RuntimeError(f"nle_load_player failed (rc={rc})")
         return self
 
     # ------------------------------------------------------------------
