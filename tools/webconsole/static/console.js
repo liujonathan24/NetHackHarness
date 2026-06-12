@@ -74,9 +74,13 @@ function apply(d){
   for(const k in d.tune) syncControl(k,d.tune[k]);
   setDirty(false);
   document.getElementById('recstat').textContent=d.recording?('● recording '+d.recording):'';
-  const rb=document.getElementById('recbtn');
-  rb.classList.toggle('on',!!d.recording); rb.setAttribute('aria-pressed',!!d.recording);
+  syncRec(!!d.recording);
 }
+/* Single source of truth for the record button's visual + a11y + label state,
+   shared by apply() (server-driven) and toggleRec() (click-driven). */
+function syncRec(on){const rb=document.getElementById('recbtn'); if(!rb)return;
+  rb.classList.toggle('on',on); rb.setAttribute('aria-pressed',on);
+  const l=document.getElementById('reclabel'); if(l)l.textContent=on?'Stop recording':'Record trace';}
 async function onChange(name,val){curTune[name]=val;
   if(META[name].reset) setDirty(true);
   else {const d=await post('/live',{name:name,value:val}); apply(d);}}
@@ -91,7 +95,7 @@ async function toggleRec(){
   const on=rb.classList.contains('on');
   const r=await post(on?'/record_stop':'/record_start',{});
   if(r&&r.error){const ms=document.getElementById('recstat'); if(ms)ms.textContent='⚠ '+r.error; return;}
-  rb.classList.toggle('on',!on); rb.setAttribute('aria-pressed',!on);
+  syncRec(!on);
   document.getElementById('recstat').textContent=on?('saved '+(r.name||'')+' ('+(r.turns||0)+' turns)'):('● recording '+r.name);
 }
 /* ---------- state-modify panel (map page) ---------- */
