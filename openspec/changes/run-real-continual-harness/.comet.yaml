@@ -1,0 +1,17 @@
+workflow: full
+phase: build
+build_mode: subagent-driven-development
+build_pause: null
+isolation: worktree
+verify_mode: null
+base_ref: 059d294f7ec577cf724abdb3e4debf3bc1f9f456
+design_doc: docs/superpowers/specs/2026-06-12-continual-harness-real-eval-design.md
+plan: docs/superpowers/plans/2026-06-12-continual-harness-real-eval.md
+verify_result: pending
+verification_report: null
+branch_status: pending
+created_at: 2026-06-12
+verified_at: null
+archived: false
+handoff_context: openspec/changes/run-real-continual-harness/.comet/handoff/design-context.json
+handoff_hash: 49d2712b567a6cc9d60ca9e4b47255acd7ab52e2fb32abe87c49f89a9f23bd96
