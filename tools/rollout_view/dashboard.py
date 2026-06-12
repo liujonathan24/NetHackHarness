@@ -18,6 +18,11 @@ from .theme import CANDY, THEME_CSS
 
 DEFAULT_METRICS = ("dlvl", "hp_frac", "xp", "kills_cum")
 
+# Per-run line dash patterns so runs are distinguishable WITHOUT relying on colour
+# alone (WCAG 1.4.1) — important for colour-blind users. Cycled by run index,
+# offset from the colour cycle (len 5) so colour+dash combos stay distinct.
+_DASHES = ("", "6 3", "2 3", "8 3 2 3", "1 3")
+
 
 def _svg_linechart(title: str, series_by_run: list[tuple[str, list[tuple[int, float]]]],
                    *, w: int = 560, h: int = 180) -> str:
@@ -64,8 +69,10 @@ def _svg_linechart(title: str, series_by_run: list[tuple[str, list[tuple[int, fl
         if not s:
             continue
         color = CANDY[i % len(CANDY)]
+        dash = _DASHES[i % len(_DASHES)]
         pts = " ".join(f"{px(x):.1f},{py(y):.1f}" for x, y in s)
-        parts.append(f'<polyline points="{pts}" fill="none" stroke="{color}" stroke-width="2"/>')
+        parts.append(f'<polyline points="{pts}" fill="none" stroke="{color}" stroke-width="2"'
+                     + (f' stroke-dasharray="{dash}"' if dash else '') + '/>')
         # Dot markers per point. Crucial for a single-point series, where a
         # one-vertex <polyline> draws no segment and is otherwise invisible —
         # so plotting a single short trace would show "nothing". Also makes
@@ -73,8 +80,17 @@ def _svg_linechart(title: str, series_by_run: list[tuple[str, list[tuple[int, fl
         for x, y in s:
             parts.append(f'<circle cx="{px(x):.1f}" cy="{py(y):.1f}" r="2.5" fill="{color}"/>')
     parts.append("</svg>")
+    # Legend swatch is a short line sample showing the run's colour AND dash
+    # pattern, so it stays distinguishable for colour-blind users (matches the
+    # chart line). The label colour is left to CSS (readable on the panel bg).
+    def _swatch(i):
+        c = CANDY[i % len(CANDY)]
+        d = _DASHES[i % len(_DASHES)]
+        da = f' stroke-dasharray="{d}"' if d else ''
+        return (f'<svg width="20" height="8" style="vertical-align:middle" aria-hidden="true">'
+                f'<line x1="0" y1="4" x2="20" y2="4" stroke="{c}" stroke-width="2"{da}/></svg>')
     legend = " ".join(
-        f'<span class="lg" style="color:{CANDY[i%len(CANDY)]}">&#9632; {_html.escape(lbl)}</span>'
+        f'<span class="lg">{_swatch(i)} {_html.escape(lbl)}</span>'
         for i, (lbl, _) in enumerate(series_by_run))
     return (f'<div class="chart"><div class="ctitle">{_html.escape(title)}</div>'
             f'{"".join(parts)}<div class="legend">{legend}</div></div>')
