@@ -163,3 +163,16 @@ def test_obs_plot_nonstring_path_is_400(client):
     code, err = _err(client.post("/obs/plot",
                                  json={"paths": [12345], "metrics": ["dlvl"], "custom": []}))
     assert code == 400
+
+
+# --- /modify validates shape + value types before the engine -----------------
+def test_modify_nondict_changes_is_400(client):
+    code, err = _err(client.post("/modify", json={"changes": [1, 2, 3]}))
+    assert code == 400 and "object" in (err or "")
+
+
+def test_modify_noninteger_change_value_is_400(client):
+    # int(None) / int([..]) raise TypeError (not ValueError) -> was an uncaught 500.
+    for bad in (None, [1], {"x": 1}):
+        code, _ = _err(client.post("/modify", json={"changes": {"hp": bad}}))
+        assert code == 400, f"changes hp={bad!r} should be 400"

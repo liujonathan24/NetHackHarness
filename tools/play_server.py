@@ -277,12 +277,21 @@ def step():
 @_engine_locked
 def modify():
     data = request.get_json(silent=True) or {}
-    if STATE["env"] is None:
-        return jsonify({"error": "call /reset first"}), 400
+    # Validate shape + coerce before touching the engine, so malformed input is a
+    # clean 400 (and testable without one). A non-dict `changes` would make
+    # .items() raise, and int(None)/int([..]) raise TypeError (not ValueError),
+    # so without this both were uncaught 500s.
     changes = data.get("changes") or {}
-    # coerce values to int; EngineEnv.modify validates names + bounds (secure)
+    if not isinstance(changes, dict):
+        return jsonify({"error": "changes must be an object"}), 400
     try:
         clean = {k: int(v) for k, v in changes.items()}
+    except (TypeError, ValueError):
+        return jsonify({"error": "change values must be integers"}), 400
+    if STATE["env"] is None:
+        return jsonify({"error": "call /reset first"}), 400
+    # EngineEnv.modify validates names + bounds (secure); unknown name -> KeyError.
+    try:
         obs = STATE["env"].modify(**clean)
     except (KeyError, ValueError) as e:
         return jsonify({"error": str(e)}), 400
