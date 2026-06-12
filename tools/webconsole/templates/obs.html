@@ -20,7 +20,13 @@
    inside <style>, so the CSS parser would see literal &#39; and drop the
    declaration — silently stripping the retro font from chart titles/KPIs. #}
 {{ dash_css|safe }}
-.obs-form{max-width:1180px;margin:0 auto}
+/* Own the page padding here rather than via the generic .wrap class: the
+   injected dashboard CSS also defines .wrap, and being loaded after console.css
+   it would override .wrap's padding on this page. 14px at narrow widths keeps a
+   280px .obs-card inside a 320px viewport (WCAG 1.4.10), matching .wrap's
+   responsive rule. */
+.obs-form{max-width:1180px;margin:0 auto;padding:18px 22px}
+@media (max-width:520px){.obs-form{padding-left:14px;padding-right:14px}}
 .obs-cols{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start}
 .obs-card{flex:1;min-width:280px;background:var(--panel);border:1px solid var(--line);
   border-radius:6px;padding:12px 14px}
@@ -53,7 +59,7 @@ button.obs-mini{background:#23242f;color:var(--ink);border:1px solid var(--line)
 #obs-results{margin-top:18px;overflow-x:auto}
 </style>
 
-<main id="main-content" class="wrap obs-form" tabindex="-1">
+<main id="main-content" class="obs-form" tabindex="-1">
   <h1 style="font-size:18px;color:var(--hero);letter-spacing:1px">OBSERVATION CREATOR</h1>
   <p class="obs-hint" style="font-size:13px">
     Compose metrics over recorded <code>.ndjson</code> rollouts and plot them —
