@@ -84,6 +84,10 @@ def test_skip_link_targets_existing_main(client, path):
     html = _html(client, path)
     assert 'class="skip-link"' in html and 'href="#main-content"' in html
     assert 'id="main-content"' in html  # the skip target exists
+    # the target must be focusable (tabindex=-1) so the skip link actually moves
+    # focus into it, not just scroll (WCAG 2.4.1)
+    main = re.search(r"<main[^>]*\bid=\"main-content\"[^>]*>", html)
+    assert main and 'tabindex="-1"' in main.group(0), "skip target must be focusable"
 
 
 @pytest.mark.parametrize("path", PAGES)
