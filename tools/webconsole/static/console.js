@@ -165,6 +165,11 @@ async function build(){const cat=await(await fetch('/catalog')).json();
  * Otherwise it does the normal fresh /reset. */
 function initMap(){
   document.getElementById('screen').addEventListener('keydown',e=>{
+    // Let browser/OS shortcuts through (Ctrl/Cmd+C copy, Ctrl/Cmd+R reload,
+    // paste, devtools, ...). The single-char path would otherwise swallow the
+    // bare letter and preventDefault the shortcut — and it never produced a real
+    // NetHack control code anyway.
+    if(e.ctrlKey||e.metaKey||e.altKey) return;
     let ch=KEYMAP[e.key]; if(!ch&&e.key.length===1)ch=e.key; if(!ch)return; e.preventDefault();
     engineCall(()=>post('/step',{keys:ch}).then(apply));});
   // Enter to apply, matching type-then-Enter expectations: in the seed box it
