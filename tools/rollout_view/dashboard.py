@@ -19,9 +19,11 @@ from .theme import CANDY, THEME_CSS
 DEFAULT_METRICS = ("dlvl", "hp_frac", "xp", "kills_cum")
 
 # Per-run line dash patterns so runs are distinguishable WITHOUT relying on colour
-# alone (WCAG 1.4.1) — important for colour-blind users. Cycled by run index,
-# offset from the colour cycle (len 5) so colour+dash combos stay distinct.
-_DASHES = ("", "6 3", "2 3", "8 3 2 3", "1 3")
+# alone (WCAG 1.4.1) — important for colour-blind users. Length 6 vs the 5-colour
+# palette so the (colour, dash) combo cycles with period LCM(5,6)=30 rather than
+# repeating every 5 runs — each of up to 5 runs still gets a distinct dash, and
+# runs 6..30 stay distinct combos instead of exactly reusing run 1's.
+_DASHES = ("", "6 3", "2 3", "8 3 2 3", "1 3", "10 4")
 
 
 def _svg_linechart(title: str, series_by_run: list[tuple[str, list[tuple[int, float]]]],
