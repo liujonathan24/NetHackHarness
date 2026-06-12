@@ -79,7 +79,10 @@ h2,h3{color:var(--good);margin:14px 0 6px;border-bottom:1px solid var(--line);pa
 /* min-height (not a fixed height): a long NetHack message wraps and grows the
    box instead of overflowing onto the game screen below it. */
 #message{min-height:18px;color:#fff;margin-bottom:5px}
-#status,#t-status{min-height:18px;margin-top:8px;color:var(--ink)}
+/* pre-wrap preserves the multi-space field separators (HP .. AC .. Dlvl), which
+   default white-space would collapse to single spaces, while still wrapping if a
+   stat gets huge (e.g. $999999) so it never overflows. */
+#status,#t-status{min-height:18px;margin-top:8px;color:var(--ink);white-space:pre-wrap}
 #hint{color:var(--ink-faint);margin-top:10px;font-size:12px;max-width:640px}
 
 /* ---------- knob sidebar ---------- */
