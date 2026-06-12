@@ -59,11 +59,11 @@ def test_defaults_are_vanilla():
 def test_set_get_roundtrip():
     env = _engine.RawEngine()
     env.start(core=42, disp=42)
-    env.set_tune(dmg_to_player_scale=0.0, hunger_rate_scale=2.5, fog_of_war=0.0)
+    env.set_tune(dmg_to_player_scale=0.0, hunger_rate_scale=2.5, reveal_map=1.0)
     tune = env.get_tune()
     assert tune["dmg_to_player_scale"] == 0.0
     assert tune["hunger_rate_scale"] == 2.5
-    assert tune["fog_of_war"] == 0.0
+    assert tune["reveal_map"] == 1.0
     # Untouched knobs keep their defaults.
     assert tune["xp_gain_scale"] == 1.0
     env.end()
@@ -119,17 +119,16 @@ def _visible_cells(nsteps=5, **knobs):
     return n
 
 
-def test_reveal_map_and_fog_of_war_reveal_the_level():
-    """reveal_map and fog_of_war expand the observed level.
+def test_reveal_map_reveals_the_level():
+    """reveal_map expands the observed level.
 
-    Default obs shows only the explored area; reveal_map=1 (and, equivalently in
-    this glyph-obs model, fog_of_war=0) reveals the whole level's terrain.
+    Default obs shows only the explored area; reveal_map=1 reveals the whole
+    level's terrain (the single 'show whole map incl. walls + live monsters'
+    knob now that fog_of_war is gone).
     """
     base = _visible_cells()
     revealed = _visible_cells(reveal_map=1.0)
-    no_fog = _visible_cells(fog_of_war=0.0)
     assert revealed > base, "reveal_map did not reveal additional cells"
-    assert no_fog > base, "fog_of_war=0 did not reveal additional cells"
 
 
 def test_all_knobs_are_settable_and_safe():
@@ -144,7 +143,6 @@ def test_all_knobs_are_settable_and_safe():
         "player_hp_scale": 3.0,
         "hp_regen_scale": 4.0,
         "vision_radius": 3.0,
-        "fog_of_war": 0.0,
         "reveal_map": 1.0,
         "hunger_rate_scale": 2.0,
         "ongoing_spawn_scale": 4.0,

@@ -1,6 +1,6 @@
 """
-Tests for the reveal_map / fog_of_war knobs as a *render-time observation
-overlay* rather than a permanent mutation of the hero's remembered map.
+Tests for the reveal_map knob as a *render-time observation overlay* rather
+than a permanent mutation of the hero's remembered map.
 
 The fork engine fills any still-unknown map cell from the actual level terrain
 (``back_to_glyph``) directly into the emitted observation in
@@ -48,25 +48,36 @@ def test_reveal_map_is_reversible():
     assert off == base, f"off should return to the base obs (base={base}, off={off})"
 
 
-def test_fog_of_war_off_reveals_and_back_on_hides():
-    """fog_of_war=0 behaves like reveal_map=1; restoring fog_of_war=1 hides."""
+def _wall_count(env) -> int:
+    """Count wall glyphs ('-' and '|') in the emitted map obs."""
+    chars = env.engine.chars
+    return int(((chars == ord("-")) | (chars == ord("|"))).sum())
+
+
+def test_reveal_map_reveals_walls():
+    """reveal_map=1 reveals the level's walls (the bug we fixed: reveal_map is
+    now the single 'show whole map incl. walls + live monsters' knob).
+
+    The base obs after a few steps shows only the walls the hero has explored;
+    reveal_map=1 + a ctrl-R redraw fills in the rest of the floor's walls, so the
+    '-'/'|' count jumps substantially (observed ~32 -> ~201).
+    """
     env = EngineEnv()
     env.seed(42, 42)
     env.reset()
-    base = _visible(env)
+    for _ in range(3):
+        env.step(ord("l"))  # move east to explore a little
+    base_walls = _wall_count(env)
 
-    env.set_tune(fog_of_war=0.0)
-    env.step(18)
-    on = _visible(env)
-
-    env.set_tune(fog_of_war=1.0)
-    env.step(18)
-    off = _visible(env)
+    env.set_tune(reveal_map=1.0)
+    env.step(18)  # ctrl-R redraw: re-emit obs with the overlay applied
+    on_walls = _wall_count(env)
     env.close()
 
-    assert on > base + 50, f"fog_of_war=0 should reveal (base={base}, on={on})"
-    assert off < on - 50, f"fog_of_war=1 failed to re-hide (on={on}, off={off})"
-    assert off == base, f"off should return to the base obs (base={base}, off={off})"
+    assert on_walls > base_walls * 2, (
+        f"reveal_map=1 should reveal substantially more walls "
+        f"(base={base_walls}, on={on_walls})"
+    )
 
 
 def test_reveal_does_not_leak_into_game_state():

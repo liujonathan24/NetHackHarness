@@ -56,8 +56,7 @@ _TRACE_DIRS = [_REC_DIR, _ROOT / "outputs", _ROOT / "environments" / "nethack" /
 _GROUPS = ["Vision", "Stat-based", "Dungeon & spawns"]
 _META = {
     "vision_radius":            dict(group="Vision", kind="int",  reset=False, lo=0, hi=15, step=1, default=0, note="0 = vanilla; only matters in the dark"),
-    "fog_of_war":               dict(group="Vision", kind="bool", reset=False, default=1, note="off = reveal whole floor"),
-    "reveal_map":               dict(group="Vision", kind="bool", reset=False, default=0, note="on = reveal whole floor"),
+    "reveal_map":               dict(group="Vision", kind="bool", reset=False, default=0, note="on = reveal whole map incl. walls + live monsters"),
     "dmg_to_player_scale":      dict(group="Stat-based", kind="scale", reset=False, lo=0, hi=4, step=0.25, default=1),
     "dmg_by_player_scale":      dict(group="Stat-based", kind="scale", reset=False, lo=0, hi=4, step=0.25, default=1),
     "player_hp_scale":          dict(group="Stat-based", kind="scale", reset=False, lo=0.25, hi=4, step=0.25, default=1, note="HP gained on level-up"),
