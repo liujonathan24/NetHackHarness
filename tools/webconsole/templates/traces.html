@@ -10,7 +10,7 @@
     <input type="range" id="scrub" min="0" max="0" value="0"
            aria-label="Turn" oninput="showTurn(+this.value)">
     <div id="t-resume"></div>
-    <div id="t-turninfo" aria-live="polite"></div>
+    <div id="t-turninfo"></div>
     <div id="t-msgs" role="status" aria-live="polite"></div>
     <div id="t-map" class="screen" role="img" aria-label="Replayed map at the selected turn"></div>
     <div id="t-llm"></div>
@@ -55,6 +55,10 @@ function showTurn(i){
   if(!TURNS.length)return; const t=TURNS[i]||TURNS[0]; const s=t.status||{};
   document.getElementById('t-status').textContent='HP '+(s.hp??'?')+'/'+(s.max_hp??'?')+'   Dlvl '+(s.dlvl??'?')+'   reward '+(t.reward||0).toFixed(2);
   document.getElementById('t-turninfo').textContent='turn '+t.turn+'  ('+(i+1)+'/'+TURNS.length+')';
+  // The slider value is a 0-based index, not the (possibly skipping) turn number;
+  // announce the meaningful turn + position so a screen reader doesn't just read
+  // the raw index. (t-turninfo is no longer aria-live to avoid double-announcing.)
+  document.getElementById('scrub').setAttribute('aria-valuetext','turn '+t.turn+', '+(i+1)+' of '+TURNS.length);
   document.getElementById('t-msgs').textContent=(t.messages||[]).join('  ');
   const rz=document.getElementById('t-resume');
   if(t.checkpoint){
