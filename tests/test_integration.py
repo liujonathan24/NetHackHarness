@@ -51,7 +51,7 @@ def _tool_call_message(skill: str, args: dict) -> dict:
 
 def test_load_environment_returns_verifiers_env_with_skill_tools():
     """The Hub entrypoint must return a working vf.Environment."""
-    env = load_environment(tier="empty_room", n_examples=2, max_turns=4)
+    env = load_environment(tier="corridor_explore", n_examples=2, max_turns=4)
     assert isinstance(env, NetHackVerifiersEnv)
     # Tool callables should include the basics + journal + autoexplore.
     # `env.tools` is a list of Python callables whose __name__ is the skill.
@@ -100,8 +100,8 @@ async def test_setup_state_initializes_journal_and_character():
 @pytest.mark.asyncio
 async def test_env_response_to_move_steps_and_renders_obs():
     """A 'move' tool call produces a new observation message and step the env."""
-    env = load_environment(tier="empty_room", n_examples=1, max_turns=4)
-    state = {"task": {"tier": "empty_room", "seed": 42}}
+    env = load_environment(tier="corridor_explore", n_examples=1, max_turns=4)
+    state = {"task": {"tier": "corridor_explore", "seed": 42}}
     state = await env.setup_state(state)
 
     msg = _tool_call_message("move", {"direction": "E"})
@@ -116,8 +116,8 @@ async def test_env_response_to_move_steps_and_renders_obs():
 @pytest.mark.asyncio
 async def test_env_response_to_add_note_does_not_consume_env_step():
     """Journal ops are state-only; the in-game turn counter must not advance."""
-    env = load_environment(tier="empty_room", n_examples=1, max_turns=4)
-    state = {"task": {"tier": "empty_room", "seed": 42}}
+    env = load_environment(tier="corridor_explore", n_examples=1, max_turns=4)
+    state = {"task": {"tier": "corridor_explore", "seed": 42}}
     state = await env.setup_state(state)
     turn_before = state["structured_obs"].status.get("time", -1)
 
@@ -135,8 +135,8 @@ async def test_env_response_to_add_note_does_not_consume_env_step():
 @pytest.mark.asyncio
 async def test_env_response_unknown_tool_returns_help_message():
     """A skill name the registry doesn't know should not crash the rollout."""
-    env = load_environment(tier="empty_room", n_examples=1, max_turns=4)
-    state = {"task": {"tier": "empty_room", "seed": 42}}
+    env = load_environment(tier="corridor_explore", n_examples=1, max_turns=4)
+    state = {"task": {"tier": "corridor_explore", "seed": 42}}
     state = await env.setup_state(state)
 
     msg = _tool_call_message("autoexplore", {"max_steps": 5})
@@ -261,13 +261,13 @@ async def test_autoexplore_loop_hint_fires_after_three_short_trips():
     """Regression for trace 9071d001: model called autoexplore 66 times with
     7-long consecutive runs of 'short' results. After 3 in a row, the harness
     must surface a stronger interrupt hint at the top of the observation."""
-    env = load_environment(tier="empty_room", n_examples=1, max_turns=20)
-    state = {"task": {"tier": "empty_room", "seed": 42}}
+    env = load_environment(tier="corridor_explore", n_examples=1, max_turns=20)
+    state = {"task": {"tier": "corridor_explore", "seed": 42}}
     state = await env.setup_state(state)
 
     # Force-set the counter to simulate prior short trips, then fire one
-    # autoexplore call that returns a short-trip feedback. empty_room is
-    # tiny so autoexplore typically reports "short" or "fully explored".
+    # autoexplore call that returns a short-trip feedback. A fresh native
+    # level often reports "short" or "fully explored" near spawn.
     state["consecutive_short_autoexplore"] = 2
     msg = _tool_call_message("autoexplore", {"max_steps": 5})
     new_msgs = await env.env_response([msg], state)
@@ -291,8 +291,8 @@ async def test_autoexplore_loop_hint_fires_after_three_short_trips():
 @pytest.mark.asyncio
 async def test_autoexplore_counter_resets_on_non_autoexplore_call():
     """A non-autoexplore tool call should reset the consecutive counter."""
-    env = load_environment(tier="empty_room", n_examples=1, max_turns=20)
-    state = {"task": {"tier": "empty_room", "seed": 42}}
+    env = load_environment(tier="corridor_explore", n_examples=1, max_turns=20)
+    state = {"task": {"tier": "corridor_explore", "seed": 42}}
     state = await env.setup_state(state)
     state["consecutive_short_autoexplore"] = 5
 
@@ -308,8 +308,8 @@ async def test_move_into_wall_reports_blocked_not_moved():
     """Regression: in trace 9071d001, the model often saw '[Moved S.]' even
     when its move bumped a wall. Now we compare pre/post player (x,y) from
     blstats and override the feedback when the position didn't change."""
-    env = load_environment(tier="empty_room", n_examples=1, max_turns=20)
-    state = {"task": {"tier": "empty_room", "seed": 42}}
+    env = load_environment(tier="corridor_explore", n_examples=1, max_turns=20)
+    state = {"task": {"tier": "corridor_explore", "seed": 42}}
     state = await env.setup_state(state)
 
     # Try moving in 8 directions from spawn until either we see a blocked
@@ -327,7 +327,7 @@ async def test_move_into_wall_reports_blocked_not_moved():
         if "Move blocked" in (new_msgs[0]["content"] or ""):
             saw_blocked = True
             break
-    # empty_room often has open central spawn; this is a soft smoke check.
+    # The spawn may have open neighbors; this is a soft smoke check.
     assert saw_blocked or True
     state["env"].close()
 
@@ -336,8 +336,8 @@ async def test_move_into_wall_reports_blocked_not_moved():
 async def test_multi_tool_calls_emit_warning_in_obs():
     """Agent submits 2 tool calls in one turn; only the first runs and the
     obs prefix should warn so the agent re-syncs its plan."""
-    env = load_environment(tier="empty_room", n_examples=1, max_turns=4)
-    state = {"task": {"tier": "empty_room", "seed": 42}}
+    env = load_environment(tier="corridor_explore", n_examples=1, max_turns=4)
+    state = {"task": {"tier": "corridor_explore", "seed": 42}}
     state = await env.setup_state(state)
     msg = {
         "role": "assistant",

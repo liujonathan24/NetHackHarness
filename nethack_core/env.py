@@ -145,10 +145,11 @@ class NetHackCoreEnv:
         self._keystroke_index_map: Optional[dict] = None
         self._action_set_len: int = 0
 
-        # NATIVE tasks (NetHackScore / NetHackChallenge) are driven by the fork
-        # engine via EngineEnv; the MiniHack/des_file path still uses nle's gym
-        # env until the curriculum migration (Phase E) retires it. Branch on the
-        # task name: anything mentioning "MiniHack" stays on the gym backend.
+        # All tasks are now driven by the fork engine via EngineEnv. The former
+        # MiniHack/des_file gym backend (which needed nle + minihack) has been
+        # retired; only native tasks (NetHackScore / NetHackChallenge) and
+        # saved-level blobs remain. Branch kept as a dead guard so a stray
+        # "MiniHack" task name fails loudly instead of silently mis-routing.
         self._is_native = "MiniHack" not in task_name
 
         if self._is_native:
@@ -159,40 +160,12 @@ class NetHackCoreEnv:
             self._engine: Optional["EngineEnv"] = EngineEnv()
             self._env = None
         else:
-            # Lazy gym/nle/minihack import: only the MiniHack/des_file path needs
-            # them. `import nle` registers the NetHack-* gym envs; `import minihack`
-            # registers MiniHack-*. Keeping them out of module scope means native
-            # engine usage pulls in neither gym nor nle.
-            import gymnasium as gym
-            import nle  # noqa: F401  -- registers NetHack-* envs with gym
-            try:
-                import minihack  # noqa: F401  -- registers MiniHack-* envs
-            except ImportError:
-                pass  # MiniHack tiers will fail at make-time; that's fine.
-
             self._engine = None
-            # NB: passing observation_keys here is what filters NLE's huge default
-            # obs dict. no_progress_timeout is only accepted by NetHackChallenge;
-            # des_file is required by MiniHack-Skill-Custom-v0; not by NLE tasks.
-            make_kwargs: dict[str, Any] = {
-                "observation_keys": self._observation_keys,
-                "max_episode_steps": max_episode_steps,
-            }
-            if "Challenge" in task_name:
-                make_kwargs["no_progress_timeout"] = no_progress_timeout
-            if "MiniHack" in task_name and des_file is not None:
-                make_kwargs["des_file"] = des_file
-            try:
-                self._env = gym.make(task_name, **make_kwargs)
-            except gym.error.NameNotFound as e:
-                if "MiniHack" in task_name:
-                    raise RuntimeError(
-                        f"Tier requires MiniHack but it is not installed. "
-                        f"Install with: pip install nethack[minihack] "
-                        f"(adds the samvelyan/minihack git dep and its system build deps "
-                        f"cmake/bison/flex/libbz2-dev). Original error: {e}"
-                    ) from e
-                raise
+            self._env = None
+            raise RuntimeError(
+                "MiniHack tasks removed; use native tasks or load_level blobs. "
+                f"Got task_name={task_name!r}."
+            )
 
         # Sentinel: we require seed() before each reset() to enforce determinism.
         self._pending_seeds: Optional[tuple[int, int]] = None
@@ -265,33 +238,11 @@ class NetHackCoreEnv:
                         self.task_name, self._current_seeds, meta.seed_hash)
             return obs, meta
 
-        # Optionally set character. NLE supports a NETHACKOPTIONS env var
-        # but the cleaner path is its `character` kwarg on construction.
-        # TODO(jonathan): expose `character` on construction or via gym.make wrapper.
-        if character is not None:
-            logger.warning("Character override not yet wired up; got %s", character)
-
-        core, disp = self._pending_seeds
-        # The actual seed injection: NLE's env exposes `nethack.set_initial_seeds`
-        # which takes (core, disp, reseed). We force reseed=False.
-        self._env.unwrapped.nethack.set_initial_seeds(core, disp, False)
-        obs, _info = self._env.reset()
-
-        self._current_seeds = self._pending_seeds
-        self._pending_seeds = None
-
-        meta = EpisodeMetadata(
-            seeds=self._current_seeds,
-            seed_hash=_hash_seeds(*self._current_seeds),
-            task_name=self.task_name,
-            character=character,
+        # Non-native (MiniHack/gym) backend removed; __init__ refuses to
+        # construct one, so this path is unreachable.
+        raise RuntimeError(
+            "MiniHack tasks removed; use native tasks or load_level blobs."
         )
-        logger.info("Episode start: task=%s seeds=%s hash=%s",
-                    self.task_name, self._current_seeds, meta.seed_hash)
-        core_obs = CoreObservation.from_nle(obs)
-        self._last_observation = core_obs
-        self._frontier_blacklist_current = set()
-        return core_obs, meta
 
     def step(self, action: int) -> tuple[CoreObservation, float, bool, bool, dict]:
         if self._is_native:
@@ -306,37 +257,10 @@ class NetHackCoreEnv:
             truncated = bool(info.get("truncated", False))
             self._last_observation = obs
             return obs, reward, bool(done), truncated, info
-        # Gym/MiniHack backend: its Discrete action space wants an INDEX into the
-        # task's restricted `actions` tuple, but every harness caller now drives
-        # on keystroke bytes (the semantic action enums ARE keystrokes). Translate
-        # keystroke -> index here so the keystroke vocabulary is the single ABI
-        # regardless of backend. Out-of-set keystrokes fall through unchanged
-        # (lets pre-resolved indices keep working in legacy tests).
-        idx = self._keystroke_to_index(action)
-        obs, reward, terminated, truncated, info = self._env.step(idx)
-        core_obs = CoreObservation.from_nle(obs)
-        self._last_observation = core_obs
-        return core_obs, float(reward), bool(terminated), bool(truncated), info
-
-    def _keystroke_to_index(self, action: int) -> int:
-        """Map a keystroke byte to its index in the gym env's action set.
-
-        Cached per env. If the value is already a valid index (and not a known
-        keystroke) it is returned unchanged, so callers that still pass indices
-        on the gym path keep working.
-        """
-        action = int(action)
-        cache = self._keystroke_index_map
-        if cache is None:
-            actions = self._env.unwrapped.actions
-            cache = {int(a): i for i, a in enumerate(actions)}
-            self._keystroke_index_map = cache
-            self._action_set_len = len(actions)
-        if action in cache:
-            return cache[action]
-        if 0 <= action < self._action_set_len:
-            return action  # already an index
-        return action
+        # Non-native (MiniHack/gym) backend removed; unreachable.
+        raise RuntimeError(
+            "MiniHack tasks removed; use native tasks or load_level blobs."
+        )
 
     def modify(self, **changes) -> CoreObservation:
         """Apply whitelisted, bounds-checked state mutations (native path only).

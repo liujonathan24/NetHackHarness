@@ -2,20 +2,21 @@
 nethack_harness.curriculum.curriculum
 =======================
 
-Smooth difficulty ramp from empty room to full NLE.
+Smooth difficulty ramp over native NetHack tasks.
 
-This wraps MiniHack's LevelGenerator + des-file mechanism so a single training
-run can sweep across tiers without users learning the DSL. Each tier returns
-a configured NetHackCoreEnv-compatible env spec.
+Each tier returns a configured NetHackCoreEnv-compatible env spec driven by the
+fork engine via native NetHack tasks (NetHackScore-v0). The former MiniHack
+des-file tiers (empty_room / solo_combat / multi_combat) were removed along with
+the nle/minihack dependencies; bespoke starting states are now expressed via
+saved-level blobs instead.
 
-Tiers:
-    0  empty_room        -- 5x5 room, only stairs down
-    1  solo_combat       -- 8x8 room, one newt, a sword
-    2  multi_combat      -- 10x10 room, three weak monsters
-    3  corridor_explore  -- 3-room maze, one weak monster, items
-    4  mini_dungeon      -- 3 floors
-    5  full_dungeon_easy -- 5 floors, no Mines branch
-    6  full_nle          -- unmodified NetHackChallenge-v0
+Tiers (easy -> hard):
+    corridor_explore  -- reach dlvl 2
+    mini_dungeon      -- reach dlvl 3
+    mines_to_minetown / sokoban_complete / oracle_consult -- branch milestones
+    full_dungeon_easy -- reach dlvl 6
+    full_nle          -- the full game; ascend
+    quest_complete / castle_reached -- long-horizon endgame milestones
 """
 
 from __future__ import annotations
@@ -35,7 +36,6 @@ from .milestones import (
 
 
 TierName = Literal[
-    "empty_room", "solo_combat", "multi_combat",
     "corridor_explore", "mini_dungeon",
     "mines_to_minetown", "sokoban_complete", "oracle_consult",
     "full_dungeon_easy", "full_nle",
@@ -47,8 +47,8 @@ TierName = Literal[
 @dataclass(frozen=True)
 class TierSpec:
     name: str
-    nle_task: str               # gym id passed to gym.make
-    des_file: Optional[str]     # MiniHack des-file content, or None for native NLE
+    nle_task: str               # native NetHack gym id (e.g. NetHackScore-v0)
+    des_file: Optional[str]     # always None now (MiniHack des-file path removed)
     max_episode_steps: int
     description: str
     success_criterion: str      # human-readable, codified in rubric
@@ -58,77 +58,6 @@ class TierSpec:
 
 
 TIERS: dict[TierName, TierSpec] = {
-    "empty_room": TierSpec(
-        name="empty_room",
-        nle_task="MiniHack-Skill-Custom-v0",
-        des_file="""
-MAZE: "mylevel", ' '
-GEOMETRY:center,center
-MAP
------
-|...|
-|...|
-|...|
------
-ENDMAP
-REGION:(0,0,4,4),lit,"ordinary"
-STAIR:(2,1),down
-BRANCH:(1,3,1,3),(0,0,0,0)
-""",
-        max_episode_steps=200,
-        description="A 3x3 room with a downstair. Descend to win.",
-        success_criterion="reached dungeon level 2",
-    ),
-    "solo_combat": TierSpec(
-        name="solo_combat",
-        nle_task="MiniHack-Skill-Custom-v0",
-        des_file="""
-MAZE: "mylevel", ' '
-GEOMETRY:center,center
-MAP
---------
-|......|
-|......|
-|......|
-|......|
-|......|
---------
-ENDMAP
-REGION:(0,0,7,6),lit,"ordinary"
-MONSTER:('d',"jackal"),random
-STAIR:random,down
-""",
-        max_episode_steps=400,
-        description="A room with a jackal. Kill the jackal and descend.",
-        success_criterion="reached dungeon level 2",
-    ),
-    "multi_combat": TierSpec(
-        name="multi_combat",
-        nle_task="MiniHack-Skill-Custom-v0",
-        des_file="""
-MAZE: "mylevel", ' '
-GEOMETRY:center,center
-MAP
-----------
-|........|
-|........|
-|........|
-|........|
-|........|
-|........|
-|........|
-----------
-ENDMAP
-REGION:(0,0,9,8),lit,"ordinary"
-MONSTER:('d',"jackal"),random
-MONSTER:('d',"jackal"),random
-MONSTER:('r',"sewer rat"),random
-STAIR:random,down
-""",
-        max_episode_steps=600,
-        description="Three weak monsters in a larger room. Survive and descend.",
-        success_criterion="reached dungeon level 2 with HP > 0",
-    ),
     "corridor_explore": TierSpec(
         name="corridor_explore",
         nle_task="NetHackScore-v0",
