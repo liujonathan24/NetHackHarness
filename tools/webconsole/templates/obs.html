@@ -65,7 +65,7 @@ button.obs-mini{background:#23242f;color:var(--ink);border:1px solid var(--line)
     <div class="obs-card">
       <h2>Custom metrics</h2>
       <div id="obs-customs"></div>
-      <button class="obs-mini" type="button" onclick="addCustom()">+ add custom metric</button>
+      <button class="obs-mini" type="button" id="add-custom" onclick="addCustom()">+ add custom metric</button>
       <div class="obs-hint">
         name + expression. Allowed: existing metric names, numbers, parentheses,
         and <b>+ &minus; * /</b> (and unary &minus;). Names must be existing
@@ -82,7 +82,6 @@ button.obs-mini{background:#23242f;color:var(--ink);border:1px solid var(--line)
 </main>
 
 <script>
-let OBS_CUSTOM_N = 0;
 
 async function obsLoadTraces(){
   const box = document.getElementById('obs-traces');
@@ -123,10 +122,19 @@ function addCustom(name, expr){
   const box=document.getElementById('obs-customs');
   const row=document.createElement('div');
   row.className='obs-custom-row';
-  const i=OBS_CUSTOM_N++;
-  row.innerHTML='<input class="cname" placeholder="name" aria-label="Custom metric name" value="'+(name||'')+'">'
-    +'<input class="cexpr" placeholder="xp + 10*dlvl" aria-label="Custom metric expression" value="'+(expr||'')+'">'
-    +'<button class="obs-mini" type="button" aria-label="Remove this custom metric" onclick="this.parentNode.remove()"><span aria-hidden="true">&times;</span></button>';
+  row.innerHTML='<input class="cname" placeholder="name" aria-label="Custom metric name">'
+    +'<input class="cexpr" placeholder="xp + 10*dlvl" aria-label="Custom metric expression">'
+    +'<button class="obs-mini" type="button" aria-label="Remove this custom metric"><span aria-hidden="true">&times;</span></button>';
+  // Set any preset values via property (not interpolated into the markup, so a
+  // value with quotes/&/< is safe).
+  if(name) row.querySelector('.cname').value=name;
+  if(expr) row.querySelector('.cexpr').value=expr;
+  // Manage focus on deletion: move it to the +add button instead of letting it
+  // fall to <body> when the focused row is removed (WCAG 2.4.3 focus order).
+  row.querySelector('button').addEventListener('click',()=>{
+    row.remove();
+    const add=document.getElementById('add-custom'); if(add)add.focus();
+  });
   box.appendChild(row);
 }
 
