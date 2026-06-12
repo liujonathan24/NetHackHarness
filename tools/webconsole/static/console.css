@@ -32,6 +32,10 @@
 
 *{box-sizing:border-box}
 html,body{height:100%}
+/* The nav is position:sticky;top:0 (46px). Offset anchor/focus scrolling by its
+   height so the skip-link target (<main tabindex=-1>) and any in-page anchor
+   land BELOW the bar instead of being hidden under it. */
+html{scroll-padding-top:54px}
 body{
   margin:0;
   color:var(--ink);
