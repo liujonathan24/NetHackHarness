@@ -9,6 +9,11 @@
   --panel-2:#13141b;
   --line:#2c2e3a;
   --line-soft:#23242f;
+  /* Border for text input fields. --line (1.3:1 on the dark fills) is too faint
+     to mark a field boundary for low-vision users; an empty input has no content
+     to identify it, so its border must carry 3:1 non-text contrast (WCAG 1.4.11)
+     against the field fill AND the panel. #646780 clears 3:1 on both. */
+  --ctl-border:#646780;
   --ink:#d7d8e0;
   --ink-dim:#9a9cad;     /* was #8a8c9c — lifted for WCAG AA on the dark bg */
   --ink-faint:#83859a;   /* was #5d5f6e — lifted to ~4.6:1 contrast */
@@ -107,7 +112,7 @@ h2,h3{color:var(--good);margin:14px 0 6px;border-bottom:1px solid var(--line);pa
 .knob .name{flex-basis:100%;color:var(--hero);font-size:12px}
 .knob .name .rst{color:var(--warn);font-size:10px}
 .knob input[type=range]{flex:1;min-width:0;accent-color:var(--stairs)}
-.knob input.num{width:48px;min-height:24px;background:#10111a;color:var(--good);border:1px solid var(--line);text-align:right;border-radius:3px;padding:2px 4px}
+.knob input.num{width:48px;min-height:24px;background:#10111a;color:var(--good);border:1px solid var(--ctl-border);text-align:right;border-radius:3px;padding:2px 4px}
 /* bool toggles keep label + switch on one line within the cell */
 .knob .sw{margin-left:auto}
 .knob .note{flex-basis:100%;color:var(--ink-faint);font-size:10px;margin-left:0}
@@ -121,7 +126,7 @@ h2,h3{color:var(--good);margin:14px 0 6px;border-bottom:1px solid var(--line);pa
 .sw input:checked + span:before{transform:translateX(22px);background:#0c0d12}
 
 #seedrow{margin:16px 0 8px;color:var(--ink-dim)}
-#seed{width:84px;min-height:24px;background:#10111a;color:#fff;border:1px solid var(--line);border-radius:3px;padding:3px 5px}
+#seed{width:84px;min-height:24px;background:#10111a;color:#fff;border:1px solid var(--ctl-border);border-radius:3px;padding:3px 5px}
 button.act-btn{
   background:linear-gradient(180deg,#2f6f4a,#244e38);color:#eafff0;border:1px solid #1c3b2a;
   padding:9px 12px;cursor:pointer;width:100%;font-size:13px;margin-top:7px;border-radius:4px;
@@ -137,7 +142,7 @@ button.act-btn:hover{filter:brightness(1.12)}
 #modify{margin-top:14px;padding-top:10px;border-top:1px solid var(--line)}
 .mrow{display:flex;align-items:center;gap:6px;margin:5px 0}
 .mrow .mname{width:96px;color:var(--hero);font-size:12px}
-.mrow .mnum{flex:1;min-width:0;min-height:24px;background:#10111a;color:var(--good);border:1px solid var(--line);text-align:right;border-radius:3px;padding:3px 5px}
+.mrow .mnum{flex:1;min-width:0;min-height:24px;background:#10111a;color:var(--good);border:1px solid var(--ctl-border);text-align:right;border-radius:3px;padding:3px 5px}
 .mbtn{background:linear-gradient(180deg,#2f6f4a,#244e38);color:#eafff0;border:1px solid #1c3b2a;
   padding:4px 10px;min-height:24px;cursor:pointer;font-size:12px;border-radius:3px;text-shadow:0 1px 0 #0008}
 .mbtn.wide{flex:1}
