@@ -466,6 +466,8 @@ def trace():
             o = json.loads(line)
         except ValueError:
             continue
+        if not isinstance(o, dict):  # a valid-JSON but non-object line (bad export) -> skip, don't 500
+            continue
         turns.append({
             "turn": o.get("turn", len(turns)),
             "raw_grid": o.get("raw_grid", []),

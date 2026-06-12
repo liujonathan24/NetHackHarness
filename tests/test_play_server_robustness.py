@@ -10,6 +10,8 @@ Complements test_obs_creator.py, which covers the /obs/plot validation.
 """
 from __future__ import annotations
 
+import json
+
 import pytest
 
 import tools.play_server as ps
@@ -34,6 +36,25 @@ def no_engine():
 
 def _err(r):
     return r.status_code, (r.get_json() or {}).get("error")
+
+
+# --- /trace tolerates a malformed trace file (no 500) -------------------------
+def test_trace_skips_non_object_and_bad_lines(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(ps, "_TRACE_DIRS", [tmp_path])
+    tp = tmp_path / "malformed.ndjson"
+    tp.write_text("\n".join([
+        json.dumps({"turn": 0, "status": {"dlvl": 1}}),
+        "[1, 2, 3]",      # valid JSON, not an object -> must be skipped, not 500
+        '"a string"',     # valid JSON scalar
+        "42",
+        "null",
+        "{bad json",      # invalid JSON
+        json.dumps({"turn": 5, "status": {"dlvl": 2}}),
+    ]))
+    r = client.get("/trace?path=" + str(tp.resolve()))
+    assert r.status_code == 200
+    turns = r.get_json()["turns"]
+    assert [t["turn"] for t in turns] == [0, 5]  # only the two valid objects
 
 
 # --- /set_tune validation runs before the engine, so it's testable directly ---
