@@ -78,7 +78,7 @@ function apply(d){
   // change back to the old floor's value. They stay user-controlled (curTune) and
   // keep their 'changes pending' state until Reset. (Dirty is cleared in doReset,
   // not here, so a step between changing a reset knob and Reset keeps the marker.)
-  for(const k in d.tune){ if(META[k]&&META[k].reset) continue; syncControl(k,d.tune[k]); }
+  for(const k in d.tune){ if(META[k]&&META[k].reset) continue; curTune[k]=d.tune[k]; syncControl(k,d.tune[k]); }
   document.getElementById('recstat').textContent=d.recording?('● recording '+d.recording):'';
   syncRec(!!d.recording);
 }
@@ -188,6 +188,11 @@ function initMap(){
     let d=null; try{ d=await(await fetch('/current')).json(); }catch(e){ d=null; }
     if(d&&d.live){
       if(d.seed!==undefined){const sb=document.getElementById('seed'); if(sb)sb.value=d.seed;}
+      // A resume is a fresh state load: adopt the resumed engine's tune for ALL
+      // knobs (incl. reset knobs, which apply() deliberately skips mid-play) so
+      // the sliders and a later Reset reflect the resumed game, not build()'s
+      // defaults.
+      if(d.tune) for(const k in d.tune){ curTune[k]=d.tune[k]; syncControl(k,d.tune[k]); }
       apply(d); document.getElementById('screen').focus();
     }
     else { await doReset(); }
