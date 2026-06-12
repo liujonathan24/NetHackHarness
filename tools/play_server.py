@@ -254,6 +254,11 @@ def _settle(env, obs, max_iter=12):
 def step():
     data = request.get_json(silent=True) or {}
     keys = data.get("keys", "")
+    # Validate shape before touching the engine: a non-string `keys` would make
+    # `for ch in keys` raise (or ord() choke), a 500 for what is really bad input.
+    # Matches the 400-not-500 contract the other mutating routes already honor.
+    if not isinstance(keys, str):
+        return jsonify({"error": "keys must be a string"}), 400
     if STATE["env"] is None:
         return jsonify({"error": "call /reset first"}), 400
     obs = None

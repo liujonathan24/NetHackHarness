@@ -73,6 +73,14 @@ def test_set_tune_non_numeric_value_is_400(client):
     assert code == 400
 
 
+# --- /step validates keys shape before the engine, so it's testable directly ---
+def test_step_non_string_keys_is_400(client):
+    # A non-string `keys` would make `for ch in keys` / ord() raise -> 500.
+    # The shape check runs before the engine guard, so no live engine is needed.
+    code, err = _err(client.post("/step", json={"keys": 123}))
+    assert code == 400 and "string" in (err or "").lower()
+
+
 # --- no-engine guards: these must 400, never 500 -----------------------------
 @pytest.mark.parametrize("path,body", [
     ("/step", {"keys": "h"}),
