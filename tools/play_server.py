@@ -217,7 +217,12 @@ def reset():
     except (TypeError, ValueError):
         return jsonify({"error": "tune values must be numbers"}), 400
     STATE["resumed"] = False  # an explicit reset supersedes any prior resume
-    obs, _ = _env().reset(seeds=(STATE["seed"], STATE["seed"]), tune=dict(STATE["tune"]))
+    try:
+        # reset applies the tune dict; an unknown knob name raises KeyError ->
+        # clean 400 (matches /live /set_tune) instead of an uncaught 500.
+        obs, _ = _env().reset(seeds=(STATE["seed"], STATE["seed"]), tune=dict(STATE["tune"]))
+    except (KeyError, ValueError) as e:
+        return jsonify({"error": str(e)}), 400
     for _ in range(2):
         obs, _, _ = _env().step(ord("."))
     obs = _settle(_env(), obs)

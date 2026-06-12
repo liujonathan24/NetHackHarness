@@ -110,3 +110,10 @@ def test_generation_knobs_grouped_under_dungeon_and_reset():
                  "corridor_connectivity", "room_size"):
         assert ps._META[name]["group"] == "Dungeon & spawns"
         assert ps._META[name]["reset"] is True
+
+
+def test_reset_unknown_tune_knob_is_400(client):
+    # An unknown knob name in the tune dict must be a clean 400 (the engine's
+    # set_tune raises KeyError during reset), not an uncaught 500.
+    code, err = _err(client.post("/reset", json={"seed": 1, "tune": {"bogus_knob": 1.0}}))
+    assert code == 400 and "bogus_knob" in (err or "")
