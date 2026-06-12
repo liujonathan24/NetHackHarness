@@ -11,7 +11,12 @@
  */
 
 /* ---------- palette + colorizer ---------- */
-const PALETTE=['#1a1a1a','#c44','#4b4','#b83','#46c','#b5b','#5bb','#bbb',
+// NetHack color 0 is CLR_BLACK; true black (#1a1a1a) is ~1.1:1 on the near-black
+// screen bg (#0c0d12) — invisible. Remap it to a visible dark gray (~3.7:1), the
+// standard terminal "black -> bright black" behavior, so a black-colored glyph
+// (deeper levels, some monsters) is never invisible. (In normal play color 0
+// only lands on empty space, which colorize skips, so this is defensive.)
+const PALETTE=['#6b6b78','#c44','#4b4','#b83','#46c','#b5b','#5bb','#bbb',
                '#666','#f66','#6f6','#fd5','#6af','#f6f','#6ff','#fff'];
 const CHARCOL={'@':'#fd5','>':'#6ff','<':'#6ff','$':'#fd5','#':'#777','.':'#556',
                '|':'#bbb','-':'#bbb','+':'#4b4'};
