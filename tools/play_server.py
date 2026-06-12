@@ -32,6 +32,7 @@ import json
 import math
 import pathlib
 import sys
+import threading
 import time
 
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -54,6 +55,9 @@ STATE: dict = {"env": None, "seed": 42, "tune": {}, "rec": None, "turn": 0,
                "ckpt_dlvl": None, "ckpt_path": None, "resumed": False}
 _REC_DIR = _ROOT / "outputs" / "web_play"
 _TRACE_DIRS = [_REC_DIR, _ROOT / "outputs", _ROOT / "environments" / "nethack" / "outputs"]
+# Serializes /obs/plot's register/render/unregister against the process-global
+# custom-metric registry (Flask runs threaded).
+_OBS_PLOT_LOCK = threading.Lock()
 
 _GROUPS = ["Vision", "Stat-based", "Dungeon & spawns"]
 _META = {
@@ -569,8 +573,12 @@ def obs_plot():
     # Custom metrics are registered process-wide in stats._CUSTOM_METRICS, so we
     # track the names WE add this request and unregister them in a finally —
     # otherwise they leak into later /obs/metrics responses and a reused name
-    # silently overwrites the previous one across requests.
+    # silently overwrites the previous one across requests. Serialize the whole
+    # register->render->unregister section: Flask is threaded, so two concurrent
+    # plots would otherwise race on the shared registry (one's unregister yanking
+    # the other's metric, or a KeyError on unregister).
     registered: list[str] = []
+    _OBS_PLOT_LOCK.acquire()
     try:
         # 1) register custom composed metrics over the existing series (safe eval).
         # Built-in names are resolved custom-first by stats.series, so a custom
@@ -628,6 +636,7 @@ def obs_plot():
     finally:
         for name in registered:
             stats.unregister_metric(name)
+        _OBS_PLOT_LOCK.release()
 
 
 def main() -> None:

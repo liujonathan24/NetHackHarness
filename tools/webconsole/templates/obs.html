@@ -133,16 +133,21 @@ function obsCustoms(){
   return out;
 }
 
+let _plotting=false;
 async function doPlot(){
+  if(_plotting) return;  // ignore a re-entrant Plot (double-click / Enter) while one is in flight
   const err=document.getElementById('obs-err'); err.textContent='';
   const paths=[...document.querySelectorAll('.obs-trace:checked')].map(e=>e.value);
   const metrics=[...document.querySelectorAll('.obs-metric:checked')].map(e=>e.value);
   const custom=obsCustoms();
   if(!paths.length){err.textContent='pick at least one trace.'; return;}
   if(!metrics.length&&!custom.length){err.textContent='pick a metric or add a custom one.'; return;}
-  const res=await post('/obs/plot',{paths:paths, metrics:metrics, custom:custom});
-  if(res.error){err.textContent=res.error; document.getElementById('obs-results').innerHTML=''; return;}
-  document.getElementById('obs-results').innerHTML=res.charts_html||'';
+  _plotting=true; const btn=document.querySelector('.obs-btn'); if(btn)btn.disabled=true;
+  try{
+    const res=await post('/obs/plot',{paths:paths, metrics:metrics, custom:custom});
+    if(res.error){err.textContent=res.error; document.getElementById('obs-results').innerHTML=''; return;}
+    document.getElementById('obs-results').innerHTML=res.charts_html||'';
+  } finally { _plotting=false; if(btn)btn.disabled=false; }
 }
 
 obsLoadTraces();

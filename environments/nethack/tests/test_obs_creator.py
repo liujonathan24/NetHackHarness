@@ -143,6 +143,35 @@ def test_plot_endpoint_with_custom_metric(client, trace_path):
     assert "composed" in html
 
 
+def test_concurrent_plots_dont_race_the_custom_metric_registry(client, trace_path):
+    """Flask is threaded and custom metrics register into a process-global
+    registry; _OBS_PLOT_LOCK must serialize register/render/unregister so
+    concurrent plots neither error nor leak a metric (regression guard)."""
+    import threading
+
+    from tools.rollout_view import stats
+
+    errors: list[int] = []
+
+    def hit():
+        r = client.post("/obs/plot", json={
+            "paths": [str(trace_path)],
+            "metrics": ["dlvl"],
+            "custom": [{"name": "s", "expr": "xp + 1"}],
+        })
+        if r.status_code != 200:
+            errors.append(r.status_code)
+
+    threads = [threading.Thread(target=hit) for _ in range(12)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors, f"concurrent plots returned errors: {errors}"
+    assert "s" not in stats.metric_names(), "custom metric leaked after concurrent plots"
+
+
 def _write_web_trace(path: pathlib.Path, *, n: int, varying: bool):
     """Real Map-Viewer Record format (status keys hp/max_hp/ac/dlvl/gold/xp_lvl).
     varying=True -> hp decreases each turn; dlvl/xp_lvl stay constant (the common
