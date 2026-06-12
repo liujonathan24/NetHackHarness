@@ -73,8 +73,12 @@ function apply(d){
   document.getElementById('message').textContent=d.message||' ';
   let s=d.status||{};  // defensive: render even if status is somehow absent
   document.getElementById('status').textContent='HP '+s.hp+'/'+s.max_hp+'   AC '+s.ac+'   Dlvl '+s.dlvl+'   $'+s.gold+'   XP-lvl '+s.xp_lvl+(d.done?'   [GAME OVER]':'');
-  for(const k in d.tune) syncControl(k,d.tune[k]);
-  setDirty(false);
+  // Sync live knobs from the engine's reported tune. Skip RESET knobs: the engine
+  // only reflects them after a regenerate, so syncing here would revert a pending
+  // change back to the old floor's value. They stay user-controlled (curTune) and
+  // keep their 'changes pending' state until Reset. (Dirty is cleared in doReset,
+  // not here, so a step between changing a reset knob and Reset keeps the marker.)
+  for(const k in d.tune){ if(META[k]&&META[k].reset) continue; syncControl(k,d.tune[k]); }
   document.getElementById('recstat').textContent=d.recording?('● recording '+d.recording):'';
   syncRec(!!d.recording);
 }
@@ -114,7 +118,8 @@ function doReset(){
   const raw=document.getElementById('seed').value.trim();
   const seed=(raw!==''&&Number.isFinite(+raw))?Math.trunc(+raw):42;
   return engineCall(()=>post('/reset',{seed:seed,tune:curTune}).then(d=>{
-    apply(d); document.getElementById('screen').focus();}));}
+    apply(d); setDirty(false);  // the floor was regenerated with curTune -> nothing pending
+    document.getElementById('screen').focus();}));}
 function toggleRec(){
   const rb=document.getElementById('recbtn');
   const on=rb.classList.contains('on');
