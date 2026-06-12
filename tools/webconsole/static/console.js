@@ -42,8 +42,10 @@ async function post(u,b){
 
 /* ---------- GIF gallery (landing) ---------- */
 async function buildGifs(boxId){
-  const list=await(await fetch('/gifs')).json();
   const box=document.getElementById(boxId); if(!box) return;
+  let list;
+  try{ list=await(await fetch('/gifs')).json(); }
+  catch(e){ box.innerHTML='<div class="obs-hint">could not load demos.</div>'; return; }
   if(!list.length){box.innerHTML='<div class="obs-hint">no GIFs found in videos/.</div>'; return;}
   box.innerHTML='';
   const grid=document.createElement('div'); grid.className='gif-grid';

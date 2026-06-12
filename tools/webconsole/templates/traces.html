@@ -20,8 +20,10 @@
 <script>
 let TURNS=[];
 async function loadTraceList(){
-  const list=await(await fetch('/traces',{headers:{'Accept':'application/json'}})).json();
   const box=document.getElementById('t-list');
+  let list;
+  try{ list=await(await fetch('/traces',{headers:{'Accept':'application/json'}})).json(); }
+  catch(e){ box.innerHTML='<div class="obs-hint">could not load trace list.</div>'; return; }
   if(!list.length){box.innerHTML='<div class="obs-hint">no .ndjson traces found.<br>Record one in the Map Viewer.</div>'; return;}
   box.innerHTML='<h2 id="t-list-h">Rollouts</h2>';
   list.forEach(f=>{const d=document.createElement('button'); d.className='f'; d.type='button';

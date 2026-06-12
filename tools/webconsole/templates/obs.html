@@ -83,8 +83,10 @@ button.obs-mini{background:#23242f;color:var(--ink);border:1px solid var(--line)
 let OBS_CUSTOM_N = 0;
 
 async function obsLoadTraces(){
-  const list = await (await fetch('/traces',{headers:{'Accept':'application/json'}})).json();
   const box = document.getElementById('obs-traces');
+  let list;
+  try{ list = await (await fetch('/traces',{headers:{'Accept':'application/json'}})).json(); }
+  catch(e){ box.setAttribute('aria-busy','false'); box.innerHTML='<div class="obs-hint">could not load traces.</div>'; return; }
   box.setAttribute('aria-busy','false');
   if(!list.length){box.innerHTML='<div class="obs-hint">no .ndjson traces found. Record one in the Map Viewer.</div>'; return;}
   box.innerHTML='';
@@ -96,8 +98,10 @@ async function obsLoadTraces(){
 }
 
 async function obsLoadMetrics(){
-  const r = await (await fetch('/obs/metrics')).json();
   const box = document.getElementById('obs-metrics');
+  let r;
+  try{ r = await (await fetch('/obs/metrics')).json(); }
+  catch(e){ box.setAttribute('aria-busy','false'); box.innerHTML='<div class="obs-hint">could not load metrics.</div>'; return; }
   box.setAttribute('aria-busy','false');
   box.innerHTML='';
   (r.metrics||[]).forEach(m=>{
