@@ -25,7 +25,10 @@
 .obs-card{flex:1;min-width:280px;background:var(--panel);border:1px solid var(--line);
   border-radius:6px;padding:12px 14px}
 /* trace labels are slash-paths (no spaces); wrap so a long path doesn't overflow */
-.obs-card label{display:block;color:var(--ink);font-size:13px;margin:3px 0;cursor:pointer;overflow-wrap:anywhere}
+/* min-height + padding make each checkbox row a >=24px pointer target
+   (WCAG 2.5.8); clicking anywhere on the label toggles its checkbox. Kept
+   display:block so a long trace path still wraps within the row. */
+.obs-card label{display:block;color:var(--ink);font-size:13px;margin:2px 0;padding:4px 2px;min-height:24px;cursor:pointer;overflow-wrap:anywhere}
 .obs-card label input{margin-right:6px;vertical-align:middle}
 .obs-list{max-height:240px;overflow:auto}
 .obs-custom-row{display:flex;gap:6px;margin:5px 0}
