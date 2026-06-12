@@ -143,6 +143,25 @@ def test_plot_endpoint_with_custom_metric(client, trace_path):
     assert "composed" in html
 
 
+def test_same_stem_traces_get_distinct_labels(client, tmp_path, monkeypatch):
+    """Two traces with the same filename in different dirs must not collapse to
+    one ambiguous legend/agg label — the second is disambiguated."""
+    monkeypatch.setattr(ps, "_TRACE_DIRS", [tmp_path])
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    _write_trace(tmp_path / "a" / "run.ndjson")
+    _write_trace(tmp_path / "b" / "run.ndjson")
+    r = client.post("/obs/plot", json={
+        "paths": [str((tmp_path / "a" / "run.ndjson").resolve()),
+                  str((tmp_path / "b" / "run.ndjson").resolve())],
+        "metrics": ["dlvl"],
+    })
+    assert r.status_code == 200, r.get_data(as_text=True)
+    html = r.get_json()["charts_html"]
+    assert "run (2)" in html  # collision disambiguated
+    assert html.replace("run (2)", "").count("run") >= 1  # the first run label still present
+
+
 def test_concurrent_plots_dont_race_the_custom_metric_registry(client, trace_path):
     """Flask is threaded and custom metrics register into a process-global
     registry; _OBS_PLOT_LOCK must serialize register/render/unregister so

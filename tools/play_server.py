@@ -640,13 +640,20 @@ def obs_plot():
         if not metrics:
             return jsonify({"error": "no metrics selected"}), 400
 
-        # 2) load each allow-listed trace into normalized records.
+        # 2) load each allow-listed trace into normalized records. Label each run
+        # by filename stem, but disambiguate collisions (two traces with the same
+        # filename in different dirs) so the legend + agg table aren't ambiguous.
         runs: list[tuple[str, list[dict]]] = []
+        label_counts: dict[str, int] = {}
         for p in paths:
             rp = _trace_allowed(p)
             if rp is None:
                 return jsonify({"error": f"path not allowed: {p}"}), 400
-            runs.append((rp.stem, _normalize_records(stats.load_trace(rp))))
+            label = rp.stem
+            label_counts[label] = label_counts.get(label, 0) + 1
+            if label_counts[label] > 1:
+                label = f"{label} ({label_counts[label]})"
+            runs.append((label, _normalize_records(stats.load_trace(rp))))
         if not runs:
             return jsonify({"error": "no traces selected"}), 400
 
