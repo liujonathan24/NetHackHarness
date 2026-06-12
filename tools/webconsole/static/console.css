@@ -76,8 +76,10 @@ h2,h3{color:var(--good);margin:14px 0 6px;border-bottom:1px solid var(--line);pa
 /* ---------- page layout (map + traces) ---------- */
 .page{display:flex}
 #main{padding:14px 16px}
-#message{height:18px;color:#fff;margin-bottom:5px;min-height:18px}
-#status,#t-status{height:18px;margin-top:8px;color:var(--ink)}
+/* min-height (not a fixed height): a long NetHack message wraps and grows the
+   box instead of overflowing onto the game screen below it. */
+#message{min-height:18px;color:#fff;margin-bottom:5px}
+#status,#t-status{min-height:18px;margin-top:8px;color:var(--ink)}
 #hint{color:var(--ink-faint);margin-top:10px;font-size:12px;max-width:640px}
 
 /* ---------- knob sidebar ---------- */
@@ -119,7 +121,7 @@ button.act-btn:hover{filter:brightness(1.12)}
 #reset.dirty{background:linear-gradient(180deg,#a8602e,#7c4521);border-color:#5c3318}
 .dirtyflag{font-weight:bold;letter-spacing:0}
 #recbtn.on{background:linear-gradient(180deg,#a83a3a,#7c2626);border-color:#5c1c1c}
-#recstat{color:var(--danger);font-size:12px;height:16px;margin-top:4px}
+#recstat{color:var(--danger);font-size:12px;min-height:16px;margin-top:4px;word-break:break-all}
 
 /* ---------- state-modify panel ---------- */
 #modify{margin-top:14px;padding-top:10px;border-top:1px solid var(--line)}
