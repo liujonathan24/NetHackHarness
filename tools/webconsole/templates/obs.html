@@ -39,7 +39,7 @@ button.obs-mini{background:#23242f;color:var(--ink);border:1px solid var(--line)
 #obs-results{margin-top:18px}
 </style>
 
-<div class="wrap obs-form">
+<main id="main-content" class="wrap obs-form">
   <h1 style="font-size:18px;color:var(--hero);letter-spacing:1px">OBSERVATION CREATOR</h1>
   <p class="obs-hint" style="font-size:13px">
     Compose metrics over recorded <code>.ndjson</code> rollouts and plot them —
@@ -77,7 +77,7 @@ button.obs-mini{background:#23242f;color:var(--ink);border:1px solid var(--line)
   </div>
   <div id="obs-err" role="alert"></div>
   <div id="obs-results"></div>
-</div>
+</main>
 
 <script>
 let OBS_CUSTOM_N = 0;

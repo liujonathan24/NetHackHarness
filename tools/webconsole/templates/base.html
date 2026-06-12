@@ -29,8 +29,10 @@
     <span class="spacer"></span>
     <a class="link {{ 'active' if active=='home' else '' }}" href="/"{{ ' aria-current=page' if active=='home' }}>Home</a>
   </nav>
-  <main id="main-content">
-    {% block body %}{% endblock %}
-  </main>
+  {# Each page supplies its own main landmark (id="main-content") around its
+     primary content, so landmarks stay precise — the Map Viewer's control
+     panel is a sibling complementary region, not nested inside main — and the
+     skip link lands exactly on that page's main content. #}
+  {% block body %}{% endblock %}
 </body>
 </html>

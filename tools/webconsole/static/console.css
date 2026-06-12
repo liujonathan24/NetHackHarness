@@ -75,7 +75,7 @@ h2,h3{color:var(--good);margin:14px 0 6px;border-bottom:1px solid var(--line);pa
 
 /* ---------- page layout (map + traces) ---------- */
 .page{display:flex}
-#main{padding:14px 16px}
+.maincol{padding:14px 16px}
 /* min-height (not a fixed height): a long NetHack message wraps and grows the
    box instead of overflowing onto the game screen below it. */
 #message{min-height:18px;color:#fff;margin-bottom:5px}
@@ -144,7 +144,7 @@ button.act-btn:hover{filter:brightness(1.12)}
 #t-list .f:hover{background:#23242f}
 #t-list .f[aria-current=true]{background:#23242f;color:var(--stairs);font-weight:bold}
 #resumestat{margin-left:8px;color:var(--ink-dim);font-size:12px}
-#t-main{padding:14px 16px;flex:1}
+.t-main{padding:14px 16px;flex:1}
 #scrub{width:100%;accent-color:var(--stairs)}
 #t-turninfo{color:var(--ink-faint);font-size:12px}
 #t-msgs{color:var(--good);margin:5px 0;min-height:18px}

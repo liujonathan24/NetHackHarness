@@ -3,7 +3,7 @@
 {% block body %}
 <div class="page">
   <nav id="t-list" aria-label="Recorded rollouts">loading...</nav>
-  <div id="t-main">
+  <main id="main-content" class="t-main">
     <h1 class="sr-only">Tracer — replay recorded rollouts</h1>
     <div id="t-status" role="status" aria-live="polite">pick a trace on the left</div>
     <label for="scrub" class="sr-only">Scrub to a turn in the trace</label>
@@ -14,7 +14,7 @@
     <div id="t-msgs" role="status" aria-live="polite"></div>
     <div id="t-map" class="screen" role="img" aria-label="Replayed map at the selected turn"></div>
     <div id="t-llm"></div>
-  </div>
+  </main>
 </div>
 
 <script>

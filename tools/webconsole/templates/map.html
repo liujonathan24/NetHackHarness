@@ -2,7 +2,7 @@
 {% block title %}Map Viewer — NetHack Console{% endblock %}
 {% block body %}
 <div class="page">
-  <div id="main">
+  <main id="main-content" class="maincol">
     <h1 class="sr-only">NetHack Map Viewer</h1>
     <div id="message" role="status" aria-live="polite" aria-atomic="true">&nbsp;</div>
     <div id="screen" class="screen" tabindex="0" role="application"
@@ -11,7 +11,7 @@
     <div id="status" aria-live="polite" aria-atomic="true">connecting...</div>
     <div id="hint">Click the screen, then type NetHack commands (h j k l y u b n move,
       &gt; &lt; stairs, s search, i inventory). Arrows = movement. Enter / Esc supported.</div>
-  </div>
+  </main>
   <aside id="side" aria-label="Controls">
     <div id="groups"></div>
     <div id="modify">

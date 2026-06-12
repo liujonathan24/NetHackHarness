@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}NetHack Console{% endblock %}
 {% block body %}
-<div class="landing">
+<main id="main-content" class="landing">
   <h1 class="title"><span class="glyph" aria-hidden="true">&gt;</span> NetHack Web Console</h1>
 
   <p class="lede">
@@ -46,7 +46,7 @@
     <h2>Knob-effect demos</h2>
     <div id="demos" aria-live="polite"><div class="obs-hint">loading GIFs…</div></div>
   </div>
-</div>
+</main>
 
 <script>buildGifs('demos');</script>
 {% endblock %}
