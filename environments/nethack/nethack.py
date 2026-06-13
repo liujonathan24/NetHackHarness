@@ -146,6 +146,7 @@ from nethack_harness.prompt.prompt_spec import (
     build_prompt,
     VARIANT_REGISTRY,
     resolve_spec,
+    attach_refiner,
 )
 from nethack_harness.prompt.content import compose_user_content, content_to_text
 
@@ -210,6 +211,12 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         refiner: Any = None,
         refiner_model: Optional[str] = None,
         bootstrap_dir: Optional[str] = None,
+        # Decouple the teacher Refiner from the obs format: when True, attach the
+        # full CH refiner machinery (refiner + sub-agent hooks, system inject,
+        # run_macro tool) onto whatever `variant` (obs form) is selected — e.g.
+        # variant="JSON", refine=True gives JSON observations PLUS the teacher
+        # refiner. variant="CH" implies refine=True (its canonical ASCII obs).
+        refine: bool = False,
         # Resolved PromptSpec describing how this rollout builds its prompt
         # (obs form + processors, system prompt, per-turn template, tools). When
         # None we resolve it from `variant` for back-compat; load_environment
@@ -234,35 +241,84 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         self.journal_render_max_chars = journal_render_max_chars
         self.variant = variant
         self.map_detail = map_detail
+        # Single predicate gating ALL refiner machinery (teacher construction,
+        # separation guard, bootstrap I/O, edit capture, spec hooks). variant=="CH"
+        # always implies the refiner; `refine=True` opts ANY other variant in.
+        self.refine_enabled = (variant == "CH") or bool(refine)
         # The prompt recipe. Holds the four parts (obs/system/template/tools)
         # plus the per-turn and history hooks; the rollout loop dispatches
-        # through it instead of branching on `variant`.
-        self.spec = spec if spec is not None else resolve_spec(variant, SYSTEM_PROMPT)
+        # through it instead of branching on `variant`. When refine is enabled on
+        # a non-CH variant, attach the CH refiner bundle onto the resolved spec
+        # (CH already carries it, so don't double-attach).
+        _spec = spec if spec is not None else resolve_spec(variant, SYSTEM_PROMPT)
+        if self.refine_enabled and variant != "CH":
+            _spec = attach_refiner(_spec)
+        self.spec = _spec
         self.refine_interval = refine_interval
         self.summarize_and_reset = summarize_and_reset
         self.trace_dir = trace_dir
         self.continual = continual
         self.continual_lives = continual_lives
         self.bootstrap_dir = bootstrap_dir
-        # Lazy: only build a refiner when variant=="CH" actually selected, so
-        # other variants don't pull in API clients.
+        # Lazy: only build a refiner when refine is enabled (variant=="CH" or
+        # refine=True), so other variants don't pull in API clients.
         self.refiner = refiner
         self.refiner_model = refiner_model
-        if variant == "CH" and self.refiner is None:
-            from nethack_harness.refiner import OfflineRefiner, TeacherLLMRefiner
-            if refiner_model:
-                self.refiner = TeacherLLMRefiner(model=refiner_model)
-            else:
-                import warnings
-                warnings.warn(
-                    "variant=CH selected without refiner_model; falling back to "
-                    "OfflineRefiner (no-op). Set refiner_model to enable real "
-                    "refinement.", stacklevel=2,
-                )
+        # Explicit escape hatch: run CH with a no-op OfflineRefiner (no teacher
+        # required). Tagged via self._ch_real=False so traces / callers can tell
+        # this apart from a real teacher-driven CH run. Popped BEFORE
+        # super().__init__ so the verifiers base class doesn't choke on it.
+        allow_offline_refiner = kwargs.pop("allow_offline_refiner", False)
+        # Same-teacher separation override (read in setup_state where the policy
+        # model id is observable). Popped here for the same reason.
+        self.allow_same_teacher = bool(kwargs.pop("allow_same_teacher", False))
+        self._ch_real = False
+        if self.refine_enabled and self.refiner is None:
+            from nethack_harness.refiner import (
+                OfflineRefiner,
+                TeacherLLMRefiner,
+                resolve_teacher,
+            )
+            if allow_offline_refiner:
                 self.refiner = OfflineRefiner()
+            else:
+                # Fail loud (CHMisconfigured) if no teacher can be resolved.
+                # Thread the resolved base_url + key into the refiner so a key
+                # resolved from OPENAI_API_KEY / PI_API_KEY (e.g. GLM via Prime
+                # Inference) is actually used, not silently dropped.
+                cfg = resolve_teacher(refiner_model)
+                self.refiner = TeacherLLMRefiner(
+                    model=cfg["model"],
+                    base_url=cfg["base_url"],
+                    api_key=cfg["api_key"],
+                )
+                self._ch_real = True
         super().__init__(*args, **kwargs)
 
     async def setup_state(self, state: vf.State) -> vf.State:
+        # Teacher/policy separation guard (whenever the refiner is enabled). The
+        # policy model id is injected by verifiers at rollout time (init_state
+        # sets state["model"]), so this is the first place we can compare it
+        # against the teacher model.
+        if self.refine_enabled:
+            from nethack_harness.refiner import CHMisconfigured
+            policy_model = state.get("model")
+            teacher_model = self.refiner_model
+            if not policy_model:
+                # Policy id genuinely not observable: trust the operator.
+                state["ch_separation"] = "operator-asserted"
+            elif teacher_model and policy_model == teacher_model:
+                state["ch_separation"] = "refused-same-model"
+                if not self.allow_same_teacher:
+                    raise CHMisconfigured(
+                        f"refiner enabled (variant={self.variant!r}) but policy model "
+                        f"{policy_model!r} equals the teacher model {teacher_model!r}; "
+                        "teacher and policy must differ. "
+                        "Pass allow_same_teacher=True to override."
+                    )
+            else:
+                state["ch_separation"] = "separate"
+
         task: dict = state["task"]
         info: dict = state.get("info") or {}
         # verifiers does not always round-trip the nested "task" dict column, so the
@@ -300,6 +356,39 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         state["descent_count"] = 0
         state["raw_obs"] = obs
         state["structured_obs"] = shape_observation(obs, character)
+        # Drain the intro/startup screen (copyright + version banner) and any
+        # message-paging --More-- that NetHack gates behind --More-- on reset.
+        # Without this, turn 1's observation carries the banner bleeding into
+        # the rendered MAP plus a dangling --More--, garbling the agent's view.
+        # We only press MORE/CR (byte 13) while a --More-- is ACTUALLY present
+        # (never blindly, so a real [yn]/getlin prompt is left for the agent),
+        # and wrap defensively: a drain failure must never break the rollout.
+        try:
+            more_idx_list = _to_action_indices(env, [13])
+            if more_idx_list:
+                for _ in range(10):
+                    so0 = state["structured_obs"]
+                    has_more = (
+                        any("--More--" in m for m in (getattr(so0, "messages", None) or []))
+                        or _obs_tty_has_more(state["raw_obs"])
+                    )
+                    if not has_more:
+                        break
+                    obs, _r0, term0, trunc0, _info0 = env.step(more_idx_list[0])
+                    state["raw_obs"] = obs
+                    if term0 or trunc0:
+                        state["structured_obs"] = shape_observation(obs, character)
+                        break
+                    state["structured_obs"] = shape_observation(obs, character)
+            # The intro/copyright banner is painted over the top tty rows and,
+            # in right-offset-map tiers, is never repainted by gameplay — so it
+            # bleeds into the rendered MAP. Scrub it from the raw obs before the
+            # first observation is shaped/shown. Mutates raw_obs.tty_chars, then
+            # re-shape so map_view reflects the cleaned tty.
+            _scrub_intro_banner(state["raw_obs"])
+            state["structured_obs"] = shape_observation(state["raw_obs"], character)
+        except Exception:
+            pass
         state["map_detail"] = self.map_detail
         # Track every (x, y) at which `>` was seen on the visible map. Needed
         # because once the player steps ONTO `>`, the @ overlay hides it and
@@ -371,9 +460,9 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
             # Pin the objective into the journal so the agent sees it.
             state["journal"].pin_objective(subgoal.objective)
 
-        # Bootstrap I/O for variant=CH: if bootstrap_dir is set and a prior
+        # Bootstrap I/O for the refiner: if bootstrap_dir is set and a prior
         # snapshot exists for this seed, load the four components in.
-        if self.variant == "CH" and self.bootstrap_dir:
+        if self.refine_enabled and self.bootstrap_dir:
             try:
                 import os, json
                 path = os.path.join(self.bootstrap_dir, f"seed{seed}.json")
@@ -617,7 +706,7 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
             # Detect --More-- prompts in the message buffer too — they consume
             # the next keystroke, which would otherwise eat the model's
             # intended action. MORE/CR (13) acknowledges them.
-            has_more = any("--More--" in m for m in (so.messages or []))
+            has_more = any("--More--" in m for m in (so.messages or [])) or _obs_tty_has_more(last_obs)
             if so.menu is None and so.inventory_prompt is None and yn is None and not has_more:
                 break
             if yn is not None:
@@ -643,9 +732,9 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
             halt_reason = halt_reason.lstrip()
         state["last_reward"] = total_reward
         state["terminated"] = terminated or truncated
-        # Variant CH: on terminal, persist the refined components for the
+        # Refiner: on terminal, persist the refined components for the
         # next rollout (if bootstrap_dir is configured).
-        if state["terminated"] and self.variant == "CH":
+        if state["terminated"] and self.refine_enabled:
             _ch_save_bootstrap(self, state)
         # Continual harness mode: if the agent died (not ascended), and lives
         # remain, auto-reseed and reset the NLE env so the chat session
@@ -986,6 +1075,62 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
 
 # ---------- frontier blacklist (kept here: tests monkeypatch these on the nethack module) ----------
 
+def _obs_tty_has_more(obs) -> bool:
+    """True if a --More-- prompt is visible on the top tty rows.
+
+    Works whether obs is a dict (``obs["tty_chars"]``) or a CoreObservation
+    (attribute access ``obs.tty_chars``). Mirrors the tty-row detector used in
+    nethack_harness/tools/skills.py. Never raises — a detector failure must
+    never break a rollout.
+    """
+    try:
+        tty = obs.get("tty_chars") if isinstance(obs, dict) else getattr(obs, "tty_chars", None)
+        if tty is None:
+            return False
+        return any(b"--More--" in bytes(int(c) for c in row) for row in tty[:3])
+    except Exception:
+        return False
+
+
+# Substrings that identify the NetHack startup/intro banner. NLE paints this
+# copyright/version art over the top tty rows on reset, and — in tiers whose
+# map is offset to the right so the player never walks over those cells — the
+# banner is never repainted by gameplay. It then bleeds into the rendered MAP
+# (render_map_view reads the raw tty), garbling the agent's first observations.
+_INTRO_BANNER_MARKERS = (b"Copyright", b"Stichting", b"Version 3.6", b"See license")
+
+
+def _scrub_intro_banner(obs) -> None:
+    """Strip the stale intro/copyright banner from a CoreObservation's tty.
+
+    The authoritative dungeon map lives in ``obs.chars`` (one row above the
+    matching tty row, same columns). Wherever a top tty cell holds banner art
+    that the clean ``chars`` plane reports as blank, we overwrite it with a
+    space. Real map glyphs (which match ``chars`` exactly) are left untouched.
+    Mutates ``obs.tty_chars`` in place. Never raises — a scrub failure must
+    never break a rollout.
+    """
+    try:
+        tty = getattr(obs, "tty_chars", None)
+        chars = getattr(obs, "chars", None)
+        if tty is None or chars is None:
+            return
+        # Only act when a banner signature is actually present on the top rows,
+        # so we never disturb a normal observation.
+        top = bytes(int(c) for r in range(min(6, tty.shape[0])) for c in tty[r])
+        if not any(m in top for m in _INTRO_BANNER_MARKERS):
+            return
+        space = ord(" ")
+        n_cols = min(tty.shape[1], chars.shape[1])
+        # tty row r (1..21) corresponds to chars row r-1, same columns.
+        for r in range(1, min(tty.shape[0], chars.shape[0] + 1)):
+            for x in range(n_cols):
+                if tty[r, x] != chars[r - 1, x] and chars[r - 1, x] == space:
+                    tty[r, x] = space
+    except Exception:
+        pass
+
+
 def _iterate_visible_tiles(obs):
     """Yield ((x, y), char) for currently-visible map tiles."""
     chars = obs.chars  # (21, 79)
@@ -1135,6 +1280,7 @@ def load_environment(
     refiner: Any = None,
     refiner_model: Optional[str] = None,
     bootstrap_dir: Optional[str] = None,
+    refine: bool = False,
     **kwargs: Any,
 ) -> vf.Environment:
     """
@@ -1181,6 +1327,13 @@ def load_environment(
             variant=P's mid-rollout refinement).
         continual_lives: cap on auto-resets within a single rollout
             (default 5). Ignored unless continual=True.
+        refine: when True, attach the full Continual-Harness teacher Refiner
+            machinery (periodic teacher-LLM edits to the agent's prompt /
+            sub-agents / skill-macros / journal, plus the run_macro tool) onto
+            whatever `variant` (obs format) is selected — decoupling the refiner
+            from the canonical-ASCII CH variant. e.g. variant="JSON",
+            refine=True gives JSON observations PLUS the teacher refiner.
+            variant="CH" always implies refine=True.
     """
     explicit_seeds = kwargs.pop("explicit_seeds", None)
     # NETHACK_HARNESS overlay: mutates SYSTEM_PROMPT (consumed by _build_task_dataset
@@ -1192,6 +1345,12 @@ def load_environment(
     # (possibly-overlaid) system prompt. SYSTEM_PROMPT here is this module's
     # global, which apply_overlay just mutated in place.
     spec = resolve_spec(variant, SYSTEM_PROMPT)
+    # Decouple the teacher refiner from the obs format: when refine=True on a
+    # non-CH variant, attach the CH refiner bundle (hooks + system inject +
+    # run_macro tool) onto the resolved spec so the tool gets exposed below and
+    # the env's spec carries the refiner hooks. (CH already carries it.)
+    if bool(refine) and variant != "CH":
+        spec = attach_refiner(spec)
     dataset = _build_task_dataset(
         tier, n_examples, seed, explicit_seeds=explicit_seeds,
         system_prompt=spec.system_prompt,
@@ -1237,6 +1396,7 @@ def load_environment(
         refiner=refiner,
         refiner_model=refiner_model,
         bootstrap_dir=bootstrap_dir,
+        refine=refine,
         **kwargs,
     )
 
@@ -1311,5 +1471,6 @@ __all__ = [
     "build_prompt",
     "VARIANT_REGISTRY",
     "resolve_spec",
+    "attach_refiner",
 ]
 

@@ -25,10 +25,38 @@ from nethack_core import actions as nethack
 from nethack_core.env import NetHackCoreEnv
 from nethack_harness.memory.journal import Journal
 from nethack_core.observations import StructuredObservation, InventoryItem
-from nethack_harness.navigation.pathfinding import a_star, nearest_frontier, player_xy
+from nethack_harness.navigation.pathfinding import (
+    a_star,
+    is_walkable,
+    nearest_frontier,
+    player_xy,
+    reachable_set,
+)
 
 
 Direction = Literal["N", "NE", "E", "SE", "S", "SW", "W", "NW", "."]
+
+
+# Map common hallucinated / synonym tool names (observed in real eval traces)
+# onto the canonical registered skill. The biggest offender: the agent calls
+# `explore` (not a real skill) over and over, never descends, and burns a whole
+# rollout. Aliasing `explore` -> `explore_and_descend` makes that hallucination
+# do the right thing instead of erroring into a loop. Keep this small and
+# obvious — it is a self-correction nudge, not a second skill catalog.
+_SKILL_ALIASES: dict[str, str] = {
+    "explore": "explore_and_descend",
+    "explore_map": "autoexplore",
+    "auto_explore": "autoexplore",
+    "go_down": "descend",
+    "descend_stairs": "descend",
+    "down": "descend",
+    "goto": "move_to",
+    "move_to_tile": "move_to",
+    "travel": "move_to",
+    "fight": "attack",
+    "search_for_traps": "search",
+    "look": "search",
+}
 
 
 # Semantic action ids for directional movement -- the int value of each member
@@ -90,7 +118,27 @@ class SkillRegistry:
         for reserved in ("_skill_name", "_env", "_obs", "name", "env", "obs"):
             kwargs.pop(reserved, None)
         if name not in self._skills:
-            return SkillResult(actions=[], feedback=f"Unknown skill: {name}", interrupted=True)
+            # First, try to resolve a common hallucinated / synonym name to a
+            # real skill (e.g. `explore` -> `explore_and_descend`). If it maps
+            # to something registered, dispatch that skill transparently.
+            aliased = _SKILL_ALIASES.get(name)
+            if aliased is not None and aliased in self._skills:
+                name = aliased
+            else:
+                # Still unknown: return a clear, self-correcting "no such tool"
+                # message (no actions) so the agent can pick a valid tool —
+                # never raise KeyError, which silently loops the rollout.
+                import difflib
+                valid = sorted(self._skills.keys())
+                close = difflib.get_close_matches(name, valid, n=3, cutoff=0.5)
+                suggestion = f" Did you mean: {', '.join(close)}?" if close else ""
+                # NOTE: "Unknown skill" is retained for backward-compatible
+                # callers/tests that key off that phrase.
+                feedback = (
+                    f"No tool named '{name}'. Unknown skill. "
+                    f"Valid tools: {', '.join(valid)}.{suggestion}"
+                )
+                return SkillResult(actions=[], feedback=feedback, interrupted=True)
         fn = self._skills[name]
         # Defensive: small models (e.g. Qwen3.5-0.8B) sometimes emit malformed
         # tool calls where the arg dict is wrapped like {"arguments": "..."} or
@@ -672,6 +720,110 @@ def _enum_actions_to_indices(env: NetHackCoreEnv, enum_actions: list[int]) -> li
     return [int(a) for a in enum_actions]
 
 
+def _cheb(ax: int, ay: int, bx: int, by: int) -> int:
+    return max(abs(ax - bx), abs(ay - by))
+
+
+def _move_to_best_effort(env, chars, start, tx, ty) -> "SkillResult":
+    """Best-effort single step toward (tx, ty) when no FULL path exists.
+
+    Strategy (all one-step-at-a-time; never auto-explores or descends):
+      1. Compute the A*-reachable set over explored/walkable tiles. Pick the
+         reachable tile that MINIMIZES Chebyshev distance to the target; if
+         it differs from the player's tile, path ONE step toward it. This
+         closes distance and reveals map, so a real path can open up next call.
+      2. If we're already AT the closest reachable tile, probe ONE step in the
+         target's general direction if that adjacent tile is walkable or
+         unknown (unexplored). This nudges the agent toward the goal.
+      3. Else, return an actionable message naming the nearest reachable tile
+         and what to do — never a bare zero-progress dead-end.
+    """
+    try:
+        h, w = chars.shape
+    except Exception:
+        h = len(chars); w = len(chars[0]) if h else 0
+
+    # Out-of-bounds target: nothing geometric to chase toward; explain.
+    if not (0 <= tx < w and 0 <= ty < h):
+        return SkillResult(
+            [],
+            f"No route to ({tx},{ty}): target is out of bounds "
+            f"(map is 0..{w-1} x 0..{h-1}).",
+            interrupted=True,
+        )
+
+    reach = reachable_set(chars, start)
+    # 1) Nearest reachable tile to the target (Chebyshev), excluding start so
+    #    we genuinely move. Ties broken by closeness to the player so we take
+    #    a sensible incremental step rather than darting across the level.
+    best = None
+    best_key = None
+    sx, sy = start
+    for (rx, ry) in reach:
+        if (rx, ry) == start:
+            continue
+        key = (_cheb(rx, ry, tx, ty), _cheb(rx, ry, sx, sy))
+        if best_key is None or key < best_key:
+            best_key = key
+            best = (rx, ry)
+
+    start_dist = _cheb(sx, sy, tx, ty)
+    if best is not None and best_key[0] < start_dist:
+        # Some reachable tile is strictly closer to the target than we are.
+        step = a_star(chars, start, best)
+        if step:
+            return SkillResult(
+                actions=_enum_actions_to_indices(env, step[:1]),
+                feedback=(
+                    f"No full path to ({tx},{ty}) yet; stepping toward nearest "
+                    f"reachable approach {best} to close distance and reveal map."
+                ),
+            )
+
+    # 2) Already at (or no reachable tile beats) our position. Probe one step
+    #    in the target's general direction if that neighbor is walkable or
+    #    unexplored (so we push into the frontier rather than freeze).
+    dirx = (tx > sx) - (tx < sx)
+    diry = (ty > sy) - (ty < sy)
+    if dirx or diry:
+        nx, ny = sx + dirx, sy + diry
+        if 0 <= nx < w and 0 <= ny < h:
+            nch = int(chars[ny, nx])
+            if is_walkable(nch) or nch == ord(" "):
+                from nethack_core import actions as _nh
+                _DIR8 = {
+                    (0, -1): _nh.CompassDirection.N,
+                    (1, -1): _nh.CompassDirection.NE,
+                    (1, 0): _nh.CompassDirection.E,
+                    (1, 1): _nh.CompassDirection.SE,
+                    (0, 1): _nh.CompassDirection.S,
+                    (-1, 1): _nh.CompassDirection.SW,
+                    (-1, 0): _nh.CompassDirection.W,
+                    (-1, -1): _nh.CompassDirection.NW,
+                }
+                act = _DIR8.get((dirx, diry))
+                if act is not None:
+                    return SkillResult(
+                        actions=[int(act)],
+                        feedback=(
+                            f"No full path to ({tx},{ty}) yet; probing one step "
+                            f"toward it to reveal unexplored terrain."
+                        ),
+                    )
+
+    # 3) Genuinely stuck: nearest reachable tile and an actionable hint.
+    rx, ry = best if best is not None else start
+    return SkillResult(
+        [],
+        (
+            f"No route to ({tx},{ty}) yet — nearest reachable is ({rx},{ry}); "
+            f"the way is likely behind unexplored/blocked terrain — `search` "
+            f"near walls or `move` to explore."
+        ),
+        interrupted=True,
+    )
+
+
 @registry.register("move_to", schema={
     "description": (
         "Pathfind to a specific (x, y) tile on the current level. Uses A* "
@@ -716,25 +868,14 @@ def move_to(env: NetHackCoreEnv, obs: StructuredObservation, x: int, y: int) -> 
         pass
     path = a_star(chars, start, (tx, ty))
     if path is None:
-        # Surface why the target is unreachable: out of bounds, or what
-        # tile sits there. Bare "No path" sent the model into spin loops.
-        try:
-            h = chars.shape[0] if hasattr(chars, "shape") else len(chars)
-            w = chars.shape[1] if hasattr(chars, "shape") else len(chars[0])
-            if not (0 <= ty < h and 0 <= tx < w):
-                detail = f"target ({tx},{ty}) is out of bounds (map is 0..{w-1} x 0..{h-1})"
-            else:
-                ch = int(chars[ty][tx])
-                glyph = chr(ch) if 32 <= ch < 127 else "?"
-                if glyph in ("|", "-"):
-                    detail = f"target is a wall ({glyph})"
-                elif glyph == " ":
-                    detail = "target is unseen (no path discovered yet — explore first)"
-                else:
-                    detail = f"target tile is `{glyph}` but no walkable path connects it"
-        except Exception:
-            detail = "no walkable path"
-        return SkillResult([], f"No path from {start} to ({tx},{ty}): {detail}.", interrupted=True)
+        # No FULL path to the exact target (it's a wall, out of bounds, or —
+        # most often — visible-but-not-yet-connected behind unexplored
+        # terrain). A bare "No path" sent the model into spin loops: it can
+        # SEE the stairs but can never approach them. Instead, make
+        # best-effort progress so the agent closes distance and reveals map,
+        # opening a real path on a subsequent call. Still ONE step per call;
+        # we never auto-explore, auto-search, or auto-descend here.
+        return _move_to_best_effort(env, chars, start, tx, ty)
     if not path:
         return SkillResult([], f"Already at ({tx},{ty}).", interrupted=False)
     return SkillResult(

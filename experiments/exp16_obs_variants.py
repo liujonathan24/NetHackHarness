@@ -48,6 +48,15 @@ DEFAULT_MAX_TURNS = 200
 PRIMARY_MODEL = "Qwen/Qwen3.5-9B"
 SECONDARY_MODEL = "claude-haiku-4-5"
 
+# Teacher (Refiner) model for the CH variant. MUST be independent of the policy
+# model (--models); the env's load_environment enforces a same-model separation
+# guard. Override with --teacher-model. Served by Prime Inference.
+DEFAULT_TEACHER_MODEL = "z-ai/glm-5"
+
+# Runs with fewer than this many completed seeds are labelled "preliminary" in
+# the launcher's emitted summary line.
+MIN_COMPLETED_SEEDS = 5
+
 
 @dataclass
 class Variant:
@@ -221,7 +230,11 @@ VARIANTS: dict[str, Variant] = {
         env_args={
             "variant": "CH",
             "refine_interval": 20,
-            "refiner_model": "claude-opus-4-7",
+            # refiner_model (the teacher) is injected at launch from --teacher-model
+            # (default DEFAULT_TEACHER_MODEL = "z-ai/glm-5"). It is deliberately
+            # NOT coupled to the policy model (--models); the env enforces a
+            # same-model separation guard. Override the teacher independently:
+            #   --teacher-model z-ai/glm-4.6
             # bootstrap_dir=None by default; pass via CLI override for cross-rollout persistence.
             "compact_obs": True,
             "history_keep_full": 5,
@@ -231,7 +244,16 @@ VARIANTS: dict[str, Variant] = {
         notes=(
             "Karten et al., 2026 — full Refiner pass. Distinct from P (directive only). "
             "Uses a separate teacher model for the four-pass CRUD over prompt, sub-agents, "
-            "skill macros, and journal memory."
+            "skill macros, and journal memory.\n"
+            "CH-vs-B1 comparison (matched seeds, 500-turn horizon, same policy model,\n"
+            "teacher independent of policy):\n"
+            "    python experiments/exp16_obs_variants.py \\\n"
+            "        --variants CH,B1 \\\n"
+            "        --models Qwen/Qwen3.5-9B \\\n"
+            "        --teacher-model z-ai/glm-5 \\\n"
+            "        --seeds 22,23,24,25,26 \\\n"
+            "        --max-turns 500 --hosted\n"
+            "(--dry-run to print the prime eval commands without launching.)"
         ),
     ),
 }
@@ -273,9 +295,23 @@ def build_prime_eval_cmd(
     seed: int,
     max_turns: int,
     hosted: bool,
+    teacher_model: str = DEFAULT_TEACHER_MODEL,
 ) -> list[str]:
-    """One `prime eval run` invocation for one (variant, model, seed)."""
+    """One `prime eval run` invocation for one (variant, model, seed).
+
+    For CH (and any variant that already declares a Refiner via refine_interval),
+    inject the teacher model as `refiner_model`. The teacher is independent of the
+    policy `model`; we refuse to launch when they collide so the env's separation
+    guard never has to.
+    """
     env_args = dict(variant.env_args)
+    if "refine_interval" in env_args and variant.name == "CH":
+        if teacher_model == model:
+            raise ValueError(
+                f"CH teacher_model ({teacher_model!r}) must differ from the policy "
+                f"model ({model!r}); pass a distinct --teacher-model."
+            )
+        env_args["refiner_model"] = teacher_model
     env_args["explicit_seeds"] = [seed]
     env_args["max_turns"] = max_turns
     env_args["n_examples"] = 1
@@ -316,6 +352,7 @@ def iter_jobs(
     max_turns: int,
     hosted: bool,
     skip_existing: bool,
+    teacher_model: str = DEFAULT_TEACHER_MODEL,
 ):
     for vname in variants:
         if vname not in VARIANTS:
@@ -328,7 +365,9 @@ def iter_jobs(
                 if skip_existing and (out_dir / "metadata.json").exists():
                     yield ("skip", v, model, seed, None)
                     continue
-                cmd = build_prime_eval_cmd(v, model, seed, max_turns, hosted)
+                cmd = build_prime_eval_cmd(
+                    v, model, seed, max_turns, hosted, teacher_model,
+                )
                 yield ("run", v, model, seed, cmd)
 
 
@@ -338,6 +377,9 @@ def main() -> int:
                    help="Comma list. Default wave-1 slate.")
     p.add_argument("--models", default=PRIMARY_MODEL,
                    help=f"Comma list. Default {PRIMARY_MODEL} (primary). Promote top-3 to {SECONDARY_MODEL} after.")
+    p.add_argument("--teacher-model", default=DEFAULT_TEACHER_MODEL,
+                   help=f"Refiner (teacher) model for the CH variant; must differ from --models. "
+                        f"Default {DEFAULT_TEACHER_MODEL}.")
     p.add_argument("--seeds", default=",".join(str(s) for s in DEFAULT_SEEDS),
                    help="Comma list of NLE seeds. Default 22-41.")
     p.add_argument("--max-turns", type=int, default=DEFAULT_MAX_TURNS)
@@ -361,6 +403,7 @@ def main() -> int:
     queued = skipped = failed = 0
     for status, v, model, seed, cmd in iter_jobs(
         variants, models, seeds, args.max_turns, args.hosted, args.skip_existing,
+        args.teacher_model,
     ):
         if status == "skip":
             skipped += 1
@@ -379,7 +422,14 @@ def main() -> int:
             failed += 1
             print(f"[fail] {v.name} {model} seed={seed} rc={rc}", file=sys.stderr)
 
-    print(f"# done: queued={queued} skipped={skipped} failed={failed}", file=sys.stderr)
+    # A per-cell run spanning fewer than MIN_COMPLETED_SEEDS seeds is statistically
+    # thin; flag the whole sweep "preliminary" so downstream summaries don't over-read it.
+    prelim = " [preliminary]" if len(seeds) < MIN_COMPLETED_SEEDS else ""
+    print(
+        f"# done: queued={queued} skipped={skipped} failed={failed} "
+        f"seeds={len(seeds)}{prelim}",
+        file=sys.stderr,
+    )
     return 0 if failed == 0 else 1
 
 

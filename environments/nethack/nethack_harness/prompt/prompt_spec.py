@@ -259,6 +259,44 @@ def _ch_history_inject(env_self, messages, state):
     return _ch_inject_system(messages, state)
 
 
+# The refiner-machinery bundle that the CH variant wires onto its spec: the
+# per-turn refiner + sub-agent hooks, the system-inject history transform, and
+# the run_macro tool adapter. Factored out so it can be attached to ANY obs
+# variant (e.g. JSON) when refine=True, decoupling the teacher-refiner from the
+# CH observation format.
+_CH_REFINER_TURN_HOOKS = (_ch_refiner_hook, _ch_subagents_hook)
+_CH_REFINER_HISTORY_TRANSFORMS = (_ch_history_inject,)
+_CH_REFINER_EXTRA_TOOLS = (_make_run_macro_adapter,)
+
+
+def attach_refiner(spec: "PromptSpec") -> "PromptSpec":
+    """Return ``spec`` with the CH teacher-refiner machinery attached.
+
+    Adds the refiner + sub-agent turn-hooks, the ``_ch_history_inject`` system
+    addendum, and the ``run_macro`` tool — the exact bundle the CH variant uses
+    — onto whatever obs/template ``spec`` already carries. Idempotent: hooks /
+    tools already present (e.g. the CH spec built them in directly) are not
+    duplicated.
+    """
+    turn_hooks = tuple(spec.turn_hooks) + tuple(
+        h for h in _CH_REFINER_TURN_HOOKS if h not in spec.turn_hooks
+    )
+    history_transforms = tuple(spec.history_transforms) + tuple(
+        t for t in _CH_REFINER_HISTORY_TRANSFORMS if t not in spec.history_transforms
+    )
+    existing_tools = tuple(spec.tools.extra_tools)
+    extra_tools = existing_tools + tuple(
+        mk for mk in _CH_REFINER_EXTRA_TOOLS if mk not in existing_tools
+    )
+    new_tools = dataclasses.replace(spec.tools, extra_tools=extra_tools)
+    return dataclasses.replace(
+        spec,
+        turn_hooks=turn_hooks,
+        history_transforms=history_transforms,
+        tools=new_tools,
+    )
+
+
 # ---------- the registry ----------
 
 _CANONICAL_OBS = ObsSpec(mode="ascii")
@@ -308,12 +346,9 @@ def _build_registry(system_prompt: str) -> dict:
         # Continual-harness adaptation: periodic self-refinement directive.
         "P": canonical("P", turn_hooks=(_p_refinement_hook,)),
         # Full Continual Harness: refiner + sub-agents + system inject + run_macro.
-        "CH": canonical(
-            "CH",
-            tools=ToolSpec(extra_tools=(_make_run_macro_adapter,)),
-            turn_hooks=(_ch_refiner_hook, _ch_subagents_hook),
-            history_transforms=(_ch_history_inject,),
-        ),
+        # Built by attaching the refiner bundle to a canonical (ASCII) spec, so
+        # CH and JSON+refine share one wiring path.
+        "CH": attach_refiner(canonical("CH")),
     }
 
 

@@ -105,6 +105,51 @@ class RefinerEdits:
         }
 
 
+# ---------- teacher resolution / fail-loud guard ----------
+
+
+class CHMisconfigured(RuntimeError):
+    """Raised when variant=CH is selected but no real teacher can be resolved.
+
+    The Continual-Harness paper requires a *separate* frontier teacher model to
+    refine a weaker agent's harness. Silently degrading to a no-op OfflineRefiner
+    produces fake "CH" runs that look like the real thing in traces, so we refuse
+    to construct such an env unless the operator explicitly opts into the offline
+    escape hatch (allow_offline_refiner=True)."""
+
+
+def resolve_teacher(refiner_model) -> dict:
+    """Resolve a teacher config from `refiner_model` + environment API keys.
+
+    Raises CHMisconfigured if `refiner_model` is falsy, or if no API key is
+    resolvable from REFINER_API_KEY → ANTHROPIC_API_KEY → OPENAI_API_KEY →
+    PI_API_KEY. Returns {"model", "base_url", "api_key"} on success."""
+    if not refiner_model:
+        raise CHMisconfigured(
+            "variant=CH requires a teacher model: no refiner_model was provided. "
+            "Pass refiner_model=... (and set REFINER_API_KEY / ANTHROPIC_API_KEY / "
+            "OPENAI_API_KEY / PI_API_KEY), or set allow_offline_refiner=True to run "
+            "a tagged not-a-real-CH offline rollout."
+        )
+    key = (
+        os.getenv("REFINER_API_KEY")
+        or os.getenv("ANTHROPIC_API_KEY")
+        or os.getenv("OPENAI_API_KEY")
+        or os.getenv("PI_API_KEY")
+    )
+    if not key:
+        raise CHMisconfigured(
+            f"variant=CH refiner_model={refiner_model!r} but no API key found in "
+            "REFINER_API_KEY / ANTHROPIC_API_KEY / OPENAI_API_KEY / PI_API_KEY. "
+            "Set one, or pass allow_offline_refiner=True for a tagged offline run."
+        )
+    return {
+        "model": refiner_model,
+        "base_url": os.getenv("REFINER_BASE_URL"),
+        "api_key": key,
+    }
+
+
 # ---------- Refiner protocol + implementations ----------
 
 
