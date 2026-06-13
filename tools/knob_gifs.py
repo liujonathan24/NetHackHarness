@@ -95,7 +95,11 @@ def _regen(env, seed, **tune):
 def gif_room_density(seed=42):
     env = EngineEnv()
     frames = []
-    for d in (1.0, 0.7, 0.5, 0.3, 0.2, 0.1, 0.05):
+    # room_density is thresholded: the floor is unchanged from 1.0 down to ~0.2,
+    # then thins out sharply. Pick values that each cross a threshold so every
+    # frame visibly differs (1.0->276, 0.15->248, 0.1->163, 0.05->54, 0.02->39
+    # floor tiles on this seed) instead of five identical "full floor" frames.
+    for d in (1.0, 0.15, 0.1, 0.05, 0.02):
         obs = _regen(env, seed, room_density=d)
         rows, colors = _obs_rows(obs)
         floors = sum(r.count(".") for r in rows)
@@ -156,10 +160,75 @@ def gif_hunger(seed=42, nsteps=120):
     return save_gif("hunger_rate_scale", frames, duration=180)
 
 
+def gif_mob_spawn(seed=42):
+    """Empty floor -> swarm: more initial monsters at higher mob_spawn."""
+    env = EngineEnv()
+    frames = []
+    for v in (0.0, 1.0, 2.0, 3.0):
+        obs = _regen(env, seed, mob_spawn=v)
+        rows, colors = _obs_rows(obs)
+        # monsters/pets are the alphabetic glyphs on the map; minus the @ hero.
+        nmon = sum(sum(ch.isalpha() for ch in r) for r in rows) - 1
+        frames.append(frame(rows, colors,
+                            f"mob_spawn = {v:<4}   ({nmon} monsters on the floor, seed {seed})"))
+    env.close()
+    return save_gif("mob_spawn", frames + frames[-2:0:-1], duration=750)
+
+
+def gif_room_size(seed=42):
+    """Cramped warrens vs cavernous halls: room_size scales each room's
+    dimensions (the floor-tile count wobbles because the generator fits a
+    different number of rooms, but the room SHAPES change clearly)."""
+    env = EngineEnv()
+    frames = []
+    for v in (0.25, 0.5, 1.0, 2.0, 3.0):
+        obs = _regen(env, seed, room_size=v)
+        rows, colors = _obs_rows(obs)
+        floors = sum(r.count(".") for r in rows)
+        frames.append(frame(rows, colors,
+                            f"room_size = {v:<4}   ({floors} floor tiles, seed {seed})"))
+    env.close()
+    return save_gif("room_size", frames + frames[-2:0:-1], duration=650)
+
+
+def gif_backstep(seed=42, fwd=5):
+    """Play forward, then Backspace-undo back to the start. Uses the exact
+    snapshot/restore mechanism the live Undo button does: snapshot before each
+    step, then restore them in reverse (a ctrl-R redraw renders each reverted
+    frame), so the @ walks out and retraces its steps."""
+    env = EngineEnv()
+    env.reset(seeds=(seed, seed))
+    for _ in range(2):           # drain the welcome --More-- into live play
+        env.step(ord("."))
+    frames, snaps = [], []
+    obs = env.engine.to_core_observation()
+    rows, colors = _obs_rows(obs)
+    frames.append(frame(rows, colors, "play forward — start"))
+    for i in range(fwd):         # forward: snapshot, step right, capture
+        snaps.append(env.snapshot())
+        obs, _, _ = env.step(ord("l"))
+        rows, colors = _obs_rows(obs)
+        frames.append(frame(rows, colors, f"play forward — step {i + 1}"))
+    for i in range(len(snaps) - 1, -1, -1):   # backward: restore + ctrl-R redraw
+        env.restore(snaps[i])
+        obs, _, _ = env.step(18)
+        rows, colors = _obs_rows(obs)
+        frames.append(frame(rows, colors,
+                            f"Backspace = undo  —  back to step {i}", hl=(120, 230, 120)))
+    for s in snaps:
+        env.free_snapshot(s)
+    env.close()
+    return save_gif("backstep", frames, duration=480)
+
+
 _BUILDERS = {
     "room_density": gif_room_density,
+    "room_size": gif_room_size,
     "reveal_map": gif_reveal_map,
-    "hunger_rate_scale": gif_hunger,
+    "mob_spawn": gif_mob_spawn,
+    "backstep": gif_backstep,
+    # hunger_rate_scale (gif_hunger) kept as a function but dropped from the
+    # gallery — the two-bar nutrition demo wasn't compelling.
 }
 
 

@@ -4,13 +4,16 @@
 <div class="page">
   <main id="main-content" class="maincol" tabindex="-1">
     <h1 class="sr-only">NetHack Map Viewer</h1>
-    <div id="message" role="status" aria-live="polite" aria-atomic="true">&nbsp;</div>
-    <div id="screen" class="screen" tabindex="0" role="application"
-         aria-label="NetHack game screen — focus this, then type movement and command keys"
-         aria-describedby="hint"></div>
-    <div id="status" aria-live="polite" aria-atomic="true">connecting…</div>
-    <div id="hint">Click the screen, then type NetHack commands (h j k l y u b n move,
-      &gt; &lt; stairs, s search, i inventory). Arrows = movement. Enter / Esc supported.</div>
+    <div class="console">
+      <div id="message" role="status" aria-live="polite" aria-atomic="true">&nbsp;</div>
+      <div id="screen" class="screen" tabindex="0" role="application"
+           aria-label="NetHack game screen — focus this, then type movement and command keys"
+           aria-describedby="hint"></div>
+      <div id="status" aria-live="polite" aria-atomic="true">connecting…</div>
+      <div id="hint">Click the screen, then type NetHack commands (h j k l y u b n move,
+        &gt; &lt; stairs, s search, i inventory). Arrows = movement. Enter / Esc supported.
+        <b>Backspace = undo</b> the last step.</div>
+    </div>
   </main>
   <aside id="side" aria-label="Controls">
     <div id="groups"></div>
@@ -37,6 +40,17 @@
         <input type="number" id="m_hunger" class="mnum" aria-labelledby="lbl-hunger"><button type="button" class="mbtn" onclick="setField('hunger')" aria-label="Set hunger">Set</button></div>
       <div id="modstat" role="status" aria-live="polite"></div>
     </div>
+    <button type="button" id="undobtn" class="act-btn" onclick="doUndo()" disabled
+      aria-keyshortcuts="Backspace"><span aria-hidden="true">&#8634;</span> Undo step
+      <span id="undocount" aria-hidden="true"></span></button>
+    <div id="undostat" role="status" aria-live="polite" class="sr-only"></div>
+    <div id="markrow">
+      <button type="button" id="markbtn" class="act-btn" onclick="doMark()"><span
+        aria-hidden="true">&#9873;</span> Checkpoint</button>
+      <button type="button" id="restorebtn" class="act-btn" onclick="doRestore()" disabled><span
+        aria-hidden="true">&#8617;</span> Restore</button>
+    </div>
+    <div id="markstat" role="status" aria-live="polite"></div>
     <div id="seedrow"><label for="seed">seed</label> <input id="seed" value="42" inputmode="numeric"></div>
     <button type="button" id="reset" class="act-btn" onclick="doReset()">Reset / Regenerate floor<span
       id="dirtyflag" class="dirtyflag" hidden> — changes pending</span></button>

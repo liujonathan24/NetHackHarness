@@ -34,3 +34,21 @@ nle_crash_*.txt
 
 # web play recordings (generated)
 /outputs/web_play/
+
+# Internal process / workflow artifacts — these live on the `experimental`
+# branch, not on main. Kept out of the clean public tree but preserved on
+# disk locally and on GitHub (origin/experimental). See docs/REPO_MAP.md.
+/experiments/
+/openspec/
+/tools/launchpad/
+/docs/superpowers/
+/docs/onboarding/
+/docs/MONDAY_TALKING_POINTS.md
+/SESSION_SUMMARY.md
+/WAKE_UP.md
+/experiment_log.md
+/claude_haiku.log
+/current_eval.log
+/tools/run_demo.py
+/tools/record_versioned_demo.py
+/tools/compare_evals.py
