@@ -131,12 +131,26 @@ function apply(d){
   if(d.recording) rs.innerHTML='<span aria-hidden="true">●</span> recording '+escHtml(d.recording);
   else rs.textContent='';
   syncRec(!!d.recording);
+  syncUndo(d.undos);
 }
 /* Single source of truth for the record button's visual + a11y + label state,
    shared by apply() (server-driven) and toggleRec() (click-driven). */
 function syncRec(on){const rb=document.getElementById('recbtn'); if(!rb)return;
   rb.classList.toggle('on',on); rb.setAttribute('aria-pressed',on);
   const l=document.getElementById('reclabel'); if(l)l.textContent=on?'Stop recording':'Record trace';}
+/* Enable/disable the Undo button + show how many steps are undoable. */
+function syncUndo(n){const b=document.getElementById('undobtn'); if(!b)return;
+  n=n|0; b.disabled = n<=0;
+  const c=document.getElementById('undocount'); if(c)c.textContent = n>0?('('+n+')'):'';}
+/* Undo one step: restore the snapshot taken before the last step (Backspace). */
+function doUndo(){
+  return engineCall(()=>post('/undo',{n:1}).then(d=>{
+    const us=document.getElementById('undostat');
+    if(d&&d.error){ if(us)us.textContent=d.error; return; }
+    apply(d);
+    if(us)us.textContent='undid a step'+((d.undos>0)?(', '+d.undos+' left'):'');
+  }));
+}
 /* Serialize every engine-mutating request through one ordered queue. The server
    shares a single EngineEnv and the C engine is not reentrant, so two in-flight
    /step (e.g. from key-repeat or fast typing), or a /live arriving during a
@@ -243,6 +257,8 @@ function initMap(){
     // bare letter and preventDefault the shortcut — and it never produced a real
     // NetHack control code anyway.
     if(e.ctrlKey||e.metaKey||e.altKey) return;
+    // Backspace = undo the last step (also prevents the browser's "back" nav).
+    if(e.key==='Backspace'){ e.preventDefault(); if(_ready) doUndo(); return; }
     let ch=KEYMAP[e.key]; if(!ch&&e.key.length===1)ch=e.key; if(!ch)return; e.preventDefault();
     if(!_ready) return;  // game not started yet — ignore the keystroke
     engineCall(()=>post('/step',{keys:ch}).then(apply));});
