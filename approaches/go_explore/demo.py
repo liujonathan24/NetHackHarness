@@ -2,7 +2,7 @@
 
 Run with::
 
-    uv run python -m tools.mc_replay.demo
+    uv run python -m approaches.go_explore.demo
 
 Constructs an EngineEnv, resets with a fixed seed, walks a handful of fixed
 moves to get into the dungeon, then runs mc_lookahead over a small candidate

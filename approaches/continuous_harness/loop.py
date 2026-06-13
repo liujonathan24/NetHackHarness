@@ -1,6 +1,6 @@
 """Harness-iteration loop orchestrator + CLI.
 
-Run:  python -m tools.harness_loop.loop --iterations N [...flags]
+Run:  python -m approaches.continuous_harness.loop --iterations N [...flags]
 
 Each iteration:
   1. create a fresh git worktree (isolation + reproducibility)
@@ -455,7 +455,7 @@ def _print_leaderboard(leaderboard: list[dict[str, Any]]) -> None:
 # ---------------------------------------------------------------------------- #
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="python -m tools.harness_loop.loop",
+        prog="python -m approaches.continuous_harness.loop",
         description="Self-improving harness-iteration loop for the NetHack env. "
                     "Mutates only obs-format / tools / prompt; the game engine "
                     "is immutable.",

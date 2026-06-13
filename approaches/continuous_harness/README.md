@@ -72,7 +72,7 @@ N seeds. Mean reward is captured best-effort from vf-eval's saved metadata.
 ### Dry-run (NO API, NO budget) — orchestration smoke test
 
 ```
-uv run python -m tools.harness_loop.loop --iterations 2 --dry-run --out /tmp/harness_loop_dryrun
+uv run python -m approaches.continuous_harness.loop --iterations 2 --dry-run --out /tmp/harness_loop_dryrun
 ```
 
 Creates 2 iteration worktrees, writes bootstraps, synthesizes deterministic
@@ -85,7 +85,7 @@ fallback proposer is forced; no network call is made.
 `REFINER_BASE_URL` (Prime Inference). The loop sources it before each eval.
 
 ```
-uv run python -m tools.harness_loop.loop \
+uv run python -m approaches.continuous_harness.loop \
   --iterations 3 \
   --proposer llm \
   --policy z-ai/glm-4.6 \
@@ -135,11 +135,11 @@ the champion, so a test-passing but play-worsening edit never becomes champion.
 
 ```
 # dry-run (NO API / NO reinstall / NO eval — synthesized depth):
-uv run python -m tools.harness_loop.auto_improve --iterations 2 --dry-run \
+uv run python -m approaches.continuous_harness.auto_improve --iterations 2 --dry-run \
     --out /tmp/auto_improve_dry
 
 # real (supervisor; ~eval_n rollouts + one venv reinstall per iteration):
-source /tmp/ch_env.sh && uv run python -m tools.harness_loop.auto_improve \
+source /tmp/ch_env.sh && uv run python -m approaches.continuous_harness.auto_improve \
     --iterations 10 --eval-n 8 --max-turns 200 --margin 0.15 \
     --problem "navigation + obs: agent under-descends; route to stairs/frontier" \
     --out /tmp/auto_improve_run
