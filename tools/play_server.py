@@ -215,6 +215,16 @@ def catalog():
         m["name"] = name
         m.setdefault("note", "")
         out.append(m)
+    # Display-order tweak (presentation only): keep the two note-less spawn knobs
+    # adjacent so the 2-column knob grid pairs note rows with note rows and the
+    # note-less pair shares a row — consistent row heights. Swapping
+    # monster_difficulty_scale <-> monster_speed_scale puts monster_speed_scale
+    # next to ongoing_spawn_scale (both note-less).
+    names = [m["name"] for m in out]
+    a, b = "monster_difficulty_scale", "monster_speed_scale"
+    if a in names and b in names:
+        i, j = names.index(a), names.index(b)
+        out[i], out[j] = out[j], out[i]
     return jsonify({"groups": _GROUPS, "knobs": out})
 
 
