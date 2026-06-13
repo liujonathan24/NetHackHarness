@@ -44,6 +44,13 @@
       aria-keyshortcuts="Backspace"><span aria-hidden="true">&#8634;</span> Undo step
       <span id="undocount" aria-hidden="true"></span></button>
     <div id="undostat" role="status" aria-live="polite" class="sr-only"></div>
+    <div id="markrow">
+      <button type="button" id="markbtn" class="act-btn" onclick="doMark()"><span
+        aria-hidden="true">&#9873;</span> Checkpoint</button>
+      <button type="button" id="restorebtn" class="act-btn" onclick="doRestore()" disabled><span
+        aria-hidden="true">&#8617;</span> Restore</button>
+    </div>
+    <div id="markstat" role="status" aria-live="polite"></div>
     <div id="seedrow"><label for="seed">seed</label> <input id="seed" value="42" inputmode="numeric"></div>
     <button type="button" id="reset" class="act-btn" onclick="doReset()">Reset / Regenerate floor<span
       id="dirtyflag" class="dirtyflag" hidden> — changes pending</span></button>
