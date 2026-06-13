@@ -34,3 +34,6 @@ nle_crash_*.txt
 
 # web play recordings (generated)
 /outputs/web_play/
+claude_haiku.log
+current_eval.log
+*_eval.log

@@ -1,9 +1,0 @@
-2026-05-18 20:30:18 - verifiers.utils.env_utils - INFO - Loading environment: nethack
-2026-05-18 20:30:18 - verifiers.utils.env_utils - INFO - Using provided args: history_drop_after=99999, explicit_seeds=[0, 2, 21, 27, 33, 35, 82, 95], compact_obs=False, tier=corridor_explore, max_turns=100, history_keep_full=99999, skill_set=full
-2026-05-18 20:30:18 - verifiers.utils.env_utils - INFO - Using default args: seed=0, interface='skill', journal_render_max_chars=2000, n_examples=256, subgoal_proposer=None, belief_state_interval=25, sub_lm=None
-2026-05-18 20:30:18 - verifiers.utils.env_utils - INFO - Successfully loaded environment 'nethack'
-2026-05-18 20:30:18 - verifiers.utils.thread_utils - INFO - Scaled default executor and 0 registered executor(s) ()
-2026-05-18 20:30:18 - verifiers.serve.server.env_worker.EnvWorker - INFO - Initialized worker nethack-0 on ipc:///tmp/vf-0990af9f2c3c-nethack-0
-2026-05-18 20:30:18 - verifiers.serve.server.env_worker.EnvWorker - INFO - Starting worker nethack-0
-2026-05-18 21:53:16 - verifiers.utils.process_utils - INFO - Death pipe closed — parent is gone, sending SIGTERM to self
-2026-05-18 21:53:16 - verifiers.serve.server.env_worker.EnvWorker - INFO - Shut down worker nethack-0

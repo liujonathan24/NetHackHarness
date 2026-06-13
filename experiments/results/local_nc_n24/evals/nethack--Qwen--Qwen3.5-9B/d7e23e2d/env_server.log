@@ -1,9 +1,0 @@
-2026-05-17 11:43:12 - verifiers.serve.server.env_server.ZMQEnvServer - INFO - Initializing ZMQEnvServer to serve nethack (env_args={'tier': 'corridor_explore', 'max_turns': 50, 'compact_obs': False, 'history_keep_full': 99999, 'history_drop_after': 99999}, extra_env_kwargs={'timeout_seconds': 2400.0, 'concurrency': 6}, num_workers=1)
-2026-05-17 11:43:12 - verifiers.serve.server.env_server.ZMQEnvServer - INFO - ZMQEnvServer started on tcp://127.0.0.1:61964
-2026-05-17 11:43:12 - verifiers.serve.server.env_router.EnvRouter - INFO - Started worker (id=0, name=nethack-0, address=ipc:///tmp/vf-f655bb932b0c-nethack-0, pid=99523)
-2026-05-17 11:43:23 - verifiers.serve.server.env_router.EnvRouter - INFO - Active tasks: 0 (W0: ?)
-  Server | Lag: min=0ms mean=2ms median=2ms p90=2ms p99=2ms max=2ms (n=99)
-  W0     | no stats yet
-2026-05-17 11:43:32 - verifiers.utils.process_utils - INFO - Death pipe closed — parent is gone, sending SIGTERM to self
-2026-05-17 11:43:33 - verifiers.serve.server.env_router.EnvRouter - INFO - Router shut down
-2026-05-17 11:43:33 - verifiers.serve.server.env_server.ZMQEnvServer - INFO - ZMQEnvServer shut down
