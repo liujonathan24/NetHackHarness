@@ -40,3 +40,34 @@ def test_checkpoint_resume(tmp_path):
     # and you can keep playing
     obs3, _, _ = e2.step(ord("."))
     assert obs3 is not None
+
+
+def test_checkpoint_resume_deep_floor(tmp_path):
+    """Resuming a checkpoint taken on a DEEP floor used to SIGSEGV.
+
+    nle_load_level stamps the saved (e.g. dlvl-5) level blob over the current
+    ledger slot, which after resume()'s reset is dlvl 1. getlev()'s "is this the
+    level I expect?" sanity check then fired trickery() -> pline(...), and pline
+    routes through the rl window port, which yields the game coroutine
+    (jump_fcontext) from the main context -> jump to a dead fcontext -> crash.
+    The fix passes pid=0/lev=0 to getlev so a standalone load skips that check.
+    """
+    e = EngineEnv()
+    e.reset(seeds=(21, 21))
+    e.modify(goto_depth=5)
+    obs, _, _ = e.step(ord("l"))
+    assert bl(obs, "depth") == 5
+    ck = tmp_path / "deep.ckpt"
+    e.checkpoint(ck)
+    # resume the deep-floor checkpoint in a fresh env (the crashing path)
+    e2 = EngineEnv()
+    obs2 = e2.resume(ck)
+    assert bl(obs2, "depth") == 5  # correct level restored, not a crash
+    # the map is populated (not a corrupt/empty frame) and play continues
+    assert sum(1 for r in obs2.chars for c in r if 32 <= int(c) < 127 and int(c) != 32) > 50
+    obs3, _, _ = e2.step(ord("."))
+    assert obs3 is not None
+    # repeated resume of the same deep checkpoint must stay stable
+    for _ in range(5):
+        o = e2.resume(ck)
+        assert bl(o, "depth") == 5
