@@ -2,43 +2,47 @@
 {% block title %}Map Viewer — NetHack Console{% endblock %}
 {% block body %}
 <div class="page">
-  <div id="main">
-    <div id="message">&nbsp;</div>
-    <div id="screen" class="screen" tabindex="0"></div>
-    <div id="status">connecting...</div>
+  <main id="main-content" class="maincol" tabindex="-1">
+    <h1 class="sr-only">NetHack Map Viewer</h1>
+    <div id="message" role="status" aria-live="polite" aria-atomic="true">&nbsp;</div>
+    <div id="screen" class="screen" tabindex="0" role="application"
+         aria-label="NetHack game screen — focus this, then type movement and command keys"
+         aria-describedby="hint"></div>
+    <div id="status" aria-live="polite" aria-atomic="true">connecting…</div>
     <div id="hint">Click the screen, then type NetHack commands (h j k l y u b n move,
       &gt; &lt; stairs, s search, i inventory). Arrows = movement. Enter / Esc supported.</div>
-  </div>
-  <div id="side">
+  </main>
+  <aside id="side" aria-label="Controls">
     <div id="groups"></div>
     <div id="modify">
-      <h3>Modify state</h3>
+      <h2>Modify state</h2>
       <div class="mrow">
-        <span class="mname">Go to level</span>
-        <input type="number" id="m_goto" class="mnum" min="1" max="60" value="1">
-        <button class="mbtn" onclick="goLevel()">Go</button>
+        <span class="mname" id="lbl-goto">Go to level</span>
+        <input type="number" id="m_goto" class="mnum" min="1" max="60" value="1" aria-labelledby="lbl-goto">
+        <button type="button" class="mbtn" onclick="goLevel()" aria-label="Go to the entered dungeon level">Go</button>
       </div>
       <div class="mrow">
         <span class="mname">Experience</span>
-        <button class="mbtn wide" onclick="plusLevel()">+ Level</button>
+        <button type="button" class="mbtn wide" onclick="plusLevel()">+ Level</button>
       </div>
-      <div class="mrow"><span class="mname">hp</span>
-        <input type="number" id="m_hp" class="mnum"><button class="mbtn" onclick="setField('hp')">Set</button></div>
-      <div class="mrow"><span class="mname">max_hp</span>
-        <input type="number" id="m_max_hp" class="mnum"><button class="mbtn" onclick="setField('max_hp')">Set</button></div>
-      <div class="mrow"><span class="mname">gold</span>
-        <input type="number" id="m_gold" class="mnum"><button class="mbtn" onclick="setField('gold')">Set</button></div>
-      <div class="mrow"><span class="mname">xp_level</span>
-        <input type="number" id="m_xp_level" class="mnum"><button class="mbtn" onclick="setField('xp_level')">Set</button></div>
-      <div class="mrow"><span class="mname">hunger</span>
-        <input type="number" id="m_hunger" class="mnum"><button class="mbtn" onclick="setField('hunger')">Set</button></div>
-      <div id="modstat"></div>
+      <div class="mrow"><span class="mname" id="lbl-hp">hp</span>
+        <input type="number" id="m_hp" class="mnum" aria-labelledby="lbl-hp"><button type="button" class="mbtn" onclick="setField('hp')" aria-label="Set hp">Set</button></div>
+      <div class="mrow"><span class="mname" id="lbl-maxhp">max_hp</span>
+        <input type="number" id="m_max_hp" class="mnum" aria-labelledby="lbl-maxhp"><button type="button" class="mbtn" onclick="setField('max_hp')" aria-label="Set max_hp">Set</button></div>
+      <div class="mrow"><span class="mname" id="lbl-gold">gold</span>
+        <input type="number" id="m_gold" class="mnum" aria-labelledby="lbl-gold"><button type="button" class="mbtn" onclick="setField('gold')" aria-label="Set gold">Set</button></div>
+      <div class="mrow"><span class="mname" id="lbl-xp">xp_level</span>
+        <input type="number" id="m_xp_level" class="mnum" aria-labelledby="lbl-xp"><button type="button" class="mbtn" onclick="setField('xp_level')" aria-label="Set xp_level">Set</button></div>
+      <div class="mrow"><span class="mname" id="lbl-hunger">hunger</span>
+        <input type="number" id="m_hunger" class="mnum" aria-labelledby="lbl-hunger"><button type="button" class="mbtn" onclick="setField('hunger')" aria-label="Set hunger">Set</button></div>
+      <div id="modstat" role="status" aria-live="polite"></div>
     </div>
-    <div id="seedrow">seed <input id="seed" value="42"></div>
-    <button id="reset" class="act-btn" onclick="doReset()">Reset / Regenerate floor</button>
-    <button id="recbtn" class="act-btn" onclick="toggleRec()">&#9679; Record trace</button>
-    <div id="recstat"></div>
-  </div>
+    <div id="seedrow"><label for="seed">seed</label> <input id="seed" value="42" inputmode="numeric"></div>
+    <button type="button" id="reset" class="act-btn" onclick="doReset()">Reset / Regenerate floor<span
+      id="dirtyflag" class="dirtyflag" hidden> — changes pending</span></button>
+    <button type="button" id="recbtn" class="act-btn" onclick="toggleRec()" aria-pressed="false"><span aria-hidden="true">&#9679;</span> <span id="reclabel">Record trace</span></button>
+    <div id="recstat" role="status" aria-live="polite"></div>
+  </aside>
 </div>
 
 <script>initMap();</script>

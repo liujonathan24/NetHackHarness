@@ -24,7 +24,9 @@ computed here.
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import json
 import pathlib
 from typing import Optional
 
@@ -270,6 +272,40 @@ class EngineEnv:
         observation returned here already reflects the loaded level.
         """
         self._engine.load_level(pathlib.Path(path).read_bytes())
+        return self._engine.to_core_observation()
+
+    # ----- resumable checkpoint = seed + level blob + player blob -----
+
+    def save_player(self, path) -> None:
+        """Serialize the hero (u + inventory + attributes) to a blob at ``path``."""
+        pathlib.Path(path).write_bytes(self._engine.save_player())
+
+    def checkpoint(self, path) -> None:
+        """Write a resumable checkpoint = seed + level blob + player blob.
+
+        The seed lets resume() reproduce object appearances/ids; the level and
+        player blobs are the floor + hero.
+        """
+        data = {
+            "seed": list(self._current_seeds),
+            "level": base64.b64encode(self._engine.save_level()).decode(),
+            "player": base64.b64encode(self._engine.save_player()).decode(),
+        }
+        pathlib.Path(path).write_text(json.dumps(data))
+
+    def resume(self, path) -> CoreObservation:
+        """Restore a checkpoint: reset to its seed (so object appearances/ids
+        match), install the level, then the hero, then render once.
+
+        Honors the hard ordering contract: load_level_raw before
+        load_player_raw, then a single step(18) render.  Returns the obs.
+        """
+        d = json.loads(pathlib.Path(path).read_text())
+        core, disp = d["seed"]
+        self.reset(seeds=(int(core), int(disp)))
+        self._engine.load_level_raw(base64.b64decode(d["level"]))   # LEVEL first
+        self._engine.load_player_raw(base64.b64decode(d["player"]))  # THEN player
+        self._engine.step(18)  # single two-phase render after BOTH
         return self._engine.to_core_observation()
 
     # ----- difficulty knobs -----

@@ -76,6 +76,8 @@ def load_trace(path) -> list[dict]:
             raw = json.loads(line)
         except json.JSONDecodeError:
             continue
+        if not isinstance(raw, dict):  # valid-JSON but non-object line -> skip (raw.get below would crash)
+            continue
         text = _turn_text(raw)
         status = dict(raw.get("status") or {})
         # prefer explicit fields, else parse from the rendered text

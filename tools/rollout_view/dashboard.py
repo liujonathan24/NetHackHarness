@@ -18,16 +18,25 @@ from .theme import CANDY, THEME_CSS
 
 DEFAULT_METRICS = ("dlvl", "hp_frac", "xp", "kills_cum")
 
+# Per-run line dash patterns so runs are distinguishable WITHOUT relying on colour
+# alone (WCAG 1.4.1) — important for colour-blind users. Length 6 vs the 5-colour
+# palette so the (colour, dash) combo cycles with period LCM(5,6)=30 rather than
+# repeating every 5 runs — each of up to 5 runs still gets a distinct dash, and
+# runs 6..30 stay distinct combos instead of exactly reusing run 1's.
+_DASHES = ("", "6 3", "2 3", "8 3 2 3", "1 3", "10 4")
+
 
 def _svg_linechart(title: str, series_by_run: list[tuple[str, list[tuple[int, float]]]],
                    *, w: int = 560, h: int = 180) -> str:
     """One chart: x=turn, y=value, one polyline per run. series_by_run = [(label, [(x,y)..])]."""
-    pad_l, pad_b, pad_t, pad_r = 38, 22, 14, 12
+    pad_b, pad_t, pad_r = 22, 14, 12
     xs = [x for _, s in series_by_run for x, _ in s]
     ys = [y for _, s in series_by_run for _, y in s]
     if not xs or not ys:
         return f'<div class="chart"><div class="ctitle">{_html.escape(title)}</div><div class="dim">no data</div></div>'
-    xmin, xmax = min(xs), max(xs) or 1
+    # NB: no `or 1` on xmax — px()'s divisor has its own zero guard, and bumping
+    # a single-point-at-turn-0 series to xmax=1 would mislabel its x-axis range.
+    xmin, xmax = min(xs), max(xs)
     ymin, ymax = min(ys), max(ys)
     if ymax == ymin:
         # Flat series (constant metric, common in short recordings): pad the
@@ -35,6 +44,11 @@ def _svg_linechart(title: str, series_by_run: list[tuple[str, list[tuple[int, fl
         # the bottom axis where it reads as "no data".
         pad = abs(ymin) * 0.5 or 1
         ymin, ymax = ymin - pad, ymax + pad
+    # Size the left gutter to the widest y-tick label so large values (e.g. xp in
+    # the hundreds of thousands) aren't clipped off the chart's left edge; small
+    # ranges keep the original 38px. ~6.6px per monospace char + the 5px tick gap.
+    _ylab = [f"{yy:g}" for yy in (ymin, (ymin + ymax) / 2, ymax)]
+    pad_l = max(38, round(10 + max(len(s) for s in _ylab) * 6.6))
     iw, ih = w - pad_l - pad_r, h - pad_t - pad_b
 
     def px(x):
@@ -43,7 +57,14 @@ def _svg_linechart(title: str, series_by_run: list[tuple[str, list[tuple[int, fl
     def py(y):
         return pad_t + ih - (y - ymin) / (ymax - ymin) * ih
 
-    parts = [f'<svg viewBox="0 0 {w} {h}" class="svgchart" role="img">']
+    # Accessible name for the chart: a bare role="img" is announced as just
+    # "image". Describe the metric, the runs plotted, and the value range so a
+    # screen reader conveys the chart's content. The <title> is the SVG-native
+    # accessible name; aria-label backs it up for engines that don't map <title>.
+    runs_txt = ", ".join(lbl for lbl, s in series_by_run if s) or "no runs"
+    desc = f"Line chart: {title} over turns. Runs: {runs_txt}. Range {ymin:g} to {ymax:g}."
+    parts = [f'<svg viewBox="0 0 {w} {h}" class="svgchart" role="img" '
+             f'aria-label="{_html.escape(desc)}"><title>{_html.escape(desc)}</title>']
     # axes
     parts.append(f'<line x1="{pad_l}" y1="{pad_t}" x2="{pad_l}" y2="{pad_t+ih}" class="axis"/>')
     parts.append(f'<line x1="{pad_l}" y1="{pad_t+ih}" x2="{pad_l+iw}" y2="{pad_t+ih}" class="axis"/>')
@@ -52,13 +73,20 @@ def _svg_linechart(title: str, series_by_run: list[tuple[str, list[tuple[int, fl
         Y = py(yy)
         parts.append(f'<line x1="{pad_l}" y1="{Y:.1f}" x2="{pad_l+iw}" y2="{Y:.1f}" class="grid"/>')
         parts.append(f'<text x="{pad_l-5}" y="{Y+4:.1f}" class="ytick" text-anchor="end">{yy:g}</text>')
-    parts.append(f'<text x="{pad_l+iw}" y="{pad_t+ih+18}" class="xtick" text-anchor="end">turn {xmax:g}</text>')
+    # x-axis labels at both ends so the turn range is explicit (the left end isn't
+    # always turn 0 — a trace may start partway through), and to match the y-axis
+    # which labels min/mid/max.
+    parts.append(f'<text x="{pad_l}" y="{pad_t+ih+18}" class="xtick" text-anchor="start">turn {xmin:g}</text>')
+    if xmax != xmin:  # single-point series sits at the left edge — one label only
+        parts.append(f'<text x="{pad_l+iw}" y="{pad_t+ih+18}" class="xtick" text-anchor="end">{xmax:g}</text>')
     for i, (label, s) in enumerate(series_by_run):
         if not s:
             continue
         color = CANDY[i % len(CANDY)]
+        dash = _DASHES[i % len(_DASHES)]
         pts = " ".join(f"{px(x):.1f},{py(y):.1f}" for x, y in s)
-        parts.append(f'<polyline points="{pts}" fill="none" stroke="{color}" stroke-width="2"/>')
+        parts.append(f'<polyline points="{pts}" fill="none" stroke="{color}" stroke-width="2"'
+                     + (f' stroke-dasharray="{dash}"' if dash else '') + '/>')
         # Dot markers per point. Crucial for a single-point series, where a
         # one-vertex <polyline> draws no segment and is otherwise invisible —
         # so plotting a single short trace would show "nothing". Also makes
@@ -66,8 +94,18 @@ def _svg_linechart(title: str, series_by_run: list[tuple[str, list[tuple[int, fl
         for x, y in s:
             parts.append(f'<circle cx="{px(x):.1f}" cy="{py(y):.1f}" r="2.5" fill="{color}"/>')
     parts.append("</svg>")
+    # Legend swatch is a short line sample showing the run's colour AND dash
+    # pattern, so it stays distinguishable for colour-blind users (matches the
+    # chart line). The label colour is left to CSS (readable on the panel bg).
+    def _swatch(i):
+        c = CANDY[i % len(CANDY)]
+        d = _DASHES[i % len(_DASHES)]
+        da = f' stroke-dasharray="{d}"' if d else ''
+        # 28px wide so the longer dash patterns show ~2 cycles and stay legible.
+        return (f'<svg width="28" height="8" style="vertical-align:middle" aria-hidden="true">'
+                f'<line x1="0" y1="4" x2="28" y2="4" stroke="{c}" stroke-width="2"{da}/></svg>')
     legend = " ".join(
-        f'<span class="lg" style="color:{CANDY[i%len(CANDY)]}">&#9632; {_html.escape(lbl)}</span>'
+        f'<span class="lg">{_swatch(i)} {_html.escape(lbl)}</span>'
         for i, (lbl, _) in enumerate(series_by_run))
     return (f'<div class="chart"><div class="ctitle">{_html.escape(title)}</div>'
             f'{"".join(parts)}<div class="legend">{legend}</div></div>')
