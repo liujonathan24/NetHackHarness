@@ -224,7 +224,9 @@ button.act-btn:hover{filter:brightness(1.12)}
   border:1px solid var(--line);border-radius:3px;padding:4px 11px;font-family:inherit;
   font-size:12px;letter-spacing:.5px;cursor:pointer}
 #gif-toggle:hover{background:#2b2d3a}
-.gif-grid{display:flex;flex-wrap:wrap;gap:14px}
+/* Two demos per row; collapse to one column on narrow viewports (WCAG 1.4.10). */
+.gif-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:680px){ .gif-grid{grid-template-columns:1fr} }
 /* min-width:0 lets the flex cell shrink below the GIF's intrinsic width so a
    wide demo (the served gif_*.gif are 560–648px) doesn't force horizontal page
    scroll on a narrow viewport (WCAG 1.4.10 reflow). */
