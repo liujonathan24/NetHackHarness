@@ -11,7 +11,8 @@
            aria-describedby="hint"></div>
       <div id="status" aria-live="polite" aria-atomic="true">connecting…</div>
       <div id="hint">Click the screen, then type NetHack commands (h j k l y u b n move,
-        &gt; &lt; stairs, s search, i inventory). Arrows = movement. Enter / Esc supported.</div>
+        &gt; &lt; stairs, s search, i inventory). Arrows = movement. Enter / Esc supported.
+        <b>Backspace = undo</b> the last step.</div>
     </div>
   </main>
   <aside id="side" aria-label="Controls">
@@ -39,6 +40,10 @@
         <input type="number" id="m_hunger" class="mnum" aria-labelledby="lbl-hunger"><button type="button" class="mbtn" onclick="setField('hunger')" aria-label="Set hunger">Set</button></div>
       <div id="modstat" role="status" aria-live="polite"></div>
     </div>
+    <button type="button" id="undobtn" class="act-btn" onclick="doUndo()" disabled
+      aria-keyshortcuts="Backspace"><span aria-hidden="true">&#8634;</span> Undo step
+      <span id="undocount" aria-hidden="true"></span></button>
+    <div id="undostat" role="status" aria-live="polite" class="sr-only"></div>
     <div id="seedrow"><label for="seed">seed</label> <input id="seed" value="42" inputmode="numeric"></div>
     <button type="button" id="reset" class="act-btn" onclick="doReset()">Reset / Regenerate floor<span
       id="dirtyflag" class="dirtyflag" hidden> — changes pending</span></button>

@@ -59,7 +59,13 @@ STATE: dict = {"env": None, "seed": 42, "tune": {}, "rec": None, "turn": 0,
                # (unstarted) env to read the knob list, and calling engine ops on
                # an unstarted game crashes the C library — so the play routes gate
                # on this, not just `env is not None`.
-               "started": False}
+               "started": False,
+               # Undo history: in-memory snapshot handles, one taken BEFORE each
+               # /step (snapshot/restore is ~0.04ms and malloc-backed, so no disk
+               # or latency cost). Bounded ring; cleared on reset/resume.
+               "history": []}
+
+_UNDO_CAP = 200
 _REC_DIR = _ROOT / "outputs" / "web_play"
 _TRACE_DIRS = [_REC_DIR, _ROOT / "outputs", _ROOT / "environments" / "nethack" / "outputs"]
 # Serializes /obs/plot's register/render/unregister against the process-global
@@ -121,6 +127,31 @@ def _need_started():
     return None
 
 
+def _push_undo():
+    """Snapshot the live state onto the undo ring (called BEFORE each step)."""
+    try:
+        STATE["history"].append(STATE["env"].snapshot())
+    except Exception:
+        return
+    while len(STATE["history"]) > _UNDO_CAP:
+        old = STATE["history"].pop(0)
+        try:
+            STATE["env"].free_snapshot(old)
+        except Exception:
+            pass
+
+
+def _clear_undo():
+    """Free + drop all undo snapshots (on reset/resume — a new game)."""
+    for h in STATE["history"]:
+        try:
+            if STATE["env"] is not None:
+                STATE["env"].free_snapshot(h)
+        except Exception:
+            pass
+    STATE["history"].clear()
+
+
 def _rows(obs):
     return ["".join(chr(int(c)) if 32 <= int(c) < 127 else " " for c in r) for r in obs.chars]
 
@@ -136,7 +167,8 @@ def _payload(obs) -> dict:
     return {"map": _rows(obs), "colors": [[int(c) for c in r] for r in obs.colors],
             "message": msg, "status": _status(obs),
             "tune": _env().get_tune(), "done": bool(obs is not None and _env().done),
-            "recording": STATE["rec"]["name"] if STATE["rec"] else None}
+            "recording": STATE["rec"]["name"] if STATE["rec"] else None,
+            "undos": len(STATE["history"])}
 
 
 def _record(obs, action_key=None):
@@ -250,6 +282,7 @@ def reset():
     except (KeyError, ValueError) as e:
         return jsonify({"error": str(e)}), 400
     STATE["started"] = True  # a game is now active; play routes may touch the engine
+    _clear_undo()  # a new game; don't undo into the previous one
     # Finalize any in-progress recording before the new game proceeds: keeping the
     # same trace across a reset collides checkpoints (a new game at the same dlvl
     # reuses the prior game's <stem>.ckpt.<dlvl>.json), silently corrupting resume.
@@ -297,6 +330,8 @@ def step():
         return g
     obs = None
     last = None
+    if keys:
+        _push_undo()  # snapshot the pre-step state so /undo can return to it
     for ch in keys:
         obs, _d, _i = STATE["env"].step(ord(ch))
         last = ch
@@ -305,6 +340,44 @@ def step():
     obs = _settle(STATE["env"], obs)
     _record(obs, last)
     return jsonify(_payload(obs))
+
+
+@app.route("/undo", methods=["POST"])
+@_engine_locked
+def undo():
+    """Step back: restore the snapshot taken before the last step(s). {n: k}
+    undoes k steps at once. Returns the reverted frame (or 400 if nothing to
+    undo). Does not rewind an active recording (undo is a live-play affordance)."""
+    if (g := _need_started()):
+        return g
+    data = request.get_json(silent=True) or {}
+    try:
+        n = int(data.get("n", 1))
+    except (TypeError, ValueError):
+        return jsonify({"error": "n must be an integer"}), 400
+    hist = STATE["history"]
+    if not hist:
+        return jsonify({"error": "nothing to undo"}), 400
+    n = max(1, min(n, len(hist)))
+    target = None
+    for _ in range(n):  # pop n; free the ones we skip past, keep the n-th back
+        if target is not None:
+            try:
+                STATE["env"].free_snapshot(target)
+            except Exception:
+                pass
+        target = hist.pop()
+    STATE["env"].restore(target)
+    try:
+        STATE["env"].free_snapshot(target)  # consumed by the restore
+    except Exception:
+        pass
+    # A restore only shows up in the observation after the next step, so issue a
+    # ctrl-R redraw (action 18 — repaints + vision recalc, takes no game turn) to
+    # render the restored frame; mirrors /live and /resume.
+    obs, _, _ = STATE["env"].step(18)
+    obs = _settle(STATE["env"], obs)
+    return jsonify({**_payload(obs), "undos_left": len(hist)})
 
 
 @app.route("/modify", methods=["POST"])
@@ -439,6 +512,7 @@ def resume():
     except Exception as e:  # malformed/incompatible checkpoint -> clean 400
         return jsonify({"error": f"could not resume: {e}"}), 400
     STATE["started"] = True  # resume starts a live game
+    _clear_undo()  # resumed into a different game; clear prior undo history
     # Like /reset: a resume loads a different game, so finalize any in-progress
     # recording rather than append the resumed game to it (checkpoint collision).
     if STATE["rec"]:
