@@ -160,10 +160,44 @@ def gif_hunger(seed=42, nsteps=120):
     return save_gif("hunger_rate_scale", frames, duration=180)
 
 
+def gif_mob_spawn(seed=42):
+    """Empty floor -> swarm: more initial monsters at higher mob_spawn."""
+    env = EngineEnv()
+    frames = []
+    for v in (0.0, 1.0, 2.0, 3.0):
+        obs = _regen(env, seed, mob_spawn=v)
+        rows, colors = _obs_rows(obs)
+        # monsters/pets are the alphabetic glyphs on the map; minus the @ hero.
+        nmon = sum(sum(ch.isalpha() for ch in r) for r in rows) - 1
+        frames.append(frame(rows, colors,
+                            f"mob_spawn = {v:<4}   ({nmon} monsters on the floor, seed {seed})"))
+    env.close()
+    return save_gif("mob_spawn", frames + frames[-2:0:-1], duration=750)
+
+
+def gif_room_size(seed=42):
+    """Cramped warrens vs cavernous halls: room_size scales each room's
+    dimensions (the floor-tile count wobbles because the generator fits a
+    different number of rooms, but the room SHAPES change clearly)."""
+    env = EngineEnv()
+    frames = []
+    for v in (0.25, 0.5, 1.0, 2.0, 3.0):
+        obs = _regen(env, seed, room_size=v)
+        rows, colors = _obs_rows(obs)
+        floors = sum(r.count(".") for r in rows)
+        frames.append(frame(rows, colors,
+                            f"room_size = {v:<4}   ({floors} floor tiles, seed {seed})"))
+    env.close()
+    return save_gif("room_size", frames + frames[-2:0:-1], duration=650)
+
+
 _BUILDERS = {
     "room_density": gif_room_density,
+    "room_size": gif_room_size,
     "reveal_map": gif_reveal_map,
-    "hunger_rate_scale": gif_hunger,
+    "mob_spawn": gif_mob_spawn,
+    # hunger_rate_scale (gif_hunger) kept as a function but dropped from the
+    # gallery — the two-bar nutrition demo wasn't compelling.
 }
 
 
