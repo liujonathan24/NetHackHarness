@@ -8,11 +8,11 @@ whitelist + post-apply `git diff --name-only` guard rejects any iteration that
 touches a non-whitelisted (or engine) path.
 
   Run (dry-run, NO API / NO budget / NO reinstall / NO eval):
-    uv run python -m tools.harness_loop.auto_improve --iterations 2 --dry-run \
+    uv run python -m approaches.continuous_harness.auto_improve --iterations 2 --dry-run \
         --out /tmp/auto_improve_dry
 
   Run (real, supervisor only — costs ~eval_n rollouts per accepted/rejected iter):
-    source /tmp/ch_env.sh && uv run python -m tools.harness_loop.auto_improve \
+    source /tmp/ch_env.sh && uv run python -m approaches.continuous_harness.auto_improve \
         --iterations 10 --eval-n 8 --max-turns 200 --margin 0.15 \
         --problem "<bottleneck brief>" --out /tmp/auto_improve_run
 
@@ -621,7 +621,7 @@ def _write_leaderboard(path: Path, runid: str, champion_sha: str,
 # ---------------------------------------------------------------------------- #
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="python -m tools.harness_loop.auto_improve",
+        prog="python -m approaches.continuous_harness.auto_improve",
         description="Code-editing champion/challenger self-improvement loop for "
                     "the NetHack harness. The game engine is FROZEN (symlinked "
                     "read-only); an LLM edits ONE whitelisted harness file per "
