@@ -95,7 +95,11 @@ def _regen(env, seed, **tune):
 def gif_room_density(seed=42):
     env = EngineEnv()
     frames = []
-    for d in (1.0, 0.7, 0.5, 0.3, 0.2, 0.1, 0.05):
+    # room_density is thresholded: the floor is unchanged from 1.0 down to ~0.2,
+    # then thins out sharply. Pick values that each cross a threshold so every
+    # frame visibly differs (1.0->276, 0.15->248, 0.1->163, 0.05->54, 0.02->39
+    # floor tiles on this seed) instead of five identical "full floor" frames.
+    for d in (1.0, 0.15, 0.1, 0.05, 0.02):
         obs = _regen(env, seed, room_density=d)
         rows, colors = _obs_rows(obs)
         floors = sum(r.count(".") for r in rows)
