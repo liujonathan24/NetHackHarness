@@ -63,7 +63,10 @@ STATE: dict = {"env": None, "seed": 42, "tune": {}, "rec": None, "turn": 0,
                # Undo history: in-memory snapshot handles, one taken BEFORE each
                # /step (snapshot/restore is ~0.04ms and malloc-backed, so no disk
                # or latency cost). Bounded ring; cleared on reset/resume.
-               "history": []}
+               "history": [],
+               # A single manual "checkpoint" snapshot the user pins and restores
+               # repeatedly (the Monte-Carlo demo: pin, roll out, restore, repeat).
+               "mark": None}
 
 _UNDO_CAP = 200
 _REC_DIR = _ROOT / "outputs" / "web_play"
@@ -152,6 +155,17 @@ def _clear_undo():
     STATE["history"].clear()
 
 
+def _clear_mark():
+    """Free + drop the pinned checkpoint (on reset/resume — a new game)."""
+    if STATE["mark"] is not None:
+        try:
+            if STATE["env"] is not None:
+                STATE["env"].free_snapshot(STATE["mark"])
+        except Exception:
+            pass
+        STATE["mark"] = None
+
+
 def _rows(obs):
     return ["".join(chr(int(c)) if 32 <= int(c) < 127 else " " for c in r) for r in obs.chars]
 
@@ -168,7 +182,7 @@ def _payload(obs) -> dict:
             "message": msg, "status": _status(obs),
             "tune": _env().get_tune(), "done": bool(obs is not None and _env().done),
             "recording": STATE["rec"]["name"] if STATE["rec"] else None,
-            "undos": len(STATE["history"])}
+            "undos": len(STATE["history"]), "marked": STATE["mark"] is not None}
 
 
 def _record(obs, action_key=None):
@@ -283,6 +297,7 @@ def reset():
         return jsonify({"error": str(e)}), 400
     STATE["started"] = True  # a game is now active; play routes may touch the engine
     _clear_undo()  # a new game; don't undo into the previous one
+    _clear_mark()  # drop any pinned checkpoint from the old game
     # Finalize any in-progress recording before the new game proceeds: keeping the
     # same trace across a reset collides checkpoints (a new game at the same dlvl
     # reuses the prior game's <stem>.ckpt.<dlvl>.json), silently corrupting resume.
@@ -378,6 +393,38 @@ def undo():
     obs, _, _ = STATE["env"].step(18)
     obs = _settle(STATE["env"], obs)
     return jsonify({**_payload(obs), "undos_left": len(hist)})
+
+
+@app.route("/mark", methods=["POST"])
+@_engine_locked
+def mark():
+    """Pin the current state as the checkpoint (overwrites any prior pin). The
+    Monte-Carlo demo: pin here, roll out, /restore_mark, roll out again."""
+    if (g := _need_started()):
+        return g
+    _clear_mark()
+    try:
+        STATE["mark"] = STATE["env"].snapshot()
+    except Exception as e:
+        return jsonify({"error": f"could not checkpoint: {e}"}), 400
+    return jsonify({"marked": True})
+
+
+@app.route("/restore_mark", methods=["POST"])
+@_engine_locked
+def restore_mark():
+    """Restore the pinned checkpoint (it stays pinned — restore repeatedly). A
+    ctrl-R redraw renders the reverted frame (a restore only shows after a step).
+    Snapshots taken before the pin are still undoable; we keep the undo history
+    as-is so the timeline stays consistent with what's on screen."""
+    if (g := _need_started()):
+        return g
+    if STATE["mark"] is None:
+        return jsonify({"error": "no checkpoint set"}), 400
+    STATE["env"].restore(STATE["mark"])
+    obs, _, _ = STATE["env"].step(18)
+    obs = _settle(STATE["env"], obs)
+    return jsonify(_payload(obs))
 
 
 @app.route("/modify", methods=["POST"])
@@ -513,6 +560,7 @@ def resume():
         return jsonify({"error": f"could not resume: {e}"}), 400
     STATE["started"] = True  # resume starts a live game
     _clear_undo()  # resumed into a different game; clear prior undo history
+    _clear_mark()  # drop any pinned checkpoint from the prior game
     # Like /reset: a resume loads a different game, so finalize any in-progress
     # recording rather than append the resumed game to it (checkpoint collision).
     if STATE["rec"]:
