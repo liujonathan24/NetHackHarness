@@ -12,6 +12,9 @@ verification_report: null
 branch_status: pending
 created_at: 2026-06-09
 verified_at: null
-archived: false
+archived: true
 handoff_context: openspec/changes/custom-nethack-engine/.comet/handoff/design-context.json
 handoff_hash: 7a10e1b90c6546535f96740d53383448dc84eb9e30dedb5bc40e1d06afb1c120
+
+superseded_by: level-replay
+archived_note: superseded by level-replay (engine migration completed there); state-snapshot synced to main; the other delta specs already carry level-replay's newer versions in main.

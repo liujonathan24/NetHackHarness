@@ -34,3 +34,4 @@ nle_crash_*.txt
 
 # web play recordings (generated)
 /outputs/web_play/
+.worktrees
