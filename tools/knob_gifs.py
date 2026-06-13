@@ -191,11 +191,42 @@ def gif_room_size(seed=42):
     return save_gif("room_size", frames + frames[-2:0:-1], duration=650)
 
 
+def gif_backstep(seed=42, fwd=5):
+    """Play forward, then Backspace-undo back to the start. Uses the exact
+    snapshot/restore mechanism the live Undo button does: snapshot before each
+    step, then restore them in reverse (a ctrl-R redraw renders each reverted
+    frame), so the @ walks out and retraces its steps."""
+    env = EngineEnv()
+    env.reset(seeds=(seed, seed))
+    for _ in range(2):           # drain the welcome --More-- into live play
+        env.step(ord("."))
+    frames, snaps = [], []
+    obs = env.engine.to_core_observation()
+    rows, colors = _obs_rows(obs)
+    frames.append(frame(rows, colors, "play forward — start"))
+    for i in range(fwd):         # forward: snapshot, step right, capture
+        snaps.append(env.snapshot())
+        obs, _, _ = env.step(ord("l"))
+        rows, colors = _obs_rows(obs)
+        frames.append(frame(rows, colors, f"play forward — step {i + 1}"))
+    for i in range(len(snaps) - 1, -1, -1):   # backward: restore + ctrl-R redraw
+        env.restore(snaps[i])
+        obs, _, _ = env.step(18)
+        rows, colors = _obs_rows(obs)
+        frames.append(frame(rows, colors,
+                            f"Backspace = undo  —  back to step {i}", hl=(120, 230, 120)))
+    for s in snaps:
+        env.free_snapshot(s)
+    env.close()
+    return save_gif("backstep", frames, duration=480)
+
+
 _BUILDERS = {
     "room_density": gif_room_density,
     "room_size": gif_room_size,
     "reveal_map": gif_reveal_map,
     "mob_spawn": gif_mob_spawn,
+    "backstep": gif_backstep,
     # hunger_rate_scale (gif_hunger) kept as a function but dropped from the
     # gallery — the two-bar nutrition demo wasn't compelling.
 }
