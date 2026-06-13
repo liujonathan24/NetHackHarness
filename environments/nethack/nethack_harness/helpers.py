@@ -172,6 +172,11 @@ def _write_trace_entry(env_self, state: dict, assistant_msg, tool_calls,
             "reward": float(total_reward),
             "messages": list(s.messages) if s and s.messages else [],
         }
+        # Variant CH: capture the refiner's per-interval edits (set by
+        # _ch_refiner_hook on refinement turns) so the trace records exactly
+        # what the teacher changed this turn.
+        if state.get("_ch_last_edits"):
+            entry["ch_edits"] = state["_ch_last_edits"]
         with path.open("a") as f:
             f.write(_json.dumps(entry) + "\n")
     except Exception:

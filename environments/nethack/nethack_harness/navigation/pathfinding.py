@@ -191,6 +191,49 @@ def a_star(
     return None
 
 
+def reachable_set(
+    chars: np.ndarray,
+    start: tuple[int, int],
+) -> set[tuple[int, int]]:
+    """Flood-fill the set of walkable tiles reachable from `start`.
+
+    BFS over the same 8-connected walkable neighborhood `a_star` uses (and
+    the same doorway-diagonal rule), so the reachable set is exactly the set
+    of tiles for which `a_star(chars, start, t)` would succeed. `start` itself
+    is included if it is in-bounds.
+
+    Used by `move_to` to make best-effort progress toward a target that has no
+    fully-explored path yet: pick the reachable tile nearest the target and
+    step toward it, revealing more map for subsequent calls.
+    """
+    h, w = chars.shape
+    sx, sy = start
+    out: set[tuple[int, int]] = set()
+    if not (0 <= sx < w and 0 <= sy < h):
+        return out
+    from collections import deque
+    out.add(start)
+    queue: deque = deque([start])
+    while queue:
+        cx, cy = queue.popleft()
+        for dx, dy, _ in _NEIGHBOR_DIRS:
+            nx, ny = cx + dx, cy + dy
+            if (nx, ny) in out:
+                continue
+            if not (0 <= nx < w and 0 <= ny < h):
+                continue
+            if not is_walkable(int(chars[ny, nx])):
+                continue
+            if dx != 0 and dy != 0:
+                # Same doorway-corner rule a_star enforces, so reachability
+                # matches pathability exactly.
+                if chr(int(chars[cy, nx])) in "+'" or chr(int(chars[ny, cx])) in "+'":
+                    continue
+            out.add((nx, ny))
+            queue.append((nx, ny))
+    return out
+
+
 def _reconstruct_path(
     came_from: dict[tuple[int, int], tuple[tuple[int, int], int]],
     end: tuple[int, int],
