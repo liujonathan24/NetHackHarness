@@ -28,6 +28,8 @@ from __future__ import annotations
 
 import argparse
 import ast
+import atexit
+import concurrent.futures
 import functools
 import json
 import math
@@ -40,7 +42,8 @@ _ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT / "environments" / "nethack"))
 sys.path.insert(0, str(_ROOT))  # so `tools.rollout_view` imports when run as a script
 
-from flask import Flask, jsonify, render_template, request, send_from_directory  # noqa: E402
+from flask import (Flask, copy_current_request_context, jsonify,  # noqa: E402
+                   render_template, request, send_from_directory)
 
 from nethack_core.engine_env import EngineEnv  # noqa: E402
 
@@ -75,20 +78,61 @@ _TRACE_DIRS = [_REC_DIR, _ROOT / "outputs", _ROOT / "environments" / "nethack" /
 # custom-metric registry (Flask runs threaded).
 _OBS_PLOT_LOCK = threading.Lock()
 
-# The server shares ONE EngineEnv and the C engine is not reentrant, so no two
-# engine-touching requests may run at once (e.g. the map open in two tabs, or a
-# /step racing a Tracer /resume). Every route that reads or mutates the engine is
-# wrapped with @_engine_locked. The client also serializes its own requests, but
-# this is the cross-client safety net. RLock so a locked route may call another.
-_ENGINE_LOCK = threading.RLock()
+# The server shares ONE EngineEnv. The C engine is not reentrant AND it is a
+# coroutine (fcontext) engine whose fibers must always be resumed on the SAME OS
+# thread they were created on — but Flask (threaded=True) dispatches each request
+# on a different pool thread. A plain lock serializes requests yet still runs them
+# on varying threads, so a fiber created on thread A and resumed on thread B can
+# jump to a context that is no longer valid for B (observed as SIGSEGV in
+# jump_fcontext with "<unknown thread, no slot>"), and tearing the env down on a
+# thread that never drove it crashes the same way.
+#
+# Fix: pin EVERY engine touch — creation, stepping, snapshot/restore, AND
+# teardown — to ONE dedicated worker thread. @_engine_locked dispatches the call
+# onto that thread and blocks for the result; a single worker also serialises
+# naturally (no lock needed). Re-entrant locked calls (a locked route calling
+# another) already run ON the engine thread, so they execute directly instead of
+# re-submitting, which would deadlock the single worker.
+_ENGINE_EXEC = concurrent.futures.ThreadPoolExecutor(
+    max_workers=1, thread_name_prefix="engine")
+_ENGINE_TLS = threading.local()
 
 
 def _engine_locked(fn):
     @functools.wraps(fn)
     def _wrapped(*a, **k):
-        with _ENGINE_LOCK:
-            return fn(*a, **k)
+        if getattr(_ENGINE_TLS, "on_engine_thread", False):
+            return fn(*a, **k)  # already on the engine thread: avoid self-deadlock
+
+        @copy_current_request_context  # carry Flask request/app context across
+        def _run():                    # threads so request/jsonify still work
+            _ENGINE_TLS.on_engine_thread = True
+            try:
+                return fn(*a, **k)
+            finally:
+                _ENGINE_TLS.on_engine_thread = False
+
+        return _ENGINE_EXEC.submit(_run).result()
     return _wrapped
+
+
+@atexit.register
+def _shutdown_engine():
+    """Close the engine ON its own thread, then stop the worker — so teardown
+    never runs cross-thread (which crashes the fcontext engine)."""
+    def _close():
+        env = STATE.get("env")
+        if env is not None:
+            try:
+                env.close()
+            except Exception:
+                pass
+            STATE["env"] = None
+    try:
+        _ENGINE_EXEC.submit(_close).result(timeout=10)
+    except Exception:
+        pass
+    _ENGINE_EXEC.shutdown(wait=False)
 
 _GROUPS = ["Vision", "Stat-based", "Dungeon & spawns"]
 _META = {
