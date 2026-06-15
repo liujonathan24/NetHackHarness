@@ -46,6 +46,22 @@ path is missing). If the library is absent, `RawEngine()` raises
 There is no `pip install nle` / `pip install minihack` step anymore — those
 packages are gone.
 
+### macOS / no local toolchain — build in Docker
+
+The engine does not build natively on macOS (AppleClang rejects the arena
+allocator's hidden-visibility `operator new`/`delete`, and the interposition
+relies on GNU-ld `-Wl,-Bsymbolic-functions`, which macOS `ld` lacks). Build and
+run in a Linux container instead — `Dockerfile.console` (web console) or
+`Dockerfile.prime` (full image):
+
+```bash
+# Apple Silicon: NATIVE arm64 — do NOT use linux/amd64 (qemu deadlocks the
+# NetHack mid-build helper programs). Intel macOS: drop --platform.
+docker build --platform linux/arm64 -f Dockerfile.console -t nethack-console .
+docker run  --platform linux/arm64 --rm -it -p 8080:8080 nethack-console
+# -> http://localhost:8080
+```
+
 ## `EngineEnv` — deterministic env with snapshot + tune
 
 `nethack_core/engine_env.py`. Seed-before-reset is enforced (refusing to reset
