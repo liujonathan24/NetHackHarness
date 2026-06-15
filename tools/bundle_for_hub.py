@@ -13,11 +13,40 @@ Run before `prime env push`:
 from __future__ import annotations
 
 import shutil
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "nethack_core"
 DST = ROOT / "environments" / "nethack" / "nethack_core"
+# Prebuilt engine binary. The fork source (third_party/NetHack) is NOT shipped to
+# the Hub, so the wheel must carry the compiled libnethack.so. _engine.py's
+# locator looks for it next to the package (nethack_core/libnethack.so) when no
+# third_party/ build dir is present.
+ENGINE_BUILD = ROOT / "third_party" / "NetHack" / "src" / "build"
+ENGINE_SO = ENGINE_BUILD / "libnethack.so"
+ENGINE_DAT = ENGINE_BUILD / "dat"
+BUILD_SCRIPT = SRC / "build_engine.sh"
+
+
+def _ensure_engine_built() -> Path:
+    """Return the path to a freshly-available libnethack.so, building if needed.
+
+    The Hub wheel is self-contained (no fork source on the Hub), so a prebuilt
+    .so must be bundled. Build it on demand if it's missing. x86-64 Linux only.
+    """
+    if ENGINE_SO.is_file():
+        return ENGINE_SO
+    if not BUILD_SCRIPT.is_file():
+        raise SystemExit(
+            f"engine not built and no build script at {BUILD_SCRIPT}. "
+            "Run `git submodule update --init --recursive` first."
+        )
+    print(f"libnethack.so not found — building via {BUILD_SCRIPT.relative_to(ROOT)} ...")
+    subprocess.run(["bash", str(BUILD_SCRIPT)], cwd=ROOT, check=True)
+    if not ENGINE_SO.is_file():
+        raise SystemExit(f"build_engine.sh ran but {ENGINE_SO} is still missing.")
+    return ENGINE_SO
 
 
 def main() -> None:
@@ -46,6 +75,25 @@ def main() -> None:
         init.write_text('"""Vendored nethack_core for Hub deployment. Edit nethack_core/ in the workspace root, not here."""\n')
 
     print(f"bundled {copied} modules into {DST.relative_to(ROOT)}")
+
+    # Bundle the prebuilt engine binary + NetHack data files — without these the
+    # Hub wheel imports but crashes at first use with EngineNotBuilt (no fork
+    # source to build from). The engine loads the .so and copies the dat/ tree
+    # into a temp hackdir on every start().
+    engine = _ensure_engine_built()
+    so_dst = DST / "libnethack.so"
+    shutil.copy2(engine, so_dst)
+    so_dst.chmod(0o755)
+    print(f"bundled engine libnethack.so ({engine.stat().st_size:,} bytes) into {so_dst.relative_to(ROOT)}")
+
+    if not ENGINE_DAT.is_dir():
+        raise SystemExit(f"engine dat dir missing at {ENGINE_DAT}; rerun build_engine.sh")
+    dat_dst = DST / "dat"
+    if dat_dst.exists():
+        shutil.rmtree(dat_dst)
+    shutil.copytree(ENGINE_DAT, dat_dst)
+    n_dat = sum(1 for _ in dat_dst.rglob("*") if _.is_file())
+    print(f"bundled engine dat/ ({n_dat} files) into {dat_dst.relative_to(ROOT)}")
 
     # Also copy the wiki snapshot into the env dir so the wheel's
     # `force-include` for wiki/snapshot.json finds it. Without this,
