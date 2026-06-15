@@ -42,6 +42,48 @@ def test_checkpoint_resume(tmp_path):
     assert obs3 is not None
 
 
+def test_snapshot_restore_nested_prompt_winproc():
+    """Restoring a snapshot taken at a NESTED window prompt used to corrupt the
+    libc heap (double-free / SIGSEGV), e.g. the live Monte-Carlo checkpoint demo.
+
+    The rl window port tracks its win-proc call stack in a libc-backed deque
+    (nle_ctx_t->s_win_proc_calls), pushed/popped by a ScopedStack per window
+    call. A nested prompt (yn_function -> nhgetch) yields with the deque two deep.
+    nle_fr_restore swaps the coroutine stack back to the snapshot but the deque
+    (outside the snapshot) keeps its shallower live depth, so the restored
+    stack's pending ScopedStack dtors pop_back() past empty -> UB walks
+    _M_finish into garbage -> the next push_back writes near-null and crashes.
+    Fix: ScopedStack guards pop-on-empty + nle_fr_restore clears the deque.
+    """
+    e = EngineEnv()
+    e.reset(seeds=(42, 42))
+    for _ in range(3):
+        e.step(ord("."))
+    # Snapshot while yielded inside a nested yn prompt (deque depth 2), then
+    # cancel back to the shallow command-wait state.
+    snaps = []
+    e.step(ord("S"))                       # "Really save? [yn]"
+    snaps.append(e.snapshot())
+    e.step(27)                             # ESC -> cancel
+    for ch in "pray":
+        e.step(ord(ch))
+    e.step(13)                             # "Are you sure you want to pray? [yn]"
+    snaps.append(e.snapshot())
+    e.step(ord("n"))
+    # Repeatedly restore the deep-prompt snapshots and redraw (ctrl-R). On the
+    # buggy engine this aborts within ~80 cycles; the fix survives all of them.
+    for _ in range(100):
+        for s in snaps:
+            e.restore(s)
+            obs, _, _ = e.step(18)         # ctrl-R redraw (the crashing action)
+            assert obs is not None
+            e.step(27)
+            e.step(ord("n"))
+    for s in snaps:
+        e.free_snapshot(s)
+    e.close()
+
+
 def test_checkpoint_resume_deep_floor(tmp_path):
     """Resuming a checkpoint taken on a DEEP floor used to SIGSEGV.
 
