@@ -222,9 +222,18 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         # None we resolve it from `variant` for back-compat; load_environment
         # passes one built post-overlay so the NETHACK_HARNESS seam is honoured.
         spec: Optional[PromptSpec] = None,
+        # Game-setup overrides applied to every episode's engine reset (the
+        # difficulty/generation knobs from our interface). All None = vanilla
+        # NetHack. See load_environment for the shapes.
+        setup_tune: Optional[dict] = None,
+        setup_modify: Optional[dict] = None,
+        setup_level_blob: Optional[str] = None,
         **kwargs,
     ):
         self.interface = interface
+        self._setup_tune = setup_tune
+        self._setup_modify = setup_modify
+        self._setup_level_blob = setup_level_blob
         # Pluggable LM backends. Both default to None → the rollout-time code
         # falls back to the deterministic Offline* implementations. Swap in
         # prime-rl-backed clients by passing them here from load_environment.
@@ -322,17 +331,24 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         task: dict = state["task"]
         info: dict = state.get("info") or {}
         # verifiers does not always round-trip the nested "task" dict column, so the
-        # per-example tier can be missing here and silently fall back to the dlvl-2
-        # corridor tier — capping descent at level 2 regardless of the requested tier.
-        # Fall back to the "info" column (which IS preserved) before the default.
-        tier_name: TierName = task.get("tier") or info.get("tier") or "corridor_explore"
+        # per-example tier can be missing here. Fall back to the "info" column
+        # (which IS preserved) before the default — the standard full ascension
+        # game ("full_nle"), NOT a curriculum tier. Pass tier=<name> to opt into a
+        # curriculum tier.
+        tier_name: TierName = task.get("tier") or info.get("tier") or "full_nle"
         seed: int = task.get("seed", info.get("seed", random.randint(0, 2**31 - 1)))
         spec = get_tier(tier_name)
 
+        # Game-setup overrides (difficulty/generation knobs, state pokes, custom
+        # level). None = vanilla NetHack generation; these are the interface
+        # flags that turn the standard game into a customized scenario.
         env = NetHackCoreEnv(
             task_name=spec.nle_task,
             max_episode_steps=spec.max_episode_steps,
             des_file=spec.des_file,
+            tune=self._setup_tune,
+            modify=self._setup_modify,
+            level_blob=self._setup_level_blob,
         )
         env.seed(core=seed, disp=seed)
         # NB: bootstrap_character() is currently a stub; once wired up it
@@ -1259,11 +1275,22 @@ def _build_task_dataset(tier: Optional[TierName], n_examples: int, seed_base: in
 
 
 def load_environment(
-    tier: Optional[str] = "corridor_explore",
+    tier: Optional[str] = "full_nle",
     n_examples: int = 256,
     seed: int = 0,
     max_turns: int = 200,
     interface: str = "skill",
+    # --- Game-setup overrides: the difficulty / generation knobs from our
+    # engine interface. All default to None = vanilla NetHack. Pass these to
+    # customize the game instead of the standard ascension run; e.g.
+    #   tune={"vision_radius": 5, "mob_spawn": 2, "room_density": 0.3}  # difficulty/generation
+    #   modify={"hp": 200, "max_hp": 200, "gold": 1000}                 # starting stat pokes
+    #   level_blob="path/to/level.blob"                                  # custom starting level
+    # `tune` keys come from EngineEnv.tune.catalog(); `modify` keys are the
+    # whitelisted state setters (hp/max_hp/gold/xp_level/hunger).
+    tune: Optional[dict] = None,
+    modify: Optional[dict] = None,
+    level_blob: Optional[str] = None,
     sub_lm=None,
     subgoal_proposer=None,
     compact_obs: bool = True,
@@ -1397,6 +1424,9 @@ def load_environment(
         refiner_model=refiner_model,
         bootstrap_dir=bootstrap_dir,
         refine=refine,
+        setup_tune=tune,
+        setup_modify=modify,
+        setup_level_blob=level_blob,
         **kwargs,
     )
 
