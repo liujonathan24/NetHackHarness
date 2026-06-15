@@ -101,11 +101,17 @@ class NetHackCoreEnv:
         level_blob: Optional[Union[str, pathlib.Path]] = None,
         reward_model: "Optional[RewardModel]" = None,
         modify: Optional[dict] = None,
+        tune: Optional[dict] = None,
     ):
         self.task_name = task_name
         # Default secure state mutations applied on every native reset() (and
         # exposed live via the modify() pass-through). Engine path only.
         self._modify = dict(modify) if modify else None
+        # Difficulty / generation knob overrides applied at reset() (vision,
+        # spawn rates, room density, ...). None = vanilla NetHack generation.
+        # Generation knobs must be set BEFORE the level is built, so these are
+        # passed to EngineEnv.reset(tune=...), not applied after. Engine path only.
+        self._tune = dict(tune) if tune else None
         # Reward is computed from the observation stream by a swappable model
         # (the fork engine has no gym reward). Defaults to score + dlvl*50 +
         # xp_level*50; pass reward_model=... to change the signal. Lazy import
@@ -216,7 +222,7 @@ class NetHackCoreEnv:
                     "Character override not yet wired up on the engine; got %s",
                     character,
                 )
-            obs, meta = self._engine.reset(seeds=self._pending_seeds)
+            obs, meta = self._engine.reset(seeds=self._pending_seeds, tune=self._tune)
             # Stamp the task name onto the metadata (EngineEnv labels it "engine").
             meta = EpisodeMetadata(
                 seeds=meta.seeds,
