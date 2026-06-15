@@ -209,10 +209,18 @@ Everything below is a `load_environment` argument (pass as JSON via `-a`):
 `"netplay"` (Jeurissen CoG 2024 profile), or a comma-separated allowlist.
 
 **Curriculum** — `tier` (13 tiers): `empty_room`, `solo_combat`, `multi_combat`,
-`corridor_explore` (default), `mini_dungeon`, `mines_to_minetown`,
-`sokoban_complete`, `oracle_consult`, `full_dungeon_easy`, `full_nle`,
-`dynamic_subgoal`, `quest_complete`, `castle_reached`. Pass `tier=None` to sample
-uniformly.
+`corridor_explore`, `mini_dungeon`, `mines_to_minetown`, `sokoban_complete`,
+`oracle_consult`, `full_dungeon_easy`, `full_nle` (default — the standard
+ascension game), `dynamic_subgoal`, `quest_complete`, `castle_reached`. Pass
+`tier=None` to sample uniformly across tiers.
+
+**Game-setup overrides** — by default the env is a plain standard NetHack game on
+the fork engine. Customize the starting game with the interface knobs (all
+default to vanilla): `tune={...}` difficulty/generation knobs (keys from
+`EngineEnv.tune.catalog()` — `vision_radius`, `reveal_map`, `mob_spawn`,
+`room_density`, `room_size`, `trap_density`, …), `modify={...}` whitelisted
+starting-state pokes (`hp`/`max_hp`/`gold`/`xp_level`/`hunger`), and
+`level_blob=<path>` to start on a custom saved level.
 
 **Memory / history** — `history_keep_full`, `history_drop_after`,
 `belief_state_interval`, `journal_render_max_chars`, `continual` +
@@ -252,9 +260,10 @@ wheel is self-contained.
 
 ## Project status
 
-**Env v0.0.66+ on the Hub.** Default tier `corridor_explore` (reach dlvl 2),
-default variant `B1`. ~396 tests green. Active research axis: observation-encoding
-comparison across ASCII / IMG / IMG_TTY / JSON / TOON, and continual-harness
-self-refinement.
+**Env v0.0.66+ on the Hub.** Default is the standard NetHack ascension game
+(`full_nle`) on the fork engine; curriculum tiers and the difficulty/generation
+knobs are opt-in overrides. Default variant `B1`. ~396 tests green. Active
+research axis: observation-encoding comparison across ASCII / IMG / IMG_TTY /
+JSON / TOON, and continual-harness self-refinement.
 
 *Author: Jonathan Liu.*
