@@ -101,14 +101,19 @@ the down-staircase, descends, and returns control per floor.
 
 ## Curriculum
 
-**13 named tiers** (`nethack_harness/curriculum/curriculum.py`): `empty_room`,
-`solo_combat`, `multi_combat`, `corridor_explore` (default, reach dlvl 2),
-`mini_dungeon`, `mines_to_minetown`, `sokoban_complete`, `oracle_consult`,
-`full_dungeon_easy`, `full_nle`, `dynamic_subgoal`, `quest_complete`,
-`castle_reached`. Each tier sets a step budget, a description, and a success
-milestone checked every step to drive early termination. Milestones are
-composable; `dynamic_subgoal` assigns mid-episode subgoals. Pass `tier=None` to
-sample uniformly across tiers.
+The env defaults to the standard NetHack ascension game (`full_nle`); the
+curriculum is opt-in. **13 named tiers**
+(`nethack_harness/curriculum/curriculum.py`): `empty_room`, `solo_combat`,
+`multi_combat`, `corridor_explore` (reach dlvl 2), `mini_dungeon`,
+`mines_to_minetown`, `sokoban_complete`, `oracle_consult`, `full_dungeon_easy`,
+`full_nle` (default), `dynamic_subgoal`, `quest_complete`, `castle_reached`. Each
+tier sets a step budget, a description, and a success milestone checked every
+step to drive early termination. Milestones are composable; `dynamic_subgoal`
+assigns mid-episode subgoals. Pass `tier=None` to sample uniformly across tiers.
+
+The difficulty/generation knobs are opt-in game-setup overrides on
+`load_environment`: `tune={...}` (the knob catalog), `modify={...}` (state
+pokes), and `level_blob=<path>` (custom starting level). All default to vanilla.
 
 ## Memory & context management
 

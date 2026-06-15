@@ -35,4 +35,9 @@ include = ["nethack.py", "nethack_harness/**/*.py", "nethack_core/**/*.py", "wik
 
 [tool.hatch.build.targets.wheel]
 packages = ["nethack_core", "nethack_harness"]
-force-include = { "nethack.py" = "nethack.py", "wiki/snapshot.json" = "wiki/snapshot.json" }
+# The fork engine (libnethack.so) + NetHack data files (dat/) are bundled by
+# tools/bundle_for_hub.py — the Hub has no fork source to build from. They are
+# gitignored build artifacts, so force-include adds them to the wheel (it bypasses
+# the VCS-ignore + standard include rules, so each file is added exactly once).
+# This makes the wheel platform-specific; the env targets Linux x86-64.
+force-include = { "nethack.py" = "nethack.py", "wiki/snapshot.json" = "wiki/snapshot.json", "nethack_core/libnethack.so" = "nethack_core/libnethack.so", "nethack_core/dat" = "nethack_core/dat" }
