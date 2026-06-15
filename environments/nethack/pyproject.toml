@@ -33,11 +33,15 @@ build-backend = "hatchling.build"
 [tool.hatch.build]
 include = ["nethack.py", "nethack_harness/**/*.py", "nethack_core/**/*.py", "wiki/*.json", "README.md"]
 
+[tool.hatch.build.targets.wheel.hooks.custom]
+path = "hatch_build.py"
+
 [tool.hatch.build.targets.wheel]
 packages = ["nethack_core", "nethack_harness"]
-# The fork engine (libnethack.so) + NetHack data files (dat/) are bundled by
-# tools/bundle_for_hub.py — the Hub has no fork source to build from. They are
-# gitignored build artifacts, so force-include adds them to the wheel (it bypasses
-# the VCS-ignore + standard include rules, so each file is added exactly once).
+# The fork engine (libnethack.so) + NetHack data files (dat/) are placed in
+# nethack_core/ at build time by the hatch_build.py hook above (or ahead of time
+# by tools/bundle_for_hub.py) — the Hub has no fork source to build from. They
+# are gitignored build artifacts, so force-include adds them to the wheel (it
+# bypasses VCS-ignore + standard include rules, adding each file exactly once).
 # This makes the wheel platform-specific; the env targets Linux x86-64.
 force-include = { "nethack.py" = "nethack.py", "wiki/snapshot.json" = "wiki/snapshot.json", "nethack_core/libnethack.so" = "nethack_core/libnethack.so", "nethack_core/dat" = "nethack_core/dat" }
