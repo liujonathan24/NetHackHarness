@@ -1,0 +1,19 @@
+# Keep the build context lean (esp. under amd64 emulation). The Dockerfiles
+# COPY only the paths they need; everything here is excluded from the context.
+.git
+**/.git
+.venv
+node_modules
+videos
+outputs
+experiments
+dist
+**/__pycache__
+**/*.pyc
+*.log
+.pytest_cache
+docs/assets
+wiki
+legacy
+# engine build artifacts (rebuilt inside the image by build_engine.sh)
+third_party/NetHack/src/build

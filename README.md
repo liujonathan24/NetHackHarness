@@ -90,6 +90,26 @@ PYTHONPATH="$PWD:$PWD/environments/nethack" python tools/play_server.py
 # then open http://127.0.0.1:8080  (--host / --port to change)
 ```
 
+This needs the engine built locally (`bash nethack_core/build_engine.sh`), which
+requires a Linux/GNU toolchain. **On macOS** the engine does not build natively
+(AppleClang/Mach-O vs the fork's GNU-toolchain arena interposition), so run the
+console in Docker instead:
+
+```bash
+# build once (on Apple Silicon this is a NATIVE arm64 build — fast, no emulation;
+# do NOT use --platform linux/amd64, which deadlocks NetHack's mid-build helpers
+# under qemu). On Intel macOS drop the --platform flag.
+docker build --platform linux/arm64 -f Dockerfile.console -t nethack-console .
+
+# run; open http://localhost:8080
+docker run --platform linux/arm64 --rm -it -p 8080:8080 nethack-console
+```
+
+`Dockerfile.console` builds `libnethack.so` from the submodule and adds Flask (the
+console dep). Recordings written inside the container are ephemeral; add
+`-v "$PWD/<dir>":/opt/nethack-console/<dir>` to persist them. If host port 8080 is
+taken, map another, e.g. `-p 5050:8080`.
+
 - **`/map`** — play NetHack in the browser; live difficulty-knob sliders, reset
   knobs for floor generation, snapshot-backed **Undo** (Backspace) and
   **Checkpoint / Restore** (the live Monte-Carlo demo: pin a position, roll

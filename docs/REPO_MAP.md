@@ -105,6 +105,7 @@ blobs, secure state edits, and live difficulty knobs possible at all.
 | `tests/` | — | ~396 tests across 53 files |
 | `configs/endpoints.toml` | — | vf-eval endpoint registry |
 | `Dockerfile.prime` | — | builds the engine for Prime Sandbox / hosted training |
+| `Dockerfile.console` | — | runs the web console in Linux (engine + Flask); for macOS where the engine has no native build |
 | `docs/` | — | this map, `CAPABILITIES.md`, `design.md`, `engine-layer.md`, eval/training recipes, netplay parity writeups |
 
 ## Coordination seams worth knowing
