@@ -41,9 +41,16 @@ def library_path() -> Path:
         default = build / "libnethack.so"
         if default.exists():
             return default
+    # Bundled binary: when this package is installed standalone (the Prime Hub
+    # wheel) there is no third_party/ source tree, so the build script copies the
+    # prebuilt libnethack.so next to this module (see tools/bundle_for_hub.py).
+    bundled = Path(__file__).resolve().parent / "libnethack.so"
+    if bundled.exists():
+        return bundled
     raise EngineNotBuilt(
         "libnethack.so not found. Build it with nethack_core/build_engine.sh "
-        "(or set NLE_LIB_PATH). Toolchain: cmake/bison/flex/libbz2."
+        "(or set NLE_LIB_PATH), or bundle it via tools/bundle_for_hub.py. "
+        "Toolchain: cmake/bison/flex/libbz2."
     )
 
 
@@ -350,13 +357,23 @@ class RawEngine:
         lib.nle_set_seed.restype = None
 
     def _build_dat_path(self) -> Path:
-        """Return the path to the pre-built dat directory (contains nhdat etc.)."""
+        """Return the path to the pre-built dat directory (NetHack data files).
+
+        Prefers the dev ``third_party/NetHack/src/build/dat`` tree; falls back to
+        a copy bundled next to this package (``nethack_core/dat``) for the Hub
+        wheel, where no fork source is present. Both are produced by the build
+        script / tools/bundle_for_hub.py.
+        """
         build = _engine_build_dir()
-        if build is None:
-            raise EngineNotBuilt(
-                "engine build dir not found; build with nethack_core/build_engine.sh"
-            )
-        return build / "dat"
+        if build is not None and (build / "dat").exists():
+            return build / "dat"
+        bundled = Path(__file__).resolve().parent / "dat"
+        if bundled.exists():
+            return bundled
+        raise EngineNotBuilt(
+            "NetHack dat directory not found; build with nethack_core/build_engine.sh "
+            "or bundle it via tools/bundle_for_hub.py"
+        )
 
     # ------------------------------------------------------------------
     # Public API
