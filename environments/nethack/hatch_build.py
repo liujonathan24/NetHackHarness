@@ -32,12 +32,18 @@ class CustomBuildHook(BuildHookInterface):
 
         build_dir = self._find_fork_build_dir()
         if build_dir is None:
-            raise SystemExit(
-                "Cannot bundle the NetHack engine: nethack_core/libnethack.so + "
-                "nethack_core/dat are missing and no third_party/NetHack build dir "
-                "was found. Run `python tools/bundle_for_hub.py` from the repo root "
-                "(it builds + bundles the engine) before pushing."
+            # No fork source to bundle from — e.g. the Hub's source-build
+            # integration test (`uv pip install <src>` in a clean container).
+            # Don't fail the build: `artifacts` includes the engine only WHEN
+            # present, so the source build succeeds without it. The wheel served
+            # for real installs is the one pushed from a dev tree (fork source
+            # available), which DOES carry the engine.
+            print(
+                "[hatch_build] no fork source + no prebuilt engine — building "
+                "without the bundled engine (ok for source-only/test builds).",
+                file=sys.stderr,
             )
+            return
 
         # repo_root/third_party/NetHack/src/build -> repo_root is 4 parents up.
         repo_root = build_dir.parents[3]
