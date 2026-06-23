@@ -50,6 +50,10 @@ _SKILL_ALIASES: dict[str, str] = {
     "go_down": "descend",
     "descend_stairs": "descend",
     "down": "descend",
+    "go_up": "ascend",
+    "ascend_stairs": "ascend",
+    "up": "ascend",
+    "climb": "ascend",
     "goto": "move_to",
     "move_to_tile": "move_to",
     "travel": "move_to",
@@ -357,6 +361,30 @@ def descend(env: NetHackCoreEnv, obs: StructuredObservation) -> SkillResult:
     # prompt, then DOWN ('>', 62) descends. No action-index translation.
     return SkillResult([int(nethack.MiscAction.MORE), int(nethack.MiscDirection.DOWN)],
                        "Attempted to descend.")
+
+
+@registry.register("ascend", schema={
+    "description": (
+        "Ascend the up-staircase. You MUST be standing on a '<' tile. "
+        "Check `=== UNDER PLAYER ===` first — it should say 'stairs UP (<)'. "
+        "If it says 'stairs DOWN (>)' you'll go DOWN to a deeper level instead. "
+        "If it says 'floor' or anything else, this call wastes a turn."
+    ),
+    "parameters": {},
+})
+def ascend(env: NetHackCoreEnv, obs: StructuredObservation) -> SkillResult:
+    # Mirror of descend(): friendly short-circuit when not on an upstair.
+    under = getattr(obs, "under_player", None)
+    if under and not under.startswith("stairs UP"):
+        return SkillResult(
+            [],
+            f"Can't ascend — you're standing on: {under}. Find a '<' tile and step ON it first.",
+            interrupted=True,
+        )
+    # MORE (13) dismisses any prompt, then UP ('<', 60) ascends. The
+    # CurriculumEnv intercepts UP to advance the curriculum's ascent path.
+    return SkillResult([int(nethack.MiscAction.MORE), int(nethack.MiscDirection.UP)],
+                       "Attempted to ascend.")
 
 
 @registry.register("search", schema={

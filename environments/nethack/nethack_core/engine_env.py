@@ -201,22 +201,36 @@ class EngineEnv:
             self._engine.step(18)
         return self._engine.to_core_observation()
 
-    def goto_abs(self, dnum: int, dlevel: int) -> CoreObservation:
+    def goto_abs(self, dnum: int, dlevel: int, seat: bool = False) -> CoreObservation:
         """Jump to an arbitrary ``(dnum, dlevel)`` across dungeon branches.
 
         Unlike ``modify(goto_depth=n)`` (confined to the current branch), this
-        reaches Gehennom and the Elemental Planes. Seats the hero on the
-        destination's downstair when present so descents continue naturally.
-        Returns the refreshed observation.
+        reaches Gehennom and the Elemental Planes. The hero lands on a valid
+        random spot on the destination level.
+
+        ``seat=True`` additionally seats the hero on the level's downstair, but
+        note the extra render step corrupts long *sequences* of jumps (the
+        deferred-goto / seat double-step desyncs), so the curriculum (which
+        chains many jumps) leaves it off. Returns the refreshed observation.
         """
         self._engine.goto_abs(int(dnum), int(dlevel))
-        # Seat on the downstair if this level has one (mirrors modify(goto_depth)).
-        self._engine.seat_on_stair(down=True)
+        if seat:
+            self._engine.seat_on_stair(down=True)
         return self._engine.to_core_observation()
 
     def dungeon_table(self) -> list:
         """Return the dungeon-branch layout (name/depth_start/num_dunlevs)."""
         return self._engine.dungeon_table()
+
+    @property
+    def done(self) -> bool:
+        """Whether the current game has ended (hero dead / ascended / quit)."""
+        return self._engine.done
+
+    @property
+    def how_done(self) -> int:
+        """Engine end-reason code (only meaningful when ``done``)."""
+        return self._engine.how_done
 
     def step(self, action: int) -> tuple[CoreObservation, bool, dict]:
         """Advance one action. Returns (observation, done, info)."""
