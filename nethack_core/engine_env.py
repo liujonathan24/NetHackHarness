@@ -77,6 +77,15 @@ class EngineEnv:
         # level_up is an INCREMENT (gain N experience levels with real HP/stat
         # gains via the engine's pluslvl), distinct from xp_level (direct set).
         "level_up": (1, 29),
+        # Attributes (NetHack-encoded). str spans 3..125 (19..118 == 18/01..18/00,
+        # 119..125 == 19..25); the others are plain 3..25. Used by the curriculum
+        # stats-only deep-jump upgrade.
+        "str": (3, 125),
+        "dex": (3, 25),
+        "con": (3, 25),
+        "int": (3, 25),
+        "wis": (3, 25),
+        "cha": (3, 25),
     }
 
     def __init__(self, modify: Optional[dict] = None) -> None:
@@ -103,6 +112,7 @@ class EngineEnv:
         seeds: Optional[tuple[int, int]] = None,
         tune: Optional[dict] = None,
         modify: Optional[dict] = None,
+        character: Optional[str] = None,
     ) -> tuple[CoreObservation, EpisodeMetadata]:
         """Start a fresh game. Seeds must be staged via seed() or passed here.
 
@@ -127,7 +137,7 @@ class EngineEnv:
                 "or pass seeds= explicitly."
             )
         core, disp = self._pending_seeds
-        self._engine.start(core, disp, tune=tune)
+        self._engine.start(core, disp, tune=tune, character=character)
         self._current_seeds = self._pending_seeds
         self._pending_seeds = None
         meta = EpisodeMetadata(
@@ -190,6 +200,23 @@ class EngineEnv:
             # ctrl-R redraw so blstats refresh without consuming a game turn.
             self._engine.step(18)
         return self._engine.to_core_observation()
+
+    def goto_abs(self, dnum: int, dlevel: int) -> CoreObservation:
+        """Jump to an arbitrary ``(dnum, dlevel)`` across dungeon branches.
+
+        Unlike ``modify(goto_depth=n)`` (confined to the current branch), this
+        reaches Gehennom and the Elemental Planes. Seats the hero on the
+        destination's downstair when present so descents continue naturally.
+        Returns the refreshed observation.
+        """
+        self._engine.goto_abs(int(dnum), int(dlevel))
+        # Seat on the downstair if this level has one (mirrors modify(goto_depth)).
+        self._engine.seat_on_stair(down=True)
+        return self._engine.to_core_observation()
+
+    def dungeon_table(self) -> list:
+        """Return the dungeon-branch layout (name/depth_start/num_dunlevs)."""
+        return self._engine.dungeon_table()
 
     def step(self, action: int) -> tuple[CoreObservation, bool, dict]:
         """Advance one action. Returns (observation, done, info)."""

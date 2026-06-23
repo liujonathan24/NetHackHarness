@@ -214,15 +214,12 @@ class NetHackCoreEnv:
         if self._is_native:
             # Engine path: EngineEnv owns seed injection + game start and returns
             # our canonical (CoreObservation, EpisodeMetadata). It applies the
-            # same reseed=False discipline internally. The engine hardcodes the
-            # character in its options string, so character override is not yet
-            # wired (mirrors the nle path's warning below).
-            if character is not None:
-                logger.warning(
-                    "Character override not yet wired up on the engine; got %s",
-                    character,
-                )
-            obs, meta = self._engine.reset(seeds=self._pending_seeds, tune=self._tune)
+            # same reseed=False discipline internally. The character (role/race/
+            # alignment/gender, e.g. "Val-hum-neu-fem") is threaded to the engine's
+            # player-name option; None keeps the engine default.
+            obs, meta = self._engine.reset(
+                seeds=self._pending_seeds, tune=self._tune, character=character
+            )
             # Stamp the task name onto the metadata (EngineEnv labels it "engine").
             meta = EpisodeMetadata(
                 seeds=meta.seeds,

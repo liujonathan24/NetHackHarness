@@ -91,7 +91,14 @@ _NETHACKOPTIONS = (
     "pickup_burden:unencumbered", "pickup_types:$?!/", "runmode:teleport",
     "showexp", "showscore", "time",
 )
-_OPTIONS_STR = ",".join(_NETHACKOPTIONS) + ",name:Agent-mon-hum-neu-mal"
+# NetHack parses role/race/alignment/gender from the player-name suffix
+# (name:Agent-<role>-<race>-<align>-<gender>). The character is therefore
+# selected by the suffix passed to start(character=...); the default keeps the
+# historical Monk so existing callers are unchanged. The curriculum env passes
+# "Val-hum-neu-fem" (female neutral human Valkyrie).
+_OPTIONS_BASE = ",".join(_NETHACKOPTIONS)
+_DEFAULT_CHARACTER = "mon-hum-neu-mal"
+_OPTIONS_STR = _OPTIONS_BASE + ",name:Agent-" + _DEFAULT_CHARACTER
 
 
 # The difficulty-knob catalog (names + order) is fixed for a given libnethack.so,
@@ -346,6 +353,22 @@ class RawEngine:
         lib.nle_level_up.argtypes = [ctypes.c_void_p, ctypes.c_int]
         lib.nle_level_up.restype = ctypes.c_int
 
+        # Curriculum traversal: cross-branch goto + dungeon-table query.
+        # nle_goto_abs is TWO-PHASE like nle_goto_depth (caller steps once).
+        lib.nle_goto_abs.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int]
+        lib.nle_goto_abs.restype = ctypes.c_int
+        lib.nle_num_dungeons.argtypes = [ctypes.c_void_p]
+        lib.nle_num_dungeons.restype = ctypes.c_int
+        lib.nle_dungeon_info.argtypes = [
+            ctypes.c_void_p,                # nle_ctx_t*
+            ctypes.c_int,                   # idx
+            ctypes.c_char_p,                # name_out
+            ctypes.c_int,                   # name_cap
+            ctypes.POINTER(ctypes.c_int),   # depth_start_out
+            ctypes.POINTER(ctypes.c_int),   # num_dunlevs_out
+        ]
+        lib.nle_dungeon_info.restype = ctypes.c_int
+
         # Reseed the gameplay/display RNGs.  Used after restore() to make
         # branches diverge: the 4th arg `reseed` is a C boolean (1 byte).
         lib.nle_set_seed.argtypes = [
@@ -385,7 +408,8 @@ class RawEngine:
         except Exception:
             pass
 
-    def start(self, core: int, disp: int, tune: dict = None) -> "RawEngine":
+    def start(self, core: int, disp: int, tune: dict = None,
+              character: str = None) -> "RawEngine":
         """Start a new game.  Returns self so callers can chain property reads.
 
         Safe to call while a game is already active — tears down the previous
@@ -395,6 +419,10 @@ class RawEngine:
         is generated, so generation-time knobs (e.g. room_density) take effect on
         the starting floor.  Live knobs may also be set this way or via set_tune()
         after start().  Unknown knob names raise KeyError.
+
+        ``character`` selects the role/race/alignment/gender via NetHack's
+        player-name suffix (e.g. "Val-hum-neu-fem" for a female neutral human
+        Valkyrie). If None, the historical default (Monk) is used.
         """
         # Tear down any prior game before creating a new one.
         self.end()
@@ -409,7 +437,8 @@ class RawEngine:
         settings = NleSettings()
         settings.hackdir = self._hackdir.encode()
         settings.scoreprefix = b""
-        options_bytes = _OPTIONS_STR.encode()
+        char = character if character is not None else _DEFAULT_CHARACTER
+        options_bytes = (_OPTIONS_BASE + ",name:Agent-" + char).encode()
         settings.options = options_bytes
         settings.wizkit = b""
         settings.spawn_monsters = 1
@@ -711,6 +740,55 @@ class RawEngine:
             raise RuntimeError("nle_level_up failed")
         self.step(18)  # ctrl-R redraw to refresh blstats without a turn
         return self
+
+    def goto_abs(self, dnum: int, dlevel: int) -> "RawEngine":
+        """Jump to an arbitrary ``(dnum, dlevel)``, across dungeon branches.
+
+        Unlike :meth:`goto_depth` (which is confined to the current branch),
+        this can reach Gehennom or the Elemental Planes.  Two-phase like
+        goto_depth: the C call schedules the cross-branch goto_level and we step
+        once (a wait '.') to process it; the destination level is generated on
+        demand if unvisited.
+
+        Raises ValueError if ``(dnum, dlevel)`` is out of range, RuntimeError if
+        no game is active.
+        """
+        if self._ctx is None:
+            raise RuntimeError("goto_abs() requires an active game; call start() first")
+        rc = self._lib.nle_goto_abs(self._ctx, int(dnum), int(dlevel))
+        if rc != 0:
+            raise ValueError(f"goto_abs(dnum={dnum}, dlevel={dlevel}) out of range")
+        self.step(ord("."))  # process the deferred cross-branch goto
+        return self
+
+    def dungeon_table(self) -> list:
+        """Return the dungeon-branch layout as a list of dicts.
+
+        Each entry is ``{"dnum", "name", "depth_start", "num_dunlevs"}``.  Lets
+        callers map an absolute "Dlvl N" to a concrete ``(dnum, dlevel)`` and
+        locate Gehennom / "The Elemental Planes" by name.
+
+        Requires an active game (the dungeon graph is built at start()).
+        """
+        if self._ctx is None:
+            raise RuntimeError("dungeon_table() requires an active game; call start() first")
+        n = self._lib.nle_num_dungeons(self._ctx)
+        table = []
+        for i in range(n):
+            name = ctypes.create_string_buffer(24)
+            depth_start = ctypes.c_int(0)
+            num_dunlevs = ctypes.c_int(0)
+            self._lib.nle_dungeon_info(
+                self._ctx, i, name, 24,
+                ctypes.byref(depth_start), ctypes.byref(num_dunlevs),
+            )
+            table.append({
+                "dnum": i,
+                "name": name.value.decode(errors="replace"),
+                "depth_start": depth_start.value,
+                "num_dunlevs": num_dunlevs.value,
+            })
+        return table
 
     # ------------------------------------------------------------------
     # Difficulty knobs (nle_tune_t)
