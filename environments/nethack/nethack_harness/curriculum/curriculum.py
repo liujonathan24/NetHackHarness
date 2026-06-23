@@ -41,6 +41,7 @@ TierName = Literal[
     "full_dungeon_easy", "full_nle",
     "dynamic_subgoal",
     "quest_complete", "castle_reached",
+    "curriculum",
 ]
 
 
@@ -153,6 +154,22 @@ TIERS: dict[TierName, TierSpec] = {
                     "step before Gehennom; a real endgame milestone.",
         success_criterion="entered the Castle",
         success_milestone=castle_reached_milestone,
+    ),
+    "curriculum": TierSpec(
+        name="curriculum",
+        nle_task="engine",  # drives CurriculumEnv (see load_environment)
+        des_file=None,
+        max_episode_steps=4_000,
+        description=(
+            "Compressed full-game curriculum (female-neutral Valkyrie, full "
+            "vision). Descend the Dungeons of Doom 1->2->3; descending past 3 "
+            "JUMPS to Gehennom 48 (with an appropriate stat upgrade); continue "
+            "48->49->50. Then ascend 50->49->48, which JUMPS back to 3; ascend "
+            "3->2->1, then into the Elemental Planes (Earth->Astral). Use "
+            "`descend`/`ascend`."
+        ),
+        success_criterion="reached the Elemental Planes",
+        # Success is the deepest progress through the tour; no static milestone.
     ),
 }
 

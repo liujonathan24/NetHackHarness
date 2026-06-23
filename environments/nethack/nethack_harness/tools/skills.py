@@ -347,6 +347,11 @@ def attack(env: NetHackCoreEnv, obs: StructuredObservation, direction: str) -> S
     "parameters": {},
 })
 def descend(env: NetHackCoreEnv, obs: StructuredObservation) -> SkillResult:
+    # In the curriculum env a '>' triggers a positional curriculum jump (the
+    # hero lands at a random spot, not on a stair), so skip the on-stair gate.
+    if hasattr(env, "curriculum_position"):
+        return SkillResult([int(nethack.MiscDirection.DOWN)],
+                           "Curriculum: descended to the next level.")
     # Friendlier feedback: if under_player exists and isn't `>`, short-circuit
     # with an explanatory message so the agent doesn't waste a turn AND
     # doesn't get a generic "couldn't descend" message.
@@ -373,6 +378,10 @@ def descend(env: NetHackCoreEnv, obs: StructuredObservation) -> SkillResult:
     "parameters": {},
 })
 def ascend(env: NetHackCoreEnv, obs: StructuredObservation) -> SkillResult:
+    # Curriculum env: '<' advances the curriculum's ascent path positionally.
+    if hasattr(env, "curriculum_position"):
+        return SkillResult([int(nethack.MiscDirection.UP)],
+                           "Curriculum: ascended to the next level.")
     # Mirror of descend(): friendly short-circuit when not on an upstair.
     under = getattr(obs, "under_player", None)
     if under and not under.startswith("stairs UP"):

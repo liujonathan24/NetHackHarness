@@ -342,14 +342,22 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         # Game-setup overrides (difficulty/generation knobs, state pokes, custom
         # level). None = vanilla NetHack generation; these are the interface
         # flags that turn the standard game into a customized scenario.
-        env = NetHackCoreEnv(
-            task_name=spec.nle_task,
-            max_episode_steps=spec.max_episode_steps,
-            des_file=spec.des_file,
-            tune=self._setup_tune,
-            modify=self._setup_modify,
-            level_blob=self._setup_level_blob,
-        )
+        if tier_name == "curriculum":
+            # The compressed full-game curriculum: fixed female-neutral Valkyrie,
+            # full vision, and the 1-3 <-> 48-50 <-> planes jump ordering. Owns
+            # its own character/vision defaults; the descend/ascend skills drive
+            # the cross-branch jumps.
+            from nethack_core.curriculum_env import CurriculumEnv
+            env = CurriculumEnv(max_episode_steps=spec.max_episode_steps)
+        else:
+            env = NetHackCoreEnv(
+                task_name=spec.nle_task,
+                max_episode_steps=spec.max_episode_steps,
+                des_file=spec.des_file,
+                tune=self._setup_tune,
+                modify=self._setup_modify,
+                level_blob=self._setup_level_blob,
+            )
         env.seed(core=seed, disp=seed)
         # NB: bootstrap_character() is currently a stub; once wired up it
         # auto-invokes #attributes and stores role/race/alignment in state.

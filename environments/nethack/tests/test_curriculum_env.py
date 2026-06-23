@@ -92,6 +92,29 @@ def test_deepest_descent_is_noop():
     assert _b(obs, "depth") == 50
 
 
+def test_skill_registry_drives_curriculum():
+    """The existing descend/ascend skills (what Go-Explore/Voyager call) drive
+    the curriculum jumps — no stair navigation required in the curriculum env."""
+    from nethack_core.observations import shape as shape_observation
+    from nethack_harness.tools.skills import registry
+
+    env = CurriculumEnv()
+    env.reset()
+    char = {"role": "Valkyrie"}
+
+    def drive(skill, n):
+        for _ in range(n):
+            so = shape_observation(env._last_observation, char)
+            res = registry.call(skill, env, so)
+            for a in res.actions:
+                env.step(a)
+
+    drive("descend", 5)  # to Gehennom 50
+    assert env.curriculum_position == (1, 23)
+    drive("ascend", 10)  # up through DoD into the planes
+    assert env.curriculum_position[0] == 7  # Elemental Planes
+
+
 def test_upgrade_is_deterministic():
     model = ValkyrieUpgradeModel.analytic()
     import random
