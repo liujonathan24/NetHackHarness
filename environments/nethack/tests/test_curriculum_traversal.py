@@ -113,6 +113,23 @@ def test_valkyrie_character_preset():
     assert "small shield" in inv
 
 
+def test_reveal_map_reaches_tty_chars():
+    """reveal_map must reveal tty_chars (what the agent's map renderer reads),
+    not only chars/glyphs. Default (reveal off) leaves tty_chars unchanged."""
+    def tty_map_nonblank(reveal):
+        env = EngineEnv()
+        obs, _ = env.reset(
+            seeds=(CURRICULUM_SEED, CURRICULUM_SEED), tune={"reveal_map": reveal}
+        )
+        obs, _, _ = env.step(ord("."))
+        tty = np.array(obs.tty_chars).reshape(24, 80)
+        return int((tty[1:22, :] != ord(" ")).sum())
+
+    off = tty_map_nonblank(0.0)
+    on = tty_map_nonblank(1.0)
+    assert on > off  # full vision reveals far more of the level in the tty map
+
+
 def test_core_env_threads_character():
     env = NetHackCoreEnv(task_name="engine")
     obs, meta = env.reset(
