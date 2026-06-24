@@ -392,6 +392,12 @@ class RawEngine:
         ]
         lib.nle_set_seed.restype = None
 
+        # Debug: dump the per-env arena memory map (named buffers, fmon/fobj
+        # chains, and the monster grid with fmon-membership) to a file. A
+        # diagnostic tool for arena-reuse / dangling-pointer investigations.
+        lib.nle_dbg_memmap.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+        lib.nle_dbg_memmap.restype = None
+
     def _build_dat_path(self) -> Path:
         """Return the path to the pre-built dat directory (NetHack data files).
 
@@ -630,6 +636,21 @@ class RawEngine:
             self._ctx, ctypes.c_ulong(core), ctypes.c_ulong(disp), b"\x00"
         )
         return self
+
+    def memmap(self, path: str) -> str:
+        """Dump the per-env arena memory map to ``path`` (debug tool).
+
+        Writes: arena base/used/cap; every named per-env buffer by arena offset;
+        the live monster (fmon) and object (fobj) chains; and the monster grid
+        (level.monsters[x][y]) with fmon-membership + data-validity per cell.
+        Lets you classify any arena pointer and spot dangling/stale pointers
+        (grid entries not in fmon, monsters with out-of-range ``data``). Useful
+        for arena-reuse / snapshot corruption debugging. Returns ``path``.
+        """
+        if self._ctx is None:
+            raise RuntimeError("memmap() requires an active game; call start() first")
+        self._lib.nle_dbg_memmap(self._ctx, str(path).encode())
+        return path
 
     # ------------------------------------------------------------------
     # Portable level blob save / load
