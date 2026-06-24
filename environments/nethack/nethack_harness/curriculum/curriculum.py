@@ -31,6 +31,7 @@ from .milestones import (
     oracle_consult_milestone,
     quest_complete_milestone,
     reach_dlvl_milestone,
+    reached_planes_milestone,
     sokoban_complete_milestone,
 )
 
@@ -162,14 +163,19 @@ TIERS: dict[TierName, TierSpec] = {
         max_episode_steps=4_000,
         description=(
             "Compressed full-game curriculum (female-neutral Valkyrie, full "
-            "vision). Descend the Dungeons of Doom 1->2->3; descending past 3 "
-            "JUMPS to Gehennom 48 (with an appropriate stat upgrade); continue "
-            "48->49->50. Then ascend 50->49->48, which JUMPS back to 3; ascend "
-            "3->2->1, then into the Elemental Planes (Earth->Astral). Use "
-            "`descend`/`ascend`."
+            "vision). IMPORTANT: in this curriculum you do NOT need to find or "
+            "stand on stairs and you do NOT need to explore or navigate — just "
+            "call `descend` to go one level deeper (it advances automatically) "
+            "and `ascend` to go one level up. Do NOT use move/move_to/"
+            "explore_and_descend; only `descend` and `ascend` make progress. "
+            "Plan: call `descend` repeatedly — Dungeons of Doom 1->2->3, then "
+            "descending past 3 JUMPS to Gehennom 48 (with a stat upgrade), then "
+            "48->49->50 (the bottom). Then call `ascend` repeatedly — 50->49->48, "
+            "which JUMPS back to 3, then 3->2->1, then into the Elemental Planes "
+            "(Earth->Air->Fire->Water->Astral). Goal: reach the Elemental Planes."
         ),
         success_criterion="reached the Elemental Planes",
-        # Success is the deepest progress through the tour; no static milestone.
+        success_milestone=reached_planes_milestone,
     ),
 }
 

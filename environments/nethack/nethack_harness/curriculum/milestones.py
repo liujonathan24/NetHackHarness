@@ -196,6 +196,23 @@ def reach_dlvl_milestone(target_dlvl: int) -> Milestone:
     )
 
 
+def _reached_planes_check(obs, state: dict) -> bool:
+    """Curriculum success: the hero is on the Elemental Planes (dnum 7)."""
+    if state.get("milestone_reached_planes"):
+        return True
+    if _dungeon_number(obs) == DUNGEON_PLANES:
+        state["milestone_reached_planes"] = True
+        return True
+    return False
+
+
+reached_planes_milestone = Milestone(
+    name="reached_planes",
+    description="Reach the Elemental Planes (the curriculum's ascent target).",
+    check=_reached_planes_check,
+)
+
+
 # ---------- milestone: completed the role quest ----------
 
 _QUEST_COMPLETE_MARKERS = (

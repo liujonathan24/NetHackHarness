@@ -103,9 +103,22 @@ class CurriculumEnv(NetHackCoreEnv):
         def geh_stop(depth: int) -> tuple[int, int]:
             return (geh["dnum"], depth - geh["depth_start"] + 1)
 
+        # Gehennom length is seed-dependent (20+-5), so some seeds don't reach
+        # the nominal deep depths (48-50). Clamp each requested deep depth into
+        # Gehennom's actual [depth_start, depth_start+num_dunlevs-1] range and
+        # dedupe (preserving order) so goto_abs never targets a missing level.
+        geh_min = geh["depth_start"]
+        geh_max = geh["depth_start"] + geh["num_dunlevs"] - 1
+        eff_deep, _seen = [], set()
+        for d in self._deep_depths:
+            cd = max(geh_min, min(geh_max, d))
+            if cd not in _seen:
+                _seen.add(cd)
+                eff_deep.append(cd)
+
         # Curriculum stops, in descent order then continuing up through planes.
         shallow = [(dod["dnum"], d) for d in self._shallow_depths]   # DoD 1,2,3
-        deep = [geh_stop(d) for d in self._deep_depths]               # Geh 48,49,50
+        deep = [geh_stop(d) for d in eff_deep]                        # Geh 48-50
         planes_stops = [(planes["dnum"], dl) for dl in _PLANE_ASCENT] # Earth..Astral
 
         # Descent chain: shallow... -> [jump+upgrade] -> deep...
@@ -124,7 +137,7 @@ class CurriculumEnv(NetHackCoreEnv):
             self._ascend_map[cur] = (nxt, False)
 
         # Remember the boundary depth where the upgrade is applied.
-        self._deep_entry_depth = self._deep_depths[0]
+        self._deep_entry_depth = eff_deep[0]
 
     # ----- the curriculum step -----
 
