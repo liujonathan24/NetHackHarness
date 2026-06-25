@@ -57,22 +57,28 @@ def test_snapshot_bundles_and_restores_level_files():
 
 
 def test_static_template_files_are_not_bundled():
-    """Only <lock>.<n> files are captured; <role>.lev / *.des templates are not
-    (so restore leaves them untouched and the bundle stays small)."""
+    """Static templates (<role>.lev / *.des) live in the shared read-only datadir,
+    never in the per-env hackdir, so the hackdir-scanning snapshot bundler cannot
+    capture or revert them — only "<lock>.<n>" level files are bundled."""
     env = _engine.RawEngine()
     env.start(core=42, disp=42)
     hd = env._hackdir
 
-    template = os.path.join(hd, "Val-strt.lev")  # a static template that exists
-    assert os.path.exists(template), "expected prebuilt template in hackdir"
+    # The template exists in the shared datadir (read directly, never copied)...
+    datadir = env._build_dat_path()
+    assert (datadir / "Val-strt.lev").exists(), "expected template in shared datadir"
+    # ...and is NOT present in the writable per-env hackdir, so snapshot bundling
+    # (which only scans the hackdir for level files) can never touch it.
+    assert not os.path.exists(os.path.join(hd, "Val-strt.lev")), (
+        "static template must not live in the per-env hackdir"
+    )
 
+    # A snapshot/restore round-trip leaves the shared datadir untouched.
+    before = _read(str(datadir / "Val-strt.lev"))
     h = env.snapshot()
-    _write(template, b"TOUCHED-TEMPLATE")
     env.restore(h)
-
-    # restore must NOT have reverted the (non-level) template file.
-    assert _read(template) == b"TOUCHED-TEMPLATE", (
-        "restore unexpectedly reverted a static template file"
+    assert _read(str(datadir / "Val-strt.lev")) == before, (
+        "snapshot/restore must not modify the shared read-only datadir"
     )
     env.free_snapshot(h)
     env.end()

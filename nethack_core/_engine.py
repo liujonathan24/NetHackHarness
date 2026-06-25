@@ -166,6 +166,11 @@ class NleSettings(ctypes.Structure):
         ("tune_n", ctypes.c_int),
         ("tune_idx", ctypes.c_int * NLE_TUNE_MAX),
         ("tune_val", ctypes.c_double * NLE_TUNE_MAX),
+        # Optional shared read-only data dir. When set, the immutable game data
+        # (DLB nhdat, data/oracles/rumors, config) is read from here and only the
+        # writable game-state files live under hackdir — so no per-reset copy of
+        # the ~3.7MB dat tree is needed. Empty => every prefix uses hackdir.
+        ("datadir", ctypes.c_char * 256),
     ]
 
 
@@ -268,7 +273,15 @@ class RawEngine:
         self._obs.misc = self._misc.ctypes.data_as(ctypes.POINTER(ctypes.c_int))
 
         self._ctx = None
-        self._hackdir = None  # tempfile.mkdtemp() path string
+        #: Tiny per-env WRITABLE directory (level/save/bones/score/lock files),
+        #: created once and reused across games. The large read-only game data is
+        #: read directly from the shared source dat (settings.datadir), so this
+        #: holds only the few small game-state files — no 3.7MB copy per reset.
+        self._hackdir = None
+        #: Writable templates the engine appends to (scores/logs/lock). Seeded
+        #: empty in the writable dir on each reset so every game starts clean —
+        #: matching the empty templates the old per-reset copytree provided.
+        self._writable_templates = ("record", "logfile", "xlogfile", "perm")
 
         # Outstanding snapshot handles created by this instance.  A handle is
         # bound to the ctx that created it; end() frees any the caller leaked.
@@ -379,6 +392,12 @@ class RawEngine:
         ]
         lib.nle_set_seed.restype = None
 
+        # Debug: dump the per-env arena memory map (named buffers, fmon/fobj
+        # chains, and the monster grid with fmon-membership) to a file. A
+        # diagnostic tool for arena-reuse / dangling-pointer investigations.
+        lib.nle_dbg_memmap.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+        lib.nle_dbg_memmap.restype = None
+
     def _build_dat_path(self) -> Path:
         """Return the path to the pre-built dat directory (NetHack data files).
 
@@ -424,18 +443,21 @@ class RawEngine:
         player-name suffix (e.g. "Val-hum-neu-fem" for a female neutral human
         Valkyrie). If None, the historical default (Monk) is used.
         """
-        # Tear down any prior game before creating a new one.
-        self.end()
+        # Tear down any prior game's C context (the writable hackdir is reused).
+        self._teardown_ctx()
 
-        # Make a writable copy of the built dat directory so the engine can
-        # write lock/record/level files without polluting the source tree.
-        src_dat = self._build_dat_path()
-        self._hackdir = tempfile.mkdtemp(prefix="nethack_hackdir_")
-        shutil.copytree(str(src_dat), self._hackdir, dirs_exist_ok=True)
+        # Provide a fresh, tiny writable hackdir for this game's game-state files.
+        # The large read-only data is read directly from the shared source dat
+        # (settings.datadir below), so reset no longer copies the ~3.7MB dat tree
+        # — historically the dominant (~29ms) reset cost.
+        self._ensure_hackdir()
 
         # Build settings.
         settings = NleSettings()
         settings.hackdir = self._hackdir.encode()
+        # Shared read-only data dir: the engine reads nhdat/data/oracles/config
+        # from here (never writes), so many envs share it with zero per-env copy.
+        settings.datadir = str(self._build_dat_path()).encode()
         settings.scoreprefix = b""
         char = character if character is not None else _DEFAULT_CHARACTER
         options_bytes = (_OPTIONS_BASE + ",name:Agent-" + char).encode()
@@ -479,14 +501,12 @@ class RawEngine:
         self._lib.nle_step(self._ctx, ctypes.byref(self._obs))
         return self
 
-    def end(self) -> None:
-        """Tear down the current game context and clean up the temp hackdir.
+    def _teardown_ctx(self) -> None:
+        """Free the current game's C context and snapshot handles (keep hackdir).
 
-        Frees any outstanding snapshot handles first: they become invalid once
-        the ctx they would restore into is gone, and freeing them here prevents
-        leaks across games (start() calls end() before creating a new game).
-        Handles are self-contained copies, so destroy is independent of the ctx
-        and ordering relative to nle_end does not matter.
+        Snapshot handles become invalid once the ctx they restore into is gone,
+        so they are freed here; they are self-contained copies, so destroy is
+        independent of the ctx and ordering relative to nle_end does not matter.
         """
         for snap in list(self._snapshots):
             self._lib.nle_fr_destroy(snap)
@@ -494,6 +514,38 @@ class RawEngine:
         if self._ctx is not None:
             self._lib.nle_end(self._ctx)
             self._ctx = None
+
+    def _ensure_hackdir(self) -> None:
+        """Provide a fresh, empty-but-seeded writable hackdir for a new game.
+
+        The directory is created once per engine and reused: on each reset its
+        prior game-state files (level/save/bones/lock plus the score/log files)
+        are removed and the empty writable templates re-seeded. It holds only a
+        handful of small files — the bulk read-only data is read from the shared
+        datadir — so this is sub-millisecond regardless of how the prior game
+        grew. The seeded empty templates reproduce exactly what the old
+        per-reset copytree placed here.
+        """
+        if self._hackdir is None:
+            self._hackdir = tempfile.mkdtemp(prefix="nethack_hackdir_")
+        else:
+            for name in os.listdir(self._hackdir):
+                p = os.path.join(self._hackdir, name)
+                if os.path.isdir(p):
+                    shutil.rmtree(p, ignore_errors=True)
+                else:
+                    os.unlink(p)
+        for tmpl in self._writable_templates:
+            open(os.path.join(self._hackdir, tmpl), "wb").close()
+
+    def end(self) -> None:
+        """Tear down the current game context and remove the temp hackdir.
+
+        Called on close()/__del__. Within a single engine, start() reuses the
+        hackdir across games (see _ensure_hackdir) and only this final teardown
+        removes it.
+        """
+        self._teardown_ctx()
         if self._hackdir is not None:
             shutil.rmtree(self._hackdir, ignore_errors=True)
             self._hackdir = None
@@ -584,6 +636,21 @@ class RawEngine:
             self._ctx, ctypes.c_ulong(core), ctypes.c_ulong(disp), b"\x00"
         )
         return self
+
+    def memmap(self, path: str) -> str:
+        """Dump the per-env arena memory map to ``path`` (debug tool).
+
+        Writes: arena base/used/cap; every named per-env buffer by arena offset;
+        the live monster (fmon) and object (fobj) chains; and the monster grid
+        (level.monsters[x][y]) with fmon-membership + data-validity per cell.
+        Lets you classify any arena pointer and spot dangling/stale pointers
+        (grid entries not in fmon, monsters with out-of-range ``data``). Useful
+        for arena-reuse / snapshot corruption debugging. Returns ``path``.
+        """
+        if self._ctx is None:
+            raise RuntimeError("memmap() requires an active game; call start() first")
+        self._lib.nle_dbg_memmap(self._ctx, str(path).encode())
+        return path
 
     # ------------------------------------------------------------------
     # Portable level blob save / load
