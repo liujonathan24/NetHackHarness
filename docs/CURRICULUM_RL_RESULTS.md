@@ -22,15 +22,20 @@ Metric: deepest curriculum floor reached (1–6) and floors climbed back, over t
 
 | method | agent | deepest floor / 6 | climbed back | seeds |
 |---|---|---|---|---|
-| **Go-Explore** | random primitives (+ run-macros, takes a stair when it lands on one) | **2** | 0 | 19, 2, 9 (2000 iters) |
-| **Voyager** | GLM 5.2, full vision, A* `move_to` + real stairs | **1** (seed 19) | 0 | 19 (60 turns); 2 in progress |
-| **LLM-Go-Explore** | GLM 5.2 explore policy + Go-Explore archive | (navigation-limited, same wall) | 0 | — |
+| **Go-Explore** | random primitives (+ run-macros, takes a stair it lands on) | **2** | 0 | 19, 2, 9 (2000 iters) |
+| **Voyager** | GLM 5.2, full vision, A* `move_to` + real stairs | **1** | 0 | 19 (60 turns) |
+| **Voyager + attack** | GLM 5.2 + `move(direction)` attack primitive + prompt that explains A* and says "fight the blocker" | **1** | 0 | 19, 2, 9 (20 turns) |
 
-Voyager seed 19 detail: 60 turns, **never left floor 1** — 36 `move_to`, 21
-`search`, 0 `stairs_down` (it never reached a down stair). It did *worse* than
-random Go-Explore because A* `move_to` repeatedly traps in a room whose only exit
-is a monster-blocked doorway, while random exploration occasionally stumbles onto
-a stair.
+Voyager seed 19 (move_to only): 60 turns, **never left floor 1** — 36 `move_to`,
+21 `search`, 0 `stairs_down`. Voyager+attack seed 19: 10 `move_to` + 10 `move`
+(it *did* follow the fight-the-blocker guidance) — still floor 1. All three seeds
+floor 1 with the attack tool.
+
+It did *worse* than random Go-Explore because A* `move_to` repeatedly traps in a
+room whose only exit is blocked by a monster A* won't path through — and the
+blocker is frequently the hero's own **pet** (stepping into it swaps, doesn't
+clear) or the route needs **exploration** of an undiscovered corridor (not
+combat), so "fight the blocker" doesn't break it.
 
 ## The finding
 
