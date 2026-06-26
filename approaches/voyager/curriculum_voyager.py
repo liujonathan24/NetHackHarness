@@ -136,6 +136,7 @@ def _move_to(env, x, y, max_steps=150):
     never descends."""
     tx, ty = int(x), int(y)
     obs = env._engine.to_core_observation()
+    stuck = 0
     for _ in range(max_steps):
         cx, cy = _pos(obs)
         if (cx, cy) == (tx, ty):
@@ -143,7 +144,30 @@ def _move_to(env, x, y, max_steps=150):
         chars = np.array(obs.chars).reshape(21, 79)
         path = a_star(chars, (cx, cy), (tx, ty))
         if not path:
-            return obs, False, f"no path to ({tx},{ty}) from ({cx},{cy})"
+            # No walkable A* route (often a monster/pet sits on the only
+            # doorway). Best-effort: step toward the target over the adjacent
+            # tile that minimizes distance and isn't a wall — stepping into a
+            # monster melees it (or swaps with a pet), clearing the way.
+            best, bestd = None, 1e9
+            for k, (ddx, ddy) in _DIRS.items():
+                nx2, ny2 = cx + ddx, cy + ddy
+                if not (0 <= nx2 < 79 and 0 <= ny2 < 21):
+                    continue
+                c = chr(int(chars[ny2, nx2]))
+                if c in "|-" or c == " ":   # wall / rock — never step there
+                    continue
+                d = abs(nx2 - tx) + abs(ny2 - ty)
+                if d < bestd:
+                    bestd, best = d, k
+            if best is None:
+                return obs, False, f"no path/move from ({cx},{cy}) to ({tx},{ty})"
+            obs, done, moved = _try(env, best)
+            if done:
+                return obs, True, "died en route"
+            stuck = 0 if moved else stuck + 1
+            if stuck >= 4:
+                return obs, False, f"stuck (no path) near ({cx},{cy}) -> ({tx},{ty})"
+            continue
         key = int(path[0])
         dx, dy = _DIRS[key]
         ax, ay = cx + dx, cy + dy
@@ -151,37 +175,35 @@ def _move_to(env, x, y, max_steps=150):
         obs, done, moved = _try(env, key)
         if done:
             return obs, True, "died en route"
+        if not moved:
+            # Resolve the block, in priority order:
+            if dx != 0 and dy != 0:
+                # Diagonal block (incl. diagonally onto a door, which NetHack
+                # forbids): step around it orthogonally.
+                for ok in (_ORTH[(dx, 0)], _ORTH[(0, dy)]):
+                    obs, done, moved = _try(env, ok)
+                    if done:
+                        return obs, True, "died en route"
+                    if moved:
+                        break
+            if not moved and (dx == 0 or dy == 0) and ahead == "+":
+                env.step(ord("o")); env.step(key)        # open the closed door
+                obs, done, moved = _try(env, key)
+                if done:
+                    return obs, True, "died en route"
+            if not moved and (ahead.isalpha() or ahead in "@&;:"):
+                for _ in range(6):                       # attack a blocking monster
+                    obs, done, moved = _try(env, key)
+                    if done:
+                        return obs, True, "died en route"
+                    if moved:
+                        break
         if moved:
+            stuck = 0
             continue
-        # Blocked. Resolve by cause:
-        if ahead == "+":                 # closed door — open then step through
-            env.step(ord("o")); env.step(key)
-            obs, done, moved = _try(env, key)
-            if done:
-                return obs, True, "died en route"
-            if moved:
-                continue
-        elif ahead.isalpha() or ahead in "@&;:'":   # a monster — attack through it
-            for _ in range(6):
-                obs, done, moved = _try(env, key)   # moving into a monster melees it
-                if done:
-                    return obs, True, "died en route"
-                if moved:
-                    break
-            if moved:
-                continue
-        elif dx != 0 and dy != 0:        # diagonal block — go around orthogonally
-            for ok in (_ORTH.get((dx, 0)), _ORTH.get((0, dy))):
-                if ok is None:
-                    continue
-                obs, done, moved = _try(env, ok)
-                if done:
-                    return obs, True, "died en route"
-                if moved:
-                    break
-            if moved:
-                continue
-        return obs, False, f"blocked at ({cx},{cy}) by '{ahead}' -> ({tx},{ty})"
+        stuck += 1
+        if stuck >= 3:
+            return obs, False, f"stuck near ({cx},{cy}) heading to ({tx},{ty})"
     return obs, False, f"reached vicinity of ({tx},{ty})"
 
 
