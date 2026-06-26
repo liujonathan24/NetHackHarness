@@ -190,6 +190,11 @@ class LLMProposer:
                 {"role": "user", "content": user_msg},
             ],
             response_format={"type": "json_object"},
+            # GLM is a REASONING model: without a generous max_tokens it spends
+            # the whole budget on hidden reasoning and returns EMPTY content,
+            # which then fails json.loads and silently drops to the fallback
+            # proposer. Give it room to emit the JSON after reasoning.
+            max_tokens=8000,
             timeout=self.timeout_s,
         )
         return resp.choices[0].message.content or ""
