@@ -62,14 +62,17 @@ Respond with ONLY a JSON object, e.g. {"tool":"move_to","x":50,"y":16} or
 {"tool":"stairs_down"} or {"tool":"stairs_up"} or {"tool":"search","times":10}."""
 
 
-def _glm(model, messages, api_key, max_tokens=3000):
+def _glm(model, messages, api_key, max_tokens=8000):
     body = json.dumps({
         "model": model, "messages": messages,
         "max_tokens": max_tokens, "temperature": 0.6,
         "response_format": {"type": "json_object"},
     }).encode()
     req = urllib.request.Request(f"{BASE_URL}/chat/completions", data=body, headers={
-        "Authorization": f"Bearer {api_key}", "Content-Type": "application/json"})
+        "Authorization": f"Bearer {api_key}", "Content-Type": "application/json",
+        # The API's edge (Cloudflare) 403s the default Python-urllib User-Agent;
+        # send a normal one so urllib behaves like curl.
+        "User-Agent": "curl/8.4.0"})
     with urllib.request.urlopen(req, timeout=180) as r:
         d = json.loads(r.read())
     return d["choices"][0]["message"]["content"]
@@ -88,28 +91,98 @@ def _render(env, obs):
     downs, ups = _stairs(chars)
     floor = env.curriculum_floor(obs)
     txt = "\n".join(r.rstrip() for r in rows if r.strip())
+    on = env._engine.hero_on_stair()  # +1 down, -1 up, 0 none
+    if on == 1:
+        hint = "You are STANDING ON the down stair '>' — call stairs_down NOW to descend."
+    elif on == -1:
+        hint = "You are STANDING ON the up stair '<' — call stairs_up NOW to ascend."
+    elif downs:
+        hint = (f"Nearest goal: move_to a '>' tile {downs[0]} then stairs_down. "
+                f"You are NOT on a stair yet.")
+    elif ups:
+        hint = f"No '>' here. To climb, move_to a '<' tile {ups[0]} then stairs_up."
+    else:
+        hint = "No stairs visible — explore with move_to / search."
     return (f"=== MAP (full vision) ===\n{txt}\n"
             f"You '@' are at ({hx},{hy}). Curriculum floor {floor}/6 "
             f"(deeper = better, then climb back).\n"
             f"HP {int(obs.blstats[10])}/{int(obs.blstats[11])} "
             f"XP-level {int(obs.blstats[18])} depth {int(obs.blstats[12])}.\n"
             f"Down stairs '>' at: {downs or 'none visible'}\n"
-            f"Up stairs '<' at: {ups or 'none visible'}"), (hx, hy), downs, ups
+            f"Up stairs '<' at: {ups or 'none visible'}\n"
+            f">>> {hint}"), (hx, hy), downs, ups
 
 
-def _move_to(env, x, y):
+_DIRS = {ord('h'): (-1, 0), ord('l'): (1, 0), ord('j'): (0, 1), ord('k'): (0, -1),
+         ord('y'): (-1, -1), ord('u'): (1, -1), ord('b'): (-1, 1), ord('n'): (1, 1)}
+_ORTH = {(-1, 0): ord('h'), (1, 0): ord('l'), (0, 1): ord('j'), (0, -1): ord('k')}
+
+
+def _pos(obs):
+    return int(obs.blstats[0]), int(obs.blstats[1])
+
+
+def _try(env, key):
+    p0 = _pos(env._engine.to_core_observation())
+    obs, done, _ = env.step(int(key))
+    return obs, done, (_pos(obs) != p0)
+
+
+def _move_to(env, x, y, max_steps=150):
+    """Adaptively walk to (x,y): re-path with A* from the CURRENT tile every
+    step (a single blocked step never desyncs the route). Opens a closed door
+    when one blocks an orthogonal step; decomposes a blocked diagonal into
+    orthogonal moves (NetHack forbids diagonal door entry). Real moves only —
+    never descends."""
+    tx, ty = int(x), int(y)
     obs = env._engine.to_core_observation()
-    chars = np.array(obs.chars).reshape(21, 79)
-    start = (int(obs.blstats[0]), int(obs.blstats[1]))
-    path = a_star(chars, start, (int(x), int(y)))
-    if not path:
-        return obs, False, "no path"
-    done = False
-    for key in path:
-        obs, done, _ = env.step(int(key))
+    for _ in range(max_steps):
+        cx, cy = _pos(obs)
+        if (cx, cy) == (tx, ty):
+            return obs, False, f"reached ({tx},{ty})"
+        chars = np.array(obs.chars).reshape(21, 79)
+        path = a_star(chars, (cx, cy), (tx, ty))
+        if not path:
+            return obs, False, f"no path to ({tx},{ty}) from ({cx},{cy})"
+        key = int(path[0])
+        dx, dy = _DIRS[key]
+        ax, ay = cx + dx, cy + dy
+        ahead = chr(int(chars[ay, ax])) if 0 <= ay < 21 and 0 <= ax < 79 else " "
+        obs, done, moved = _try(env, key)
         if done:
-            break
-    return obs, done, f"walked {len(path)} steps toward ({x},{y})"
+            return obs, True, "died en route"
+        if moved:
+            continue
+        # Blocked. Resolve by cause:
+        if ahead == "+":                 # closed door — open then step through
+            env.step(ord("o")); env.step(key)
+            obs, done, moved = _try(env, key)
+            if done:
+                return obs, True, "died en route"
+            if moved:
+                continue
+        elif ahead.isalpha() or ahead in "@&;:'":   # a monster — attack through it
+            for _ in range(6):
+                obs, done, moved = _try(env, key)   # moving into a monster melees it
+                if done:
+                    return obs, True, "died en route"
+                if moved:
+                    break
+            if moved:
+                continue
+        elif dx != 0 and dy != 0:        # diagonal block — go around orthogonally
+            for ok in (_ORTH.get((dx, 0)), _ORTH.get((0, dy))):
+                if ok is None:
+                    continue
+                obs, done, moved = _try(env, ok)
+                if done:
+                    return obs, True, "died en route"
+                if moved:
+                    break
+            if moved:
+                continue
+        return obs, False, f"blocked at ({cx},{cy}) by '{ahead}' -> ({tx},{ty})"
+    return obs, False, f"reached vicinity of ({tx},{ty})"
 
 
 def _exec(env, action):
@@ -135,6 +208,8 @@ def _exec(env, action):
 
 
 def _parse(content):
+    if not content:  # reasoning models can return null content if truncated
+        return {"tool": "search", "times": 1}
     try:
         return json.loads(content)
     except Exception:
@@ -183,7 +258,7 @@ def run_voyager(*, seed, max_turns, model, api_key, verbose=True):
                            "climbed_back": climbed})
         if verbose:
             print(f"[turn {turn+1:3d}] {str(action.get('tool')):10s} "
-                  f"floor={floor} deepest={deepest}/6 climbed_back={climbed}")
+                  f"floor={floor} deepest={deepest}/6 climbed_back={climbed}", flush=True)
         if done:
             last_feedback = "(You died — episode ended.)"
             break
