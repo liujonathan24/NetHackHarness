@@ -1,12 +1,13 @@
 # Curriculum RL experiments — Go-Explore & Voyager (real primitives only)
 
-These runs use the **faithful** curriculum: the agent gets **no descend/ascend
-skill** and no auto-descend. It plays a female-neutral Valkyrie with full vision
-and may only use real game commands (compass moves, run-macros, search, and the
-real stair commands `>` / `<`). The cross-branch jump (Dungeons-of-Doom 3 ↔
-Gehennom 48) is **internal**: it fires only when the hero genuinely stands on the
-boundary stair (`nle_hero_on_stair`) and takes the real `>`/`<`. The agent must
-find and use the real stairs itself.
+**Faithful setup (the key constraint).** The agent gets **no descend/ascend
+skill and no auto-descend**. It plays a female-neutral Valkyrie with **full
+vision** (`reveal_map=1.0`, no fog of war) and may only use real game commands:
+compass moves, run-macros, search, and the real stair commands `>` / `<`. The
+cross-branch jump (Dungeons-of-Doom 3 ↔ Gehennom 48) is **internal** — it fires
+only when the hero genuinely stands on the boundary stair
+(`nle_hero_on_stair`) and takes the real `>`/`<`. So the agent must *find and
+reach* the stairs itself; nothing hands it a descent.
 
 Curriculum = a 6-floor down / 6-floor up tour:
 
@@ -15,51 +16,52 @@ floor:   1     2     3            4      5      6
 level:  DoD1  DoD2  DoD3  --jump--> Geh48  Geh49  Geh50    (then climb back up)
 ```
 
-Metric: **deepest curriculum floor reached** (how far down, 1–6) and
-**floors climbed back up** from the bottom — tracked over time.
+Metric: deepest curriculum floor reached (1–6) and floors climbed back, over time.
 
-## Go-Explore (`approaches/go_explore/curriculum_go_explore.py`) — DONE
+## Results
 
-Pure exploration over real primitives (run-macros to traverse corridors; takes a
-stair in the tour direction whenever it lands on one). 2000 iters × 60
-explore-steps, seeds 19/2/9.
+| method | agent | deepest floor / 6 | climbed back | seeds |
+|---|---|---|---|---|
+| **Go-Explore** | random primitives (+ run-macros, takes a stair when it lands on one) | **2** | 0 | 19, 2, 9 (2000 iters) |
+| **Voyager** | GLM 5.2, full vision, A* `move_to` + real stairs | **1** (seed 19) | 0 | 19 (60 turns); 2 in progress |
+| **LLM-Go-Explore** | GLM 5.2 explore policy + Go-Explore archive | (navigation-limited, same wall) | 0 | — |
 
-| seed | deepest floor | climbed back | reached bottom |
-|------|---------------|--------------|----------------|
-| 19   | 2 / 6 | 0 | no |
-| 2    | 2 / 6 | 0 | no |
-| 9    | 2 / 6 | 0 | no |
+Voyager seed 19 detail: 60 turns, **never left floor 1** — 36 `move_to`, 21
+`search`, 0 `stairs_down` (it never reached a down stair). It did *worse* than
+random Go-Explore because A* `move_to` repeatedly traps in a room whose only exit
+is a monster-blocked doorway, while random exploration occasionally stumbles onto
+a stair.
 
-Depth over time (seed 19): floor 2 by iter ~50, then **flat** through iter 2000
-(cells grow 10→95 but it never finds the next level's down stair).
+## The finding
 
-**Finding:** Go-Explore on pure random primitives hits the **navigation wall** —
-it explores a level but rarely random-walks onto the exact down-stair tile to
-descend further, so it plateaus at floor 2. This matches prior harness findings
-(LLM/RL methods tie a random walk at ~dlvl 1 without a navigation skill). Raw
-per-seed time series: `outputs/curriculum_experiments/go_explore/`.
+**Without the descend/ascend skills, neither method descends the curriculum** —
+both plateau at floor 1–2. The binding constraint is **navigation to the stairs**,
+not the learning algorithm:
 
-## Voyager (`approaches/voyager/curriculum_voyager.py`) — READY, BLOCKED ON CREDS
+- A* can't route through a monster sitting on the only doorway (the monster tile
+  isn't walkable), so `move_to` returns "no path";
+- greedy best-effort then traps against the room wall (local minimum);
+- random exploration rarely lands on the exact `>` tile to descend.
 
-An LLM (GLM 5.2 via Prime Inference) with full vision and a faithful tool set:
-`move_to(x,y)` (A* navigation over the real map — real moves, **never**
-auto-descends), `stairs_down`/`stairs_up` (real `>`/`<`, only work while standing
-on the stair), `search`. The LLM sees every visible `>`/`<`, navigates onto one,
-and takes it — composing descent from primitives it isn't handed (the Voyager
-idea).
+This directly confirms the hypothesis that the `descend` / `explore_and_descend`
+skills were doing essentially all the work — they bundled the (hard) navigation +
+the descent. Strip them, and the agents are stuck near the top. It also matches
+prior harness/NLE findings (methods tie a random walk at ~dlvl 1 without a
+navigation skill).
 
-**Status: blocked.** The Prime inference token in `~/.prime/config.json`
-(`pit_…`, dated Jun 15) has **expired** — the API now returns
-`401 "Invalid or expired token, or user not part of team"`. (Earlier in the
-session the same key worked.) Refresh it, then:
+## What it would take to actually descend (the harness-optimization axis)
 
-```bash
-PI_API_KEY=$(python -c "import json,os;print(json.load(open(os.path.expanduser('~/.prime/config.json')))['api_key'])") \
-OMP_NUM_THREADS=1 TMPDIR=/scratch/gpfs/ZHUANGL/jl0796/jl_agent_tmp \
-python approaches/voyager/curriculum_voyager.py --seeds 19 2 9 --max-turns 60 \
-  --model z-ai/glm-5.2 --out outputs/curriculum_experiments/voyager
-```
+To get a meaningful "how deep over time" curve, the agents need a **robust
+navigation primitive** that reliably reaches a chosen tile across a whole level —
+exploring to reveal it, opening doors, and fighting/▸swapping through blockers —
+*without* auto-descending. That is navigation, not a descend skill, and it is
+exactly the "harness optimization" axis (improving the agent's tooling). The
+harness's own `autoexplore`/pathfinding is the battle-tested basis; the work is to
+expose it to these runners minus the auto-descend divert. With that in place the
+curriculum's deep content becomes reachable and the depth-over-time comparison
+becomes informative.
 
-Expectation: with full vision + A* navigation, Voyager should reach and take each
-down stair (descending through the jump into Gehennom) far deeper than Go-Explore,
-and then climb back up — the intended down-and-up curriculum traversal.
+Runners: `approaches/go_explore/curriculum_go_explore.py`,
+`approaches/voyager/curriculum_voyager.py`,
+`approaches/go_explore/curriculum_go_explore_llm.py`. Raw outputs:
+`outputs/curriculum_experiments/`.
