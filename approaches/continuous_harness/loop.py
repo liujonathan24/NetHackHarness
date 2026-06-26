@@ -431,13 +431,14 @@ def run_loop(args: argparse.Namespace) -> dict[str, Any]:
         print(f"iteration {i}: mean_depth={mean_depth:.2f} "
               f"depths={per_rollout} reward={mean_reward}")
 
-        # Build the compact history entry for the proposer.
-        excerpt = _trajectory_excerpt(trace_dir)
+        # Build the compact history entry for the proposer. Pass the per-game
+        # diagnostics (floors + tool-call histogram) so the teacher can see the
+        # actual failure pattern, not just the last 3 turns of one game.
         history.append({
             "config": cfg.summary(),
             "depth": mean_depth,
             "reward": mean_reward,
-            "excerpt": excerpt,
+            "excerpt": _trajectory_diagnostics(trace_dir) or _trajectory_excerpt(trace_dir),
         })
 
         # Propose the next config (skip on the last iteration). Sanitize the
@@ -483,6 +484,54 @@ def _trajectory_excerpt(trace_dir: Path, max_chars: int = 600) -> str:
         return ""
     tail = lines[-3:]
     return "\n".join(tail)[:max_chars]
+
+
+def _trajectory_diagnostics(trace_dir: Path) -> str:
+    """Per-game DIAGNOSTICS the teacher needs to actually improve the harness.
+
+    For each rollout (game) reports its final curriculum_floor and turn count,
+    and aggregates the tool-call histogram across all games. This surfaces the
+    decisive failure pattern the bare last-3-turns excerpt hides — e.g. the
+    policy spamming single-step `move` and wandering instead of `move_to`-ing to
+    the printed stair coordinates — so the proposer can diagnose and fix it
+    (drop a tool, mandate move_to, add a macro)."""
+    files = sorted(trace_dir.glob("*.ndjson")) if trace_dir.exists() else []
+    if not files:
+        return ""
+    import collections
+    tools: collections.Counter = collections.Counter()
+    per_game: list[str] = []
+    for f in files:
+        floor = 0
+        turns = 0
+        try:
+            for line in f.read_text().splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                rec = json.loads(line)
+                turns = rec.get("turn", turns) or turns
+                cf = rec.get("max_curriculum_floor") or rec.get("curriculum_floor") or 0
+                floor = max(floor, cf or 0)
+                for tc in (rec.get("tool_calls") or []):
+                    nm = tc.get("name")
+                    if nm:
+                        tools[nm] += 1
+        except Exception:
+            continue
+        per_game.append(f"floor={floor}@{turns}t")
+    hist = ", ".join(f"{k}={v}" for k, v in tools.most_common())
+    return (
+        f"per-game outcome: [{'; '.join(per_game)}]  "
+        f"(floor 4 = reached the deep segment/Gehennom; floor stalls at 1-2 mean "
+        f"the agent never reached the down-stairs).\n"
+        f"tool-call totals across games: {hist}\n"
+        f"Note: the observation prints exact stair coordinates "
+        f"(e.g. 'stairs DOWN at (x,y)'). If a low-level movement tool dominates "
+        f"the histogram while floors stay low, the policy is WANDERING instead "
+        f"of routing — consider dropping that tool, mandating move_to to the "
+        f"printed stair coords, or adding a find-stairs macro."
+    )
 
 
 def _print_leaderboard(leaderboard: list[dict[str, Any]]) -> None:
