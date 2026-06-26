@@ -370,6 +370,8 @@ class RawEngine:
         # nle_goto_abs is TWO-PHASE like nle_goto_depth (caller steps once).
         lib.nle_goto_abs.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int]
         lib.nle_goto_abs.restype = ctypes.c_int
+        lib.nle_hero_on_stair.argtypes = [ctypes.c_void_p]
+        lib.nle_hero_on_stair.restype = ctypes.c_int
         lib.nle_num_dungeons.argtypes = [ctypes.c_void_p]
         lib.nle_num_dungeons.restype = ctypes.c_int
         lib.nle_dungeon_info.argtypes = [
@@ -827,6 +829,16 @@ class RawEngine:
             raise ValueError(f"goto_abs(dnum={dnum}, dlevel={dlevel}) out of range")
         self.step(ord("."))  # process the deferred cross-branch goto
         return self
+
+    def hero_on_stair(self) -> int:
+        """+1 if the hero stands on a down stair, -1 on an up stair, else 0.
+
+        Lets a curriculum require genuine stair navigation before a boundary
+        jump (the jump fires only on a real stair use, never a teleport).
+        """
+        if self._ctx is None:
+            raise RuntimeError("hero_on_stair() requires an active game; call start() first")
+        return int(self._lib.nle_hero_on_stair(self._ctx))
 
     def dungeon_table(self) -> list:
         """Return the dungeon-branch layout as a list of dicts.
