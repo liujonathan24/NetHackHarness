@@ -319,19 +319,37 @@ def _descent_status_block(structured, state) -> list[str]:
         if stairs_xy is None:
             stairs_xy = next(iter(state["_seen_stairs_down"]))
     out.append("=== DESCENT STATUS ===")
+    _prim = bool(state.get("_primitives_curriculum")) if state is not None else False
     if stairs_xy is not None:
-        out.append(
-            f"DOWNSTAIRS: VISIBLE at {stairs_xy}. Your goal is to descend. "
-            f"Call `find_and_descend` NOW — it paths to `>` and descends in "
-            f"one action. (Or `descend` if you are already standing on it.)"
-        )
+        if _prim:
+            out.append(
+                f"DOWNSTAIRS: VISIBLE at {stairs_xy}. Call "
+                f"`move_to(x={stairs_xy[0]}, y={stairs_xy[1]})` NOW — it paths "
+                f"onto the `>` and descends you automatically in ONE tool call. "
+                f"There is no `descend`/`find_and_descend` tool; `move_to` onto "
+                f"the down-stairs is how you descend. Do it immediately."
+            )
+        else:
+            out.append(
+                f"DOWNSTAIRS: VISIBLE at {stairs_xy}. Your goal is to descend. "
+                f"Call `find_and_descend` NOW — it paths to `>` and descends in "
+                f"one action. (Or `descend` if you are already standing on it.)"
+            )
     else:
-        out.append(
-            "DOWNSTAIRS: not found yet on this level. Call `find_and_descend` "
-            "to push exploration into unrevealed territory; it auto-walks to "
-            "`>` and descends the instant the stairs are seen. Do NOT "
-            "loop on `search`/`pickup` — every wasted turn risks starvation."
-        )
+        if _prim:
+            out.append(
+                "DOWNSTAIRS: not visible yet. Call `autoexplore` to reveal more "
+                "of the level, then `move_to` the 'stairs DOWN at (x,y)' the "
+                "instant they appear (move_to onto `>` descends automatically). "
+                "Do NOT loop on `search`/`pickup` — wasted turns risk starvation."
+            )
+        else:
+            out.append(
+                "DOWNSTAIRS: not found yet on this level. Call `find_and_descend` "
+                "to push exploration into unrevealed territory; it auto-walks to "
+                "`>` and descends the instant the stairs are seen. Do NOT "
+                "loop on `search`/`pickup` — every wasted turn risks starvation."
+            )
     # Level clock: NLE in-game turn counter. Starvation deaths in the failing
     # runs clustered at T:600-1900. Warn early so the agent prioritizes descent.
     try:
@@ -761,9 +779,11 @@ def format_observation_as_chat(
                 px = int(structured.status.get("x", -1))
                 py = int(structured.status.get("y", -1))
                 if (px, py) in state["_seen_stairs_down"]:
+                    _dcmd = ("`press_down`" if state.get("_primitives_curriculum")
+                             else "`descend`")
                     hint = (
                         f"You are standing on stairs DOWN at ({px},{py}) — call "
-                        f"`descend` now. The `>` glyph is hidden under your `@`."
+                        f"{_dcmd} now. The `>` glyph is hidden under your `@`."
                     )
             except Exception:
                 pass
@@ -787,15 +807,18 @@ def format_observation_as_chat(
                         "Call `eat(item=<food letter>)` now; if no food in inventory, "
                         "`pray` (once) for divine aid."
                     )
+        _prim = bool(state.get("_primitives_curriculum")) if state is not None else False
         if hint is None and under and "stairs DOWN" in under:
-            hint = "You are on stairs down. Call `descend` now."
+            hint = ("You are on stairs down. Call `press_down` to go down a level."
+                    if _prim else "You are on stairs down. Call `descend` now.")
         elif hint is None and under and under.startswith("on tile:"):
             # Item under the player — suggest pickup.
             hint = f"Item here ({under}). Call `pickup` to grab it before moving on."
         else:
             for d, tile in adj.items():
                 if "stairs DOWN" in tile:
-                    hint = f"Stairs down ({d}). Call `move(direction=\"{d}\")` to step onto them, then `descend`."
+                    hint = (f"Stairs down ({d}). Call `move(direction=\"{d}\")` to "
+                            "step onto them — this descends you automatically.")
                     break
             if hint is None:
                 # Adjacent letter glyph == hostile (the obs renderer labels
@@ -815,7 +838,15 @@ def format_observation_as_chat(
                 if mon_dir is not None and structured.status:
                     hp = structured.status.get("hitpoints", 0)
                     hp_max = structured.status.get("max_hitpoints", 1) or 1
-                    if hp / hp_max >= 0.5:
+                    if _prim:
+                        # Fragile low-level hero: combat is the main cause of
+                        # death before descending. Never suggest attacking —
+                        # route to the down-stairs to escape to the next level.
+                        hint = (f"Hostile adjacent ({mon_dir}) and you are a fragile "
+                                f"low-level hero (HP {hp}/{hp_max}). Do NOT fight — "
+                                "move_to the 'stairs DOWN at (x,y)' to escape to the "
+                                "next level; if HP is very low, `pray` once.")
+                    elif hp / hp_max >= 0.5:
                         hint = f"Hostile adjacent ({mon_dir}). Call `attack(direction=\"{mon_dir}\")` — your HP is healthy."
                     else:
                         hint = f"Hostile adjacent ({mon_dir}) and HP is low ({hp}/{hp_max}). Consider `engrave_elbereth` or retreat with `move`."
@@ -836,8 +867,11 @@ def format_observation_as_chat(
                                     tx, ty = m.group(1), m.group(2)
                                     hint = (
                                         f"Stairs DOWN visible at ({tx},{ty}). "
-                                        f"Call `move_to(x={tx}, y={ty})` to walk "
-                                        "to them, then `descend`."
+                                        f"Call `move_to(x={tx}, y={ty})` NOW — it "
+                                        "paths onto the down-stairs and descends "
+                                        "you automatically (one tool call). Do this "
+                                        "immediately to descend before monsters "
+                                        "reach you."
                                     )
                                 break
                     except Exception:

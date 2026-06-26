@@ -387,6 +387,11 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
             state["cp_geh_dnum"] = int(env._geh_dnum)
             state["cp_deep_lo"] = int(env._deep_lo)
             state["cp_deep_hi"] = int(env._deep_hi)
+            # Primitives curriculum: no descend/ascend skill, and the hero is a
+            # fragile low-level Valkyrie. Flag it so the obs hints reference the
+            # real mechanism (move_to onto the down-stairs auto-descends) and
+            # discourage combat (which kills the low-HP hero before it descends).
+            state["_primitives_curriculum"] = (tier_name == "curriculum_primitives")
         state["scout_tiles_seen"] = set()
         state["scout_delta"] = 0
         state["scout_reward_total"] = 0.0
@@ -456,6 +461,11 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         # rendering reads stay bit-identical to the legacy variant checks.
         _obs_flags = self.spec.obs.setup_flags
         state["_descent_salient"] = _obs_flags.get("_descent_salient", False)
+        # Primitives curriculum is a pure descent task with a fragile hero —
+        # always inject the (now primitives-aware) descent-salient block so the
+        # agent is told, every turn, exactly how to descend via move_to.
+        if state.get("_primitives_curriculum"):
+            state["_descent_salient"] = True
         state["_e1_obs"] = _obs_flags.get("_e1_obs", False)
         state["_e2_obs"] = _obs_flags.get("_e2_obs", False)
         state["last_reward"] = 0.0
