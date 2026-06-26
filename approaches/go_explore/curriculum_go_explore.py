@@ -66,7 +66,7 @@ def _do_action(env, action):
         return obs, done
     return env.step(action)[:2]
 
-_CELL_GRID = 4
+_CELL_GRID = 3
 MAX_FLOOR = 6  # Gehennom 50 (bottom of the deep segment)
 MAX_CELLS = 6000
 
@@ -150,7 +150,18 @@ def run_curriculum_go_explore(*, iterations, explore_steps, seed, verbose=True):
         for _ in range(explore_steps):
             if done:
                 break
-            action = rng.choices(ACTIONS, weights=WEIGHTS, k=1)[0]
+            # Exploit a found stair: once the random walk lands ON a stair, use
+            # the real stair command — descend while still going down, ascend
+            # once the bottom has been reached. (Real `>`/`<`, no skill; this is
+            # just "if you're on stairs, take them in the tour direction".)
+            on_stair = env.engine.hero_on_stair()
+            bottomed = running_max >= MAX_FLOOR
+            if on_stair == 1 and not bottomed:
+                action = ord(">")
+            elif on_stair == -1 and bottomed:
+                action = ord("<")
+            else:
+                action = rng.choices(ACTIONS, weights=WEIGHTS, k=1)[0]
             try:
                 obs, done = _do_action(env, action)
             except Exception:
