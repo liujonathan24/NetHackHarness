@@ -36,6 +36,31 @@ from .proposer import FallbackProposer, LLMProposer, Proposer
 # Engine paths that must NEVER be mutated by the loop (relative to a worktree root).
 _IMMUTABLE_PATHS = ("third_party/NetHack", "third_party/nethack", "nethack_core")
 
+# Skills the primitives-only curriculum FORBIDS — the whole point is that the
+# agent navigates to real stairs itself. A proposer must never re-introduce
+# them (directly or via a named set like 'full'/'netplay' that bundles them).
+_FORBIDDEN_SKILLS = {"descend", "ascend", "find_and_descend", "explore_and_descend"}
+
+
+def sanitize_skill_set(cfg: HarnessConfig, fallback_skill_set: str) -> HarnessConfig:
+    """Guarantee the config's tool surface contains NO descend/ascend skill.
+
+    Comma-allowlists have the forbidden tokens stripped. Any *named* set
+    ('full'/'move'/'dir8'/'netplay') is collapsed to ``fallback_skill_set`` (the
+    primitives allowlist) because every named set bundles `descend`. This is the
+    hard guarantee that the proposer can never cheat the no-stairs-skill goal."""
+    ss = (cfg.skill_set or "").strip()
+    if "," in ss:
+        toks = [t.strip() for t in ss.split(",")
+                if t.strip() and t.strip() not in _FORBIDDEN_SKILLS]
+        new_ss = ",".join(toks) if toks else fallback_skill_set
+    else:
+        # Single token: any named set includes descend -> use the allowlist.
+        new_ss = fallback_skill_set
+    if new_ss != ss:
+        return dataclasses.replace(cfg, skill_set=new_ss)
+    return cfg
+
 
 # ---------------------------------------------------------------------------- #
 # immutable-game guard
@@ -415,9 +440,11 @@ def run_loop(args: argparse.Namespace) -> dict[str, Any]:
             "excerpt": excerpt,
         })
 
-        # Propose the next config (skip on the last iteration).
+        # Propose the next config (skip on the last iteration). Sanitize the
+        # proposal so it can never re-introduce a descend/ascend skill.
         if i < args.iterations - 1:
-            cfg = proposer.propose(base_cfg, history)
+            cfg = sanitize_skill_set(
+                proposer.propose(base_cfg, history), base_cfg.skill_set)
 
     # Leaderboard: best config by mean_depth.
     leaderboard = sorted(

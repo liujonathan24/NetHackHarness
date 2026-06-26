@@ -152,6 +152,12 @@ class HarnessConfig:
         meaningful: CH consumes the bootstrap, other variants ignore it (the env
         guards bootstrap I/O behind `variant == "CH"`), so we always pass it and
         let the env decide."""
+        # Pin the per-rollout seeds to seed..seed+n_seeds-1 so (a) the eval is
+        # deterministic across iterations and (b) each rollout's seed matches a
+        # `seed<N>.json` bootstrap file. Without explicit_seeds the env draws
+        # RANDOM episode seeds that never match the written bootstrap filenames,
+        # silently disabling CH prompt/macro evolution.
+        explicit_seeds = list(range(self.seed, self.seed + max(1, self.n_seeds)))
         return {
             "variant": self.variant,
             "skill_set": self.skill_set,
@@ -160,6 +166,7 @@ class HarnessConfig:
             "max_turns": self.max_turns,
             "refine_interval": self.refine_interval,
             "seed": self.seed,
+            "explicit_seeds": explicit_seeds,
             "bootstrap_dir": bootstrap_dir,
             "trace_dir": trace_dir,
         }
