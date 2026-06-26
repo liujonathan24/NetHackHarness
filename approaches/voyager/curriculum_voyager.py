@@ -37,7 +37,7 @@ _ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "environments" / "nethack"))
 
 from nethack_core.curriculum_engine_env import CurriculumEngineEnv  # noqa: E402
-from nethack_harness.navigation.pathfinding import a_star  # noqa: E402
+from nethack_harness.navigation.pathfinding import a_star, reachable_set  # noqa: E402
 
 BASE_URL = "https://api.pinference.ai/api/v1"
 MAX_FLOOR = 6
@@ -48,18 +48,31 @@ UP. Taking the down stairs on dungeon level 3 jumps you deep into the game
 automatically; keep going down to the bottom, then turn around and climb all the
 way back up.
 
-You have ONLY these tools (no auto-descend, no "descend" skill):
-- move_to(x, y): walk to tile (x,y) over the visible map.
-- stairs_down: take the '>' down stairs. You MUST be standing on a '>' first
-  (move_to it).
-- stairs_up: take the '<' up stairs. You MUST be standing on a '<' first.
-- search(times): search adjacent tiles for hidden passages (when stuck).
+Tools (no auto-descend, no "descend" skill):
+- move_to(x, y): A* path to tile (x,y) over the visible map and walk it. It
+  follows floor/corridor/door tiles only. It will FAIL when the route is blocked:
+  if a MONSTER (a letter like d, x, @) sits on the only doorway/corridor, A* sees
+  no walkable path and returns "no path"/"blocked by '<letter>'", because it
+  won't path through a monster.
+- move(direction): take ONE real step in a compass direction
+  (N, S, E, W, NE, NW, SE, SW). **Stepping INTO a monster ATTACKS it** (melee).
+  Use this to FIGHT a monster that is blocking your way, or to step around an
+  obstacle one tile at a time.
+- stairs_down / stairs_up: take the real '>' / '<' — you MUST already be standing
+  on that stair (move_to it first; the status says when you're on a stair).
+- search(times): search adjacent tiles for hidden passages (only when truly stuck
+  with no monster and no reachable stair).
 
-To go down: move_to a '>' tile, then call stairs_down. To go up: move_to a '<'
-tile, then stairs_up. The map lists every visible '>' and '<' with coordinates.
+STRATEGY: To descend — move_to a '>' tile, then stairs_down. If move_to reports
+"no path" or "blocked by '<monster>'", a monster is in the way: look at the map,
+find that monster relative to you, and call move(direction) TOWARD it to attack
+it (repeat until it's dead / moves), then move_to the stair again. Do NOT just
+`search` when a monster is blocking — fight it. To go up, move_to a '<' then
+stairs_up.
 
 Respond with ONLY a JSON object, e.g. {"tool":"move_to","x":50,"y":16} or
-{"tool":"stairs_down"} or {"tool":"stairs_up"} or {"tool":"search","times":10}."""
+{"tool":"move","direction":"SW"} or {"tool":"stairs_down"} or
+{"tool":"stairs_up"} or {"tool":"search","times":10}."""
 
 
 def _glm(model, messages, api_key, max_tokens=8000):
@@ -118,6 +131,55 @@ _DIRS = {ord('h'): (-1, 0), ord('l'): (1, 0), ord('j'): (0, 1), ord('k'): (0, -1
 _ORTH = {(-1, 0): ord('h'), (1, 0): ord('l'), (0, 1): ord('j'), (0, -1): ord('k')}
 
 
+_SIGN_NAME = {(0, -1): "N", (0, 1): "S", (1, 0): "E", (-1, 0): "W",
+              (1, -1): "NE", (-1, -1): "NW", (1, 1): "SE", (-1, 1): "SW"}
+
+
+def _dir_name(dx, dy):
+    sx = (dx > 0) - (dx < 0)
+    sy = (dy > 0) - (dy < 0)
+    return _SIGN_NAME.get((sx, sy), "?")
+
+
+def _is_monster(c):
+    return c.isalpha() or c in "@&;:"
+
+
+def _blocker_hint(chars, hero, target):
+    """Name the monster blocking the route and its compass direction. Prefers a
+    monster ADJACENT to the hero (the real blocker once the hero has walked to
+    the frontier); else the nearest monster toward the target."""
+    cx, cy = hero
+    # adjacent monster (the actual doorway/corridor blocker at the frontier)
+    adj = []
+    for k, (dx, dy) in _DIRS.items():
+        x, y = cx + dx, cy + dy
+        if 0 <= x < 79 and 0 <= y < 21 and _is_monster(chr(int(chars[y, x]))):
+            adj.append((abs(x - target[0]) + abs(y - target[1]), x, y,
+                        chr(int(chars[y, x])), _dir_name(dx, dy)))
+    if adj:
+        _, mx, my, mc, dname = min(adj)
+        return (f"blocked: a monster '{mc}' is right next to you ({dname}, at "
+                f"({mx},{my})) on the only way to {target} — ATTACK it: "
+                f"move(direction='{dname}') (repeat until it dies), then move_to {target}")
+    # otherwise nearest monster overall
+    best, bestd = None, 1e9
+    for y in range(21):
+        for x in range(79):
+            if (x, y) != (cx, cy) and _is_monster(chr(int(chars[y, x]))):
+                d = abs(x - cx) + abs(y - cy)
+                if d < bestd:
+                    bestd, best = d, (x, y, chr(int(chars[y, x])))
+    if best is not None:
+        mx, my, mc = best
+        dn = _dir_name(mx - cx, my - cy)
+        return (f"no A* path to {target}: nearest monster '{mc}' at ({mx},{my}) "
+                f"is to your {dn} — head that way (move(direction='{dn}')) and "
+                f"attack it to clear the route, then move_to {target}")
+    return (f"no A* path from {hero} to {target}; no monster visible — the way may "
+            f"need a door: try move(direction=...) toward {target} or search")
+
+
 def _pos(obs):
     return int(obs.blstats[0]), int(obs.blstats[1])
 
@@ -144,30 +206,19 @@ def _move_to(env, x, y, max_steps=150):
         chars = np.array(obs.chars).reshape(21, 79)
         path = a_star(chars, (cx, cy), (tx, ty))
         if not path:
-            # No walkable A* route (often a monster/pet sits on the only
-            # doorway). Best-effort: step toward the target over the adjacent
-            # tile that minimizes distance and isn't a wall — stepping into a
-            # monster melees it (or swaps with a pet), clearing the way.
-            best, bestd = None, 1e9
-            for k, (ddx, ddy) in _DIRS.items():
-                nx2, ny2 = cx + ddx, cy + ddy
-                if not (0 <= nx2 < 79 and 0 <= ny2 < 21):
-                    continue
-                c = chr(int(chars[ny2, nx2]))
-                if c in "|-" or c == " ":   # wall / rock — never step there
-                    continue
-                d = abs(nx2 - tx) + abs(ny2 - ty)
-                if d < bestd:
-                    bestd, best = d, k
-            if best is None:
-                return obs, False, f"no path/move from ({cx},{cy}) to ({tx},{ty})"
-            obs, done, moved = _try(env, best)
-            if done:
-                return obs, True, "died en route"
-            stuck = 0 if moved else stuck + 1
-            if stuck >= 4:
-                return obs, False, f"stuck (no path) near ({cx},{cy}) -> ({tx},{ty})"
-            continue
+            # No walkable A* route — usually a monster on the only doorway/
+            # corridor. Walk to the FRONTIER (nearest reachable tile to the
+            # target) so the agent ends up next to the blocker, then report it
+            # actionably (which monster, which direction) for move()-to-attack.
+            reach = reachable_set(chars, (cx, cy))
+            frontier = min(reach, key=lambda t: abs(t[0] - tx) + abs(t[1] - ty)) \
+                if reach else (cx, cy)
+            if frontier == (cx, cy):
+                return obs, False, _blocker_hint(chars, (cx, cy), (tx, ty))
+            fpath = a_star(chars, (cx, cy), frontier)
+            if not fpath:
+                return obs, False, _blocker_hint(chars, (cx, cy), (tx, ty))
+            path = fpath   # walk toward the frontier with the normal step logic
         key = int(path[0])
         dx, dy = _DIRS[key]
         ax, ay = cx + dx, cy + dy
@@ -207,10 +258,27 @@ def _move_to(env, x, y, max_steps=150):
     return obs, False, f"reached vicinity of ({tx},{ty})"
 
 
+_NAME_DIR = {"N": ord('k'), "S": ord('j'), "E": ord('l'), "W": ord('h'),
+             "NE": ord('u'), "NW": ord('y'), "SE": ord('n'), "SW": ord('b')}
+
+
 def _exec(env, action):
     tool = action.get("tool")
     if tool == "move_to":
         return _move_to(env, action.get("x", 0), action.get("y", 0))
+    if tool == "move":
+        key = _NAME_DIR.get(str(action.get("direction", "")).upper().strip())
+        if key is None:
+            obs = env._engine.to_core_observation()
+            return obs, False, f"bad direction {action.get('direction')!r}"
+        before = _pos(env._engine.to_core_observation())
+        obs, done, _ = env.step(key)
+        after = _pos(obs)
+        if done:
+            return obs, True, "died"
+        moved = after != before
+        return obs, done, (f"moved {action.get('direction')}" if moved
+                           else f"attacked/blocked toward {action.get('direction')} (stayed {before})")
     if tool == "stairs_down":
         obs, done, _ = env.step(ord(">"))
         return obs, done, "took '>'"
