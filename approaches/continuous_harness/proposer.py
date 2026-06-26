@@ -132,14 +132,24 @@ def _build_user_msg(base: HarnessConfig, history: list[dict[str, Any]]) -> str:
     }, indent=2))
     lines.append("")
     if history:
-        lines.append("PRIOR ITERATIONS (config -> achieved depth):")
+        # Identify the best iteration so the teacher BUILDS ON it (hill-climb)
+        # rather than discarding a winning prompt/macro on the next sample.
+        best = max(history, key=lambda r: (r.get("depth") or 0))
+        lines.append(
+            "BEST CONFIG SO FAR (depth={:.2f}) — START FROM THIS and change ONE "
+            "thing you expect to help; do NOT throw away what already works:".format(
+                best.get("depth") or 0))
+        lines.append(json.dumps(best.get("config"), indent=2))
+        lines.append("")
+        lines.append("ALL PRIOR ITERATIONS (config -> achieved depth + per-game "
+                     "diagnostics):")
         for i, rec in enumerate(history):
             lines.append(json.dumps({
                 "iteration": i,
                 "config": rec.get("config"),
                 "depth": rec.get("depth"),
                 "reward": rec.get("reward"),
-                "excerpt": (rec.get("excerpt") or "")[:600],
+                "excerpt": (rec.get("excerpt") or "")[:800],
             }, indent=2))
     else:
         lines.append("No prior iterations yet; propose a strong first variation.")

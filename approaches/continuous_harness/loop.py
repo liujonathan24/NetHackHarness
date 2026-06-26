@@ -375,6 +375,11 @@ def run_loop(args: argparse.Namespace) -> dict[str, Any]:
     iteration_records: list[dict[str, Any]] = []
 
     cfg = base_cfg
+    # Hill-climbing: propose the NEXT config from the BEST config so far (not the
+    # empty base), so the loop builds on what worked instead of random-walking
+    # and discarding a winning prompt/macro on the next sample.
+    best_cfg = base_cfg
+    best_depth = -1.0
     for i in range(args.iterations):
         iter_branch = f"harness-iter-{runid}-{i}"
         iter_dir = current / ".claude" / "worktrees" / "harness-iter" / f"iter{i}"
@@ -441,11 +446,17 @@ def run_loop(args: argparse.Namespace) -> dict[str, Any]:
             "excerpt": _trajectory_diagnostics(trace_dir) or _trajectory_excerpt(trace_dir),
         })
 
-        # Propose the next config (skip on the last iteration). Sanitize the
-        # proposal so it can never re-introduce a descend/ascend skill.
+        # Track the best config so far (hill-climbing anchor).
+        if mean_depth > best_depth:
+            best_depth = mean_depth
+            best_cfg = cfg
+
+        # Propose the next config (skip on the last iteration) from the BEST
+        # config so far, so improvements compound. Sanitize so the proposal can
+        # never re-introduce a descend/ascend skill.
         if i < args.iterations - 1:
             cfg = sanitize_skill_set(
-                proposer.propose(base_cfg, history), base_cfg.skill_set)
+                proposer.propose(best_cfg, history), base_cfg.skill_set)
 
     # Leaderboard: best config by mean_depth.
     leaderboard = sorted(
