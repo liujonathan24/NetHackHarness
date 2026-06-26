@@ -31,6 +31,7 @@ from .milestones import (
     oracle_consult_milestone,
     quest_complete_milestone,
     reach_dlvl_milestone,
+    reached_deep_segment_milestone,
     reached_planes_milestone,
     sokoban_complete_milestone,
 )
@@ -43,6 +44,7 @@ TierName = Literal[
     "dynamic_subgoal",
     "quest_complete", "castle_reached",
     "curriculum",
+    "curriculum_primitives",
 ]
 
 
@@ -176,6 +178,29 @@ TIERS: dict[TierName, TierSpec] = {
         ),
         success_criterion="reached the Elemental Planes",
         success_milestone=reached_planes_milestone,
+    ),
+    "curriculum_primitives": TierSpec(
+        name="curriculum_primitives",
+        nle_task="engine",  # drives CurriculumPrimitivesEnv (see load_environment)
+        des_file=None,
+        max_episode_steps=4_000,
+        description=(
+            "Compressed full-game curriculum (female-neutral Valkyrie, full "
+            "vision) with NO descend/ascend skill. You must NAVIGATE to the real "
+            "staircases yourself and take them. Read the map: '>' is a "
+            "down-staircase, '<' is an up-staircase. Walk onto a '>' tile (check "
+            "`=== UNDER PLAYER ===` shows 'stairs DOWN (>)'), then call "
+            "`press_down`; that descends one real level. Plan: from Dungeons of "
+            "Doom level 1, find the '>' and press_down to reach DoD 2, then DoD "
+            "3; on DoD 3 the down-stairs JUMP you to the deep end (Gehennom, with "
+            "a stat upgrade). Keep finding '>' and pressing down through Gehennom "
+            "to go deeper. Use move/move_to/autoexplore/search to explore and "
+            "reach the stairs. GOAL: reach the deep segment (Gehennom) and "
+            "descend as far as you can. There is no `descend`/`ascend` tool — "
+            "only movement, search, and the raw `press_down`/`press_up` keys."
+        ),
+        success_criterion="reached the deep segment (Gehennom) via real stairs",
+        success_milestone=reached_deep_segment_milestone,
     ),
 }
 

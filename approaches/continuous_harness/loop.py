@@ -147,8 +147,14 @@ def write_bootstrap(bootstrap_dir: Path, cfg: HarnessConfig) -> Path:
 # depth parsing
 # ---------------------------------------------------------------------------- #
 def _depth_from_ndjson(path: Path) -> Optional[int]:
-    """Per-rollout depth = max `max_dlvl_reached` over its turns
-    (fallback: max `dlvl`)."""
+    """Per-rollout score = the best curriculum progress over its turns.
+
+    Prefers `curriculum_floor` (1..6, the seed-robust curriculum axis: floor 6
+    is the seed's clamped deep bottom). Curriculum floor is the right metric
+    because absolute depth DROPS on the ascent and jumps discontinuously across
+    the DoD3->Gehennom boundary. Falls back to `max_dlvl_reached`, then `dlvl`,
+    for non-curriculum tiers."""
+    best_floor = None
     best_max = None
     best_dlvl = None
     try:
@@ -160,6 +166,10 @@ def _depth_from_ndjson(path: Path) -> Optional[int]:
                 rec = json.loads(line)
             except Exception:
                 continue
+            for fk in ("max_curriculum_floor", "curriculum_floor"):
+                fv = rec.get(fk)
+                if isinstance(fv, int):
+                    best_floor = fv if best_floor is None else max(best_floor, fv)
             v = rec.get("max_dlvl_reached")
             if isinstance(v, int):
                 best_max = v if best_max is None else max(best_max, v)
@@ -168,6 +178,8 @@ def _depth_from_ndjson(path: Path) -> Optional[int]:
                 best_dlvl = d if best_dlvl is None else max(best_dlvl, d)
     except Exception:
         return None
+    if best_floor is not None:
+        return best_floor
     if best_max is not None:
         return best_max
     return best_dlvl
@@ -234,11 +246,20 @@ def run_eval(
         return _synthesize_dry_run(cfg, trace_dir)
 
     env_args = cfg.to_env_args(str(bootstrap_dir), str(trace_dir))
-    # Build the vf-eval command. We source the teacher creds first (env_sh
-    # exports PI_API_KEY / REFINER_API_KEY / REFINER_BASE_URL) then invoke
-    # vf-eval with --provider prime for the policy.
+    # Use the iteration worktree's OWN code, not the venv's installed copy. The
+    # `nethack` module is installed as a stale site-packages file and
+    # `nethack_harness`/`nethack_core` are editable-installed pointing at the
+    # MAIN repo checkout — so without an explicit PYTHONPATH the eval would run
+    # the main repo's harness, NOT this iteration's committed edits. Prepending
+    # the iter worktree's env dir + root makes the iteration's source win over
+    # both the stale file and the main-repo editable. (Documented gotcha.)
+    pythonpath = f"{iter_dir}/environments/nethack:{iter_dir}"
+    # Drive vf-eval through the symlinked venv binary directly. `uv run` would
+    # try to re-sync the iteration worktree's project (whose lockfile references
+    # a gitignored workspace member) and fail; the venv already has everything.
+    venv_vf = str(iter_dir / ".venv" / "bin" / "vf-eval")
     eval_cmd = [
-        "uv", "run", "vf-eval", "nethack",
+        venv_vf, "nethack",
         "--provider", "prime",
         "-m", cfg.policy_model,
         "-n", str(cfg.n_seeds),
@@ -247,9 +268,11 @@ def run_eval(
         "--disable-tui",
         "--save-results",
     ]
-    # `source` requires a shell; wrap in bash -lc.
+    # `source` requires a shell; wrap in bash -lc. Source the teacher creds
+    # (PI_API_KEY / REFINER_API_KEY / REFINER_BASE_URL) and prepend PYTHONPATH.
     shell_cmd = (
         f"source {shlex_quote(env_sh)} && "
+        f"export PYTHONPATH={shlex_quote(pythonpath)}:$PYTHONPATH && "
         + " ".join(shlex_quote(c) for c in eval_cmd)
     )
     proc = subprocess.run(
@@ -306,7 +329,7 @@ def run_loop(args: argparse.Namespace) -> dict[str, Any]:
 
     base_cfg = HarnessConfig(
         variant="CH" if not args.dry_run else "B1",
-        skill_set="full",
+        skill_set=args.skill_set,
         prompt_addendum=None,
         tier=args.tier,
         policy_model=args.policy,
@@ -466,6 +489,11 @@ def build_parser() -> argparse.ArgumentParser:
                    help="teacher/refiner + LLM-proposer model id (must differ "
                         "from --policy)")
     p.add_argument("--tier", default="corridor_explore")
+    p.add_argument("--skill-set", dest="skill_set", default="full",
+                   help="base tool surface: 'full'/'move'/'dir8'/'netplay' or a "
+                        "comma-allowlist (e.g. the primitives-curriculum set "
+                        "'move,move_to,autoexplore,search,press_down,press_up,...'). "
+                        "The LLM proposer may further mutate it between iters.")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--n-seeds", dest="n_seeds", type=int, default=1)
     p.add_argument("--max-turns", dest="max_turns", type=int, default=200)

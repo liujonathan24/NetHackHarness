@@ -396,6 +396,39 @@ def ascend(env: NetHackCoreEnv, obs: StructuredObservation) -> SkillResult:
                        "Attempted to ascend.")
 
 
+@registry.register("press_down", schema={
+    "description": (
+        "Press the raw '>' key to go down a staircase. This is a PRIMITIVE: it "
+        "only works if you are already standing on a '>' tile (check "
+        "`=== UNDER PLAYER ===` — it should say 'stairs DOWN (>)'). It does NOT "
+        "navigate for you and does NOT auto-advance — you must walk onto the "
+        "down-stairs yourself first. Off a staircase it wastes a turn."
+    ),
+    "parameters": {},
+})
+def press_down(env: NetHackCoreEnv, obs: StructuredObservation) -> SkillResult:
+    # Pure keystroke primitive: MORE (13) dismisses any prompt, then DOWN ('>').
+    # No on-stair gate and no curriculum short-circuit — the agent must navigate.
+    return SkillResult([int(nethack.MiscAction.MORE), int(nethack.MiscDirection.DOWN)],
+                       "Pressed '>' (go down stairs).")
+
+
+@registry.register("press_up", schema={
+    "description": (
+        "Press the raw '<' key to go up a staircase. This is a PRIMITIVE: it "
+        "only works if you are already standing on a '<' tile (check "
+        "`=== UNDER PLAYER ===` — it should say 'stairs UP (<)'). It does NOT "
+        "navigate for you and does NOT auto-advance — you must walk onto the "
+        "up-stairs yourself first. Off a staircase it wastes a turn."
+    ),
+    "parameters": {},
+})
+def press_up(env: NetHackCoreEnv, obs: StructuredObservation) -> SkillResult:
+    # Pure keystroke primitive: MORE (13) dismisses any prompt, then UP ('<').
+    return SkillResult([int(nethack.MiscAction.MORE), int(nethack.MiscDirection.UP)],
+                       "Pressed '<' (go up stairs).")
+
+
 @registry.register("search", schema={
     "description": (
         "Search adjacent tiles for hidden passages and traps. Pass `times` "

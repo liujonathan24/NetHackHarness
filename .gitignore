@@ -52,3 +52,4 @@ nle_crash_*.txt
 /tools/run_demo.py
 /tools/record_versioned_demo.py
 /tools/compare_evals.py
+outputs/

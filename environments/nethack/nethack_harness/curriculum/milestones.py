@@ -213,6 +213,39 @@ reached_planes_milestone = Milestone(
 )
 
 
+# ---------- milestone: reached the deep curriculum segment (Gehennom) ----------
+
+_BLSTAT_DEPTH = 12  # the displayed dungeon depth (curriculum jump sets this ~48)
+
+
+def _reached_deep_segment_check(obs, state: dict) -> bool:
+    """Primitives-curriculum success: the hero crossed the DoD3->Gehennom
+    boundary by genuinely navigating onto the real down-stair. Detected by the
+    live Gehennom dnum stashed at setup (``cp_geh_dnum``); falls back to the
+    displayed depth (which can only exceed 3 via the boundary jump, since '>' on
+    DoD3 is the jump and DoD is capped at level 3 in the curriculum)."""
+    if state.get("milestone_reached_deep"):
+        return True
+    geh_dnum = state.get("cp_geh_dnum")
+    if geh_dnum is not None and _dungeon_number(obs) == geh_dnum:
+        state["milestone_reached_deep"] = True
+        return True
+    if geh_dnum is None and int(obs.blstats[_BLSTAT_DEPTH]) >= 10:
+        state["milestone_reached_deep"] = True
+        return True
+    return False
+
+
+reached_deep_segment_milestone = Milestone(
+    name="reached_deep_segment",
+    description=(
+        "Reach the deep curriculum segment (Gehennom) by navigating to and "
+        "taking the real down-stairs — no descend/ascend skill."
+    ),
+    check=_reached_deep_segment_check,
+)
+
+
 # ---------- milestone: completed the role quest ----------
 
 _QUEST_COMPLETE_MARKERS = (

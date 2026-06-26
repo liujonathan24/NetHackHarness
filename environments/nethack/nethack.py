@@ -349,6 +349,13 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
             # the cross-branch jumps.
             from nethack_core.curriculum_env import CurriculumEnv
             env = CurriculumEnv(max_episode_steps=spec.max_episode_steps)
+        elif tier_name == "curriculum_primitives":
+            # Faithful, no-cheat curriculum: same compressed tour but the agent
+            # must NAVIGATE to the real stairs (no descend/ascend skill). The
+            # DoD3<->Gehennom boundary jump fires only when the hero genuinely
+            # stands on the boundary stair. See CurriculumPrimitivesEnv.
+            from nethack_core.curriculum_primitives_env import CurriculumPrimitivesEnv
+            env = CurriculumPrimitivesEnv(max_episode_steps=spec.max_episode_steps)
         else:
             env = NetHackCoreEnv(
                 task_name=spec.nle_task,
@@ -373,6 +380,13 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         state["_continual_lives_left"] = self.continual_lives if self.continual else 0
         state["spec"] = spec
         state["meta"] = meta
+        # Primitives-curriculum: stash the live Gehennom dnum + clamped deep
+        # range so the success milestone and trace can read them (the engine's
+        # table dnum is the source of truth — it is NOT the NetHack branch const).
+        if hasattr(env, "curriculum_floor") and hasattr(env, "_geh_dnum"):
+            state["cp_geh_dnum"] = int(env._geh_dnum)
+            state["cp_deep_lo"] = int(env._deep_lo)
+            state["cp_deep_hi"] = int(env._deep_hi)
         state["scout_tiles_seen"] = set()
         state["scout_delta"] = 0
         state["scout_reward_total"] = 0.0
@@ -804,6 +818,19 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
             if spec.success_milestone.check(last_obs, state):
                 state["succeeded"] = True
                 state["terminated"] = True
+
+        # Primitives-curriculum progress axis: floor 1..6 (DoD 1/2/3 -> 1/2/3,
+        # Gehennom deep_lo.. -> 4/5/6). Recorded in the trace so the CH loop can
+        # score curriculum progress directly (depth alone drops on the ascent).
+        _cf = getattr(state.get("env"), "curriculum_floor", None)
+        if callable(_cf):
+            try:
+                floor = int(_cf(last_obs))
+                state["curriculum_floor"] = floor
+                state["max_curriculum_floor"] = max(
+                    state.get("max_curriculum_floor", 0), floor)
+            except Exception:
+                pass
 
         # Belief-state distillation (Track B v0.3): two trigger conditions.
         # 1) Level transition: summarize the prior level into the journal.

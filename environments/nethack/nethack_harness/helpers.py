@@ -161,6 +161,8 @@ def _write_trace_entry(env_self, state: dict, assistant_msg, tool_calls,
             "hp": status.get("hitpoints"),
             "max_hp": status.get("max_hitpoints"),
             "max_dlvl_reached": state.get("max_dlvl_reached"),
+            "curriculum_floor": state.get("curriculum_floor"),
+            "max_curriculum_floor": state.get("max_curriculum_floor"),
             "continual_life": state.get("_continual_life", 1),
             "rendered_user_message": obs_text,
             "rendered_user_content": _capture_user_content(
