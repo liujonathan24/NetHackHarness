@@ -55,6 +55,16 @@ class CurriculumPrimitivesEnv(NetHackCoreEnv):
     No descend/ascend mega-skill: the agent must navigate onto the real stairs.
     """
 
+    #: Starting stat boost applied at reset so the hero survives the early
+    #: Dungeons of Doom (the descend/ascend cheat used to dodge this by
+    #: teleporting). This isolates the *navigation* challenge from survival:
+    #: a tanky, hard-hitting hero that still must find and reach the stairs.
+    #: NetHack-encoded: str=125 is STR 25 (exceptional melee); xp_level lifts
+    #: to-hit; max_hp/hp give a large survivability buffer.
+    DEFAULT_START_STATS = {
+        "max_hp": 250, "hp": 250, "str": 125, "dex": 20, "con": 20, "xp_level": 10,
+    }
+
     def __init__(
         self,
         *,
@@ -62,6 +72,7 @@ class CurriculumPrimitivesEnv(NetHackCoreEnv):
         deep_depths: tuple[int, ...] = (48, 49, 50),
         upgrade_artifact: Optional[str] = None,
         reveal_map: bool = True,
+        start_stats: Optional[dict] = None,
         **kwargs,
     ) -> None:
         # Full vision on by default ("lights on"); merge with any caller tune.
@@ -73,6 +84,8 @@ class CurriculumPrimitivesEnv(NetHackCoreEnv):
         self._shallow = tuple(shallow_depths)
         self._deep_req = tuple(deep_depths)
         self._upgrade_model = ValkyrieUpgradeModel.load(upgrade_artifact)
+        self._start_stats = (dict(self.DEFAULT_START_STATS) if start_stats is None
+                             else dict(start_stats))
         self._curr_seed = DEFAULT_SEED
         # Resolved at reset() from the live dungeon table.
         self._dod_dnum = 0
@@ -105,6 +118,10 @@ class CurriculumPrimitivesEnv(NetHackCoreEnv):
         self._deep_lo = max(geh["depth_start"], min(geh_max, self._deep_req[0]))
         self._deep_hi = max(geh["depth_start"], min(geh_max, self._deep_req[-1]))
         self._shallow_hi = max(self._shallow)
+        # Apply the starting survivability/attack boost so DoD monster deaths
+        # stop and the curriculum tests navigation, not early-game RNG survival.
+        if self._start_stats:
+            obs = self.modify(**self._start_stats)
         return obs, meta
 
     # ----- the curriculum step (on-stair boundary jump only) -----
