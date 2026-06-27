@@ -1047,6 +1047,37 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
                 state["terminated"] = True
                 _detect_terminal_outcome(last_obs, state)
         # ----------------------------------------------------------------
+        # CODE-MODE stuck detection. The block above is gated on a movement
+        # skill_name, but in interface='code' every turn is skill_name='code',
+        # so it never fires — and code-mode agents that re-issue a blocked
+        # move_to (or otherwise loop) sat frozen on one tile for dozens of
+        # turns with no signal. Here: if the agent ATTEMPTED to act (produced
+        # actions) but did not move for several turns running, surface a strong
+        # situational hint. Hint only — no auto-kick/search; in code mode the
+        # agent decides. Pure feedback about the situation, not a location.
+        if skill_name == "code" and not (terminated or truncated):
+            try:
+                _pb = last_obs.blstats if hasattr(last_obs, "blstats") else last_obs.get("blstats")
+                _pp = (int(_pb[0]), int(_pb[1])) if _pb is not None else None
+            except (KeyError, IndexError, TypeError, AttributeError):
+                _pp = None
+            _attempted = bool(action_indices)
+            if _attempted and _pp is not None and _pp == state.get("_cm_prev_pos"):
+                state["_cm_stuck"] = state.get("_cm_stuck", 0) + 1
+            elif _attempted:
+                state["_cm_stuck"] = 0
+            if _pp is not None:
+                state["_cm_prev_pos"] = _pp
+            if state.get("_cm_stuck", 0) >= 3:
+                stuck_hint = (
+                    f"[stuck: you have not moved from {_pp} for "
+                    f"{state['_cm_stuck']} turns — the move you keep issuing is "
+                    "not getting through (blocked, or the target is unreachable "
+                    "from here). STOP repeating it. Try nh.autoexplore() to open "
+                    "new corridors, nh.search(times=10) for a hidden passage, or "
+                    "move_to / move toward a DIFFERENT reachable tile.]"
+                )
+                state["_cm_stuck"] = 0
 
         # Autoexplore-loop detection: when autoexplore returns "short" feedback
         # repeatedly (frontier shrunk to 1-2 step paths near level edges), the
