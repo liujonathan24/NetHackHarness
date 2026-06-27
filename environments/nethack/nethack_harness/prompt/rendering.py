@@ -968,23 +968,28 @@ def format_observation_as_chat(
     # was gated to compact mode only. Non-compact agents have to scan the
     # ASCII grid themselves and routinely confuse `<` for `>` on dense maps.
     from nethack_core.observations import extract_hostiles_in_sight, extract_visible_features
+    # The VISIBLE FEATURES list enumerates every stair/altar/door WITH its
+    # coordinates — it locates things for the agent. The primitives curriculum
+    # forbids that: the agent reads the map and finds features itself. (Hostiles
+    # stays below — threat awareness, not the navigation goal.)
+    _prim = bool(state.get("_primitives_curriculum")) if state is not None else False
     if state is not None and "raw_obs" in state:
         try:
-            features = extract_visible_features(state["raw_obs"].tty_chars)
-            # Memoize stairs DOWN coords across turns so a subsequent step
-            # ONTO the stairs (which hides `>` under `@`) still recognizes
-            # the descend opportunity.
-            if "_seen_stairs_down" in state:
-                import re as _rex
-                for f in features:
-                    if f.startswith("stairs DOWN at "):
-                        for mc in _rex.finditer(r"\((\d+),(\d+)\)", f):
-                            state["_seen_stairs_down"].add(
-                                (int(mc.group(1)), int(mc.group(2)))
-                            )
-            if features:
-                lines.append(f"=== VISIBLE FEATURES === {'; '.join(features)}")
-                lines.append("")
+            # VISIBLE FEATURES locates stairs/altars/doors for the agent — skip it
+            # entirely in the primitives curriculum (the agent reads the map).
+            if not _prim:
+                features = extract_visible_features(state["raw_obs"].tty_chars)
+                if "_seen_stairs_down" in state:
+                    import re as _rex
+                    for f in features:
+                        if f.startswith("stairs DOWN at "):
+                            for mc in _rex.finditer(r"\((\d+),(\d+)\)", f):
+                                state["_seen_stairs_down"].add(
+                                    (int(mc.group(1)), int(mc.group(2)))
+                                )
+                if features:
+                    lines.append(f"=== VISIBLE FEATURES === {'; '.join(features)}")
+                    lines.append("")
             hostiles = extract_hostiles_in_sight(state["raw_obs"].tty_chars, getattr(state["raw_obs"], "glyphs", None))
             if hostiles:
                 lines.append(f"=== VISIBLE GLYPHS === {', '.join(hostiles)}")
