@@ -122,7 +122,7 @@ def run(*, iterations, explore_turns, seed, model, api_key, verbose=True):
         timeseries.append({"iter": it + 1, "deepest_floor": deepest,
                            "climbed_back": climbed, "cells": len(archive)})
         if verbose:
-            print(f"[iter {it+1:3d}] cells={len(archive)} deepest={deepest}/6 climbed_back={climbed}")
+            print(f"[iter {it+1:3d}] cells={len(archive)} deepest={deepest}/6 climbed_back={climbed}", flush=True)
 
     return {"algo": "go_explore_llm", "seed": seed, "model": model,
             "deepest_floor": deepest,
