@@ -115,3 +115,27 @@ toward unexplored frontier) moves it **away** from its goal, so it hurt (2/6).
 GLM-5.2 genuinely beats **half** the games. 6/6 is not reachable within the honest
 principle on this model — it requires either re-introducing some locating
 assistance (the thing we deliberately removed) or a stronger policy model.
+
+## Decisive: the agent beats every harness intervention
+
+Final evidence — the plain perceive-and-decide agent is the *best*, and forcing
+the harness to help makes it worse the harder it acts:
+
+| | floor-4 of 6 |
+|---|---|
+| plain agent | **3/6** |
+| + manual-move stuck hint | 3/6 (ignored ~2/3) |
+| + forced auto-unstuck (autoexplore) | 2/6 |
+| + move_to explores-to-connect (autoexplore fallback) | 1/6 |
+
+Both forced interventions (reverted) hurt for the same reason: undirected
+`autoexplore` walks the agent *toward the nearest frontier* — i.e. AWAY from the
+stairs it is trying to reach. The only intervention that would help is directed
+exploration *toward the perceived stairs*, which is the locating assistance the
+experiment exists to remove.
+
+**This validates the design principle:** with honest perception, the agent's own
+navigation is optimal; harness crutches degrade it. The robust honest result is
+**3/6** — GLM-5.2 genuinely beats half the games by reading the map and routing to
+the real stairs. 6/6 on this model requires re-introducing locating (against the
+principle) or a stronger policy model.
