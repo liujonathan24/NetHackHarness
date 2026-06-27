@@ -1371,7 +1371,7 @@ def load_environment(
     history_drop_after: int = 100,
     belief_state_interval: int = 25,
     journal_render_max_chars: int = 2000,
-    variant: str = "B1",
+    variant: str = "JSON",   # uncompressed JSON map by default; never B1/compressed
     refine_interval: int = 20,
     summarize_and_reset: bool = False,
     trace_dir: Optional[str] = None,

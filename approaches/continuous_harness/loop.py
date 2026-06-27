@@ -353,7 +353,7 @@ def run_loop(args: argparse.Namespace) -> dict[str, Any]:
     runid = time.strftime("%Y%m%d-%H%M%S")
 
     base_cfg = HarnessConfig(
-        variant="CH" if not args.dry_run else "B1",
+        variant="JSON",   # always the uncompressed JSON map; never B1/compressed
         skill_set=args.skill_set,
         prompt_addendum=None,
         tier=args.tier,
@@ -457,6 +457,9 @@ def run_loop(args: argparse.Namespace) -> dict[str, Any]:
         if i < args.iterations - 1:
             cfg = sanitize_skill_set(
                 proposer.propose(best_cfg, history), base_cfg.skill_set)
+            # Hard requirement: the obs is ALWAYS the uncompressed JSON map. The
+            # proposer may tune skills/prompt/macros but never the map format.
+            cfg = dataclasses.replace(cfg, variant="JSON")
 
     # Leaderboard: best config by mean_depth.
     leaderboard = sorted(

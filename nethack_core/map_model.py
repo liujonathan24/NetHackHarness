@@ -31,7 +31,8 @@ class Entity:
 class MapModel:
     player: Optional[tuple]           # (x, y)
     entities: list                    # list[Entity]
-    grid: str                         # RLE topology string
+    grid: str                         # RLE topology string (legacy; not surfaced)
+    rows: list = field(default_factory=list)  # UNCOMPRESSED ascii map: rows[y][x]
     legend: dict = field(default_factory=dict)
 
 
@@ -113,4 +114,16 @@ def build_map_model(raw_obs: Any) -> MapModel:
                 kind, detail = "feature", label
             entities.append(Entity(kind, 0, tx, ty - 1, description=label, detail=detail))
 
-    return MapModel(player=player, entities=entities, grid=_rle_grid(glyphs))
+    # Uncompressed ASCII map: rows[y][x] is the tty char at map cell (x, y)
+    # (glyph row y == tty row y+1). This is what the player sees, no RLE — the
+    # agent reads it directly instead of a compressed/located feature list.
+    rows: list = []
+    for y in range(h):
+        ty = y + 1
+        if 0 <= ty < tty.shape[0]:
+            rows.append(bytes(int(c) for c in tty[ty]).decode("ascii", "replace").rstrip())
+        else:
+            rows.append("")
+
+    return MapModel(player=player, entities=entities,
+                    grid=_rle_grid(glyphs), rows=rows)

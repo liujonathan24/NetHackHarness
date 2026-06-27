@@ -24,17 +24,19 @@ def _entity_dict(e: Any, detail: str) -> dict:
 
 
 def _model_dict(model: Any, detail: str) -> dict:
-    d = {
+    # The JSON map is the UNCOMPRESSED ascii map (rows[y][x]) plus the player
+    # position — the agent reads it and perceives terrain, monsters and stairs
+    # itself. We deliberately do NOT emit a pre-located feature/entity list
+    # ("stair at x,y"): handing the agent where things are does its navigation
+    # for it. To identify a specific cell, the agent uses nh.map.what_is(x, y).
+    return {
         "player": list(model.player) if model.player else None,
-        "entities": [_entity_dict(e, detail) for e in model.entities],
+        "map": list(getattr(model, "rows", []) or []),
     }
-    if detail == "full":
-        d["grid"] = model.grid
-    return d
 
 
 def json_encode(model: Any, *, detail: str = "full") -> str:
-    return json.dumps(_model_dict(model, detail), separators=(",", ":"))
+    return json.dumps(_model_dict(model, detail), indent=1)
 
 
 def toon_encode(model: Any, *, detail: str = "full") -> str:
@@ -49,14 +51,8 @@ def toon_encode(model: Any, *, detail: str = "full") -> str:
     lines = []
     if model.player:
         lines.append(f"@ {model.player[0]},{model.player[1]}")
-    for e in model.entities:
-        parts = [e.kind, f"{e.x},{e.y}", e.description]
-        if detail == "full":
-            for f in _RICH_FIELDS:
-                v = getattr(e, f, None)
-                if v is not None:
-                    parts.append(f"{f}={v}")
-        lines.append(" ".join(str(p) for p in parts))
-    if detail == "full":
-        lines.append(f"grid: {model.grid}")
+    # Uncompressed ascii map (same principle as json_encode: the agent reads the
+    # map; we don't hand it a located feature list).
+    for row in (getattr(model, "rows", []) or []):
+        lines.append(row)
     return "\n".join(lines)

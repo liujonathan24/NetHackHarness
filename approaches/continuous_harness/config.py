@@ -59,7 +59,9 @@ class HarnessConfig:
     """
 
     # --- mutable surfaces ---
-    variant: str = "B1"
+    # Always the uncompressed JSON map — never B1/compressed. The obs format is
+    # NOT something we optimize: a readable structured map is a hard requirement.
+    variant: str = "JSON"
     skill_set: str = "full"
     prompt_addendum: Optional[str] = None
     macros: Optional[dict] = None

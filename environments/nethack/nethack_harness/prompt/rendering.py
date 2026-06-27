@@ -221,12 +221,18 @@ def _format_obs_balrog(structured, journal, state, journal_max_chars: int) -> st
             from nethack_core.observations import (
                 extract_visible_features, extract_hostiles_in_sight,
             )
-            features = extract_visible_features(state["raw_obs"].tty_chars)
-            if features:
-                lines.append("=== VISIBLE FEATURES ===")
-                for f in features:
-                    lines.append(f"  - {f}")
-                lines.append("")
+            # The VISIBLE FEATURES list enumerates every stair/altar/door WITH
+            # coordinates — it locates things for the agent. In the primitives
+            # curriculum that's the crutch we're removing: the agent must read
+            # the map and find features itself. (Hostiles-in-sight stays — that's
+            # threat awareness, not the navigation goal.)
+            if not state.get("_primitives_curriculum"):
+                features = extract_visible_features(state["raw_obs"].tty_chars)
+                if features:
+                    lines.append("=== VISIBLE FEATURES ===")
+                    for f in features:
+                        lines.append(f"  - {f}")
+                    lines.append("")
             hostiles = extract_hostiles_in_sight(
                 state["raw_obs"].tty_chars,
                 getattr(state["raw_obs"], "glyphs", None),

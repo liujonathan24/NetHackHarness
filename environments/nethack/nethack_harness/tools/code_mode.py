@@ -115,26 +115,52 @@ class MapView:
     def player(self):
         return self._m.player
 
-    @property
-    def entities(self):
-        return list(self._m.entities)
-
     def at(self, x, y):
         for e in self._m.entities:
             if e.x == x and e.y == y:
                 return e
         return None
 
-    def _of(self, kind):
-        return [e for e in self._m.entities if e.kind == kind]
+    # Map display char -> terrain description. Identify-only: tells the agent
+    # WHAT a cell it points at is. It does NOT locate things for the agent.
+    _TERRAIN = {
+        ".": "floor", "#": "corridor", "|": "wall", "-": "wall",
+        "+": "a door (or a spellbook on the floor)", ">": "a staircase down",
+        "<": "a staircase up", "{": "a fountain", "}": "water", "_": "an altar",
+        "\\": "a throne", "^": "a trap", " ": "unseen (rock / not yet explored)",
+        "0": "a boulder", "*": "a gem or rock", "$": "a pile of gold",
+        "@": "you (the hero)",
+    }
 
-    @property
-    def monsters(self):
-        return self._of("monster")
+    def what_is(self, x, y):
+        """Identify the single cell (x, y): the entity there if any, else the
+        terrain. This is INFORMATION about a cell you point at — it does not
+        search the map or tell you where to go."""
+        x, y = int(x), int(y)
+        if self._m.player and (x, y) == tuple(self._m.player):
+            return f"({x},{y}): you (the hero)"
+        e = self.at(x, y)
+        if e is not None:
+            extra = f" ({e.species})" if getattr(e, "species", None) else ""
+            pet = " [your pet]" if getattr(e, "is_pet", None) else ""
+            return f"({x},{y}): {e.description}{extra}{pet} [{e.kind}]"
+        rows = getattr(self._m, "rows", []) or []
+        if 0 <= y < len(rows) and 0 <= x < len(rows[y]):
+            ch = rows[y][x]
+            return f"({x},{y}): {self._TERRAIN.get(ch, repr(ch))}"
+        return f"({x},{y}): out of view"
 
-    @property
-    def stairs(self):
-        return self._of("stair")
+    def neighbors(self, x=None, y=None):
+        """The 8 cells around (x, y) — defaults to around you. Local perception:
+        what's immediately around a point, identified. No global search."""
+        if x is None or y is None:
+            if not self._m.player:
+                return {}
+            x, y = self._m.player
+        x, y = int(x), int(y)
+        dirs = {"N": (0, -1), "NE": (1, -1), "E": (1, 0), "SE": (1, 1),
+                "S": (0, 1), "SW": (-1, 1), "W": (-1, 0), "NW": (-1, -1)}
+        return {d: self.what_is(x + dx, y + dy) for d, (dx, dy) in dirs.items()}
 
 
 class _NhNamespace:
