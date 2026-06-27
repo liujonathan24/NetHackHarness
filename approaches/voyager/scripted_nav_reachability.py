@@ -120,10 +120,9 @@ def main():
         for floor in (2, 3, 4, 5, 6):
             env = CurriculumEngineEnv(); obs, _ = env.reset(seeds=(s, s))
             try:
-                dnum, dl = rc._floor_to_abs(env, floor)
-                env.goto_abs(dnum, dl); obs = env.modify(**env._sample_upgrade())
+                obs = rc.construct_start(env, obs, floor)   # validates landing floor
             except ValueError:
-                continue
+                continue   # unavailable depth OR invalid goto_abs (e.g. seed 22)
             r = scripted_climb(env, obs, floor)
             r.update({"seed": s, "condition": f"climb_from_{floor}"})
             results.append(r)

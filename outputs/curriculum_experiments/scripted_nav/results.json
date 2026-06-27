@@ -4136,66 +4136,6 @@
   },
   {
     "start_floor": 2,
-    "reached_top": true,
-    "floors_climbed": 1,
-    "stuck_floor": null,
-    "iters": 0,
-    "floor_path": [
-      1
-    ],
-    "seed": 22,
-    "condition": "climb_from_2"
-  },
-  {
-    "start_floor": 3,
-    "reached_top": true,
-    "floors_climbed": 2,
-    "stuck_floor": null,
-    "iters": 0,
-    "floor_path": [
-      1
-    ],
-    "seed": 22,
-    "condition": "climb_from_3"
-  },
-  {
-    "start_floor": 4,
-    "reached_top": true,
-    "floors_climbed": 3,
-    "stuck_floor": null,
-    "iters": 0,
-    "floor_path": [
-      1
-    ],
-    "seed": 22,
-    "condition": "climb_from_4"
-  },
-  {
-    "start_floor": 5,
-    "reached_top": true,
-    "floors_climbed": 4,
-    "stuck_floor": null,
-    "iters": 0,
-    "floor_path": [
-      1
-    ],
-    "seed": 22,
-    "condition": "climb_from_5"
-  },
-  {
-    "start_floor": 6,
-    "reached_top": true,
-    "floors_climbed": 5,
-    "stuck_floor": null,
-    "iters": 0,
-    "floor_path": [
-      1
-    ],
-    "seed": 22,
-    "condition": "climb_from_6"
-  },
-  {
-    "start_floor": 2,
     "reached_top": false,
     "floors_climbed": 0,
     "stuck_floor": 2,

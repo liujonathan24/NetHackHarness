@@ -105,9 +105,42 @@ def fig_heatmap(res):
     fig.tight_layout(); fig.savefig(OUTDIR / "scripted_heatmap.png", dpi=130); plt.close(fig)
 
 
+def fig_next_floor(res):
+    """P(reach the NEXT floor up) — the per-segment metric the 90% gate uses —
+    vs P(reach the top), scripted + GLM, as grouped bars."""
+    import numpy as np
+    floors = [2, 3, 4, 5, 6]
+    def p_next(eps, f):
+        lst = [e for e in eps if e["start_floor"] == f]
+        return np.mean([1 if e["floors_climbed"] >= 1 else 0 for e in lst]) if lst else np.nan
+    def p_top(eps, f):
+        lst = [e for e in eps if e["start_floor"] == f]
+        return np.mean([1 if e["reached_top"] else 0 for e in lst]) if lst else np.nan
+    glm = []
+    for p in (GLM / "episodes").glob("*.json"):
+        e = json.loads(p.read_text()); ts = e.get("timeseries") or []
+        if e.get("llm_error") or (ts and not any(t.get("tool") for t in ts)):
+            continue
+        glm.append(e)
+    x = np.arange(len(floors)); w = 0.2
+    fig, ax = plt.subplots(figsize=(9, 5))
+    ax.bar(x - 1.5*w, [p_next(res, f) for f in floors], w, label="scripted: P(next floor)", color="tab:blue")
+    ax.bar(x - 0.5*w, [p_top(res, f) for f in floors], w, label="scripted: P(reach top)", color="tab:cyan")
+    ax.bar(x + 0.5*w, [p_next(glm, f) for f in floors], w, label="GLM-5.2: P(next floor)", color="tab:green")
+    ax.bar(x + 1.5*w, [p_top(glm, f) for f in floors], w, label="GLM-5.2: P(reach top)", color="tab:olive")
+    ax.axhline(0.90, ls="--", color="red", lw=1.2)
+    ax.text(4.0, 0.92, "0.90 advancement gate", color="red", fontsize=9)
+    ax.set_xticks(x); ax.set_xticklabels([f"from floor {f}\n(→{f-1})" for f in floors])
+    ax.set_ylabel("probability"); ax.set_ylim(0, 1.0)
+    ax.set_title("Per-segment vs full-climb success — none near the 90% gate\n"
+                 "(GLM deep floors blocked by Prime 402)")
+    ax.legend(fontsize=8, ncol=2)
+    fig.tight_layout(); fig.savefig(OUTDIR / "per_segment.png", dpi=130); plt.close(fig)
+
+
 def main():
     res = scripted_results()
-    fig_ceiling(res); fig_ceiling_vs_glm(res); fig_heatmap(res)
+    fig_ceiling(res); fig_ceiling_vs_glm(res); fig_heatmap(res); fig_next_floor(res)
     glm = glm_by_floor()
     print("GLM real P(top) by floor:", {f: (round(v[0], 3), v[1]) for f, v in glm.items()})
     print(f"wrote nav_ceiling.png, ceiling_vs_glm.png, scripted_heatmap.png to {OUTDIR}")

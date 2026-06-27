@@ -21,16 +21,24 @@ Prime ran out of credits mid-run) and a complete, free, no-LLM scripted baseline
 
 Concretely (P = probability of reaching floor 1, the top):
 
-| start floor (climb distance) | scripted greedy-nav, 20 seeds | GLM-5.2, real cells |
+P(reach the top / floor 1) from each start floor:
+
+| start floor (climb distance) | scripted greedy-nav, 19 seeds | GLM-5.2, real cells |
 |---|---|---|
-| 2 (1 floor) | **0.30** | **0.67** (4 seeds) |
-| 3 (2 floors) | 0.05 | 0.0 |
-| 4 (3 floors, crosses jump-up) | 0.05 | 0.0 |
-| 5 (4 floors) | 0.05 | *blocked — Prime 402* |
-| 6 (5 floors) | 0.05 | *blocked — Prime 402* |
+| 2 (1 floor) | **0.26** | **0.67** (4 seeds) |
+| 3 (2 floors) | 0.00 | 0.00 |
+| 4 (3 floors, crosses jump-up) | 0.00 | 0.00 |
+| 5 (4 floors) | 0.00 | *blocked — Prime 402* |
+| 6 (5 floors) | 0.00 | *blocked — Prime 402* |
+
+Even the **per-segment** probability (reach just the *next* floor up — the metric
+the 90% advancement gate uses) never approaches 0.90: scripted 0.16–0.26, GLM 0.67
+at floor 2 then 0.00 at floors 3–4. See `per_segment.png`.
 
 See `ceiling_vs_glm.png` (headline), `nav_ceiling.png`, `scripted_heatmap.png`,
-`glm_timeline.png`, `glm_trajectories.png`.
+`per_segment.png`, `glm_timeline.png`, `glm_trajectories.png`, and the win replays
+`win_seed19_f2.gif` (full 1-floor win to the top) and `win_seed24_f4.gif`
+(climbs Gehennom 48→DoD 3 across the cross-branch jump-up, then gets stuck).
 
 ## 1. The question
 
@@ -128,21 +136,39 @@ result is only meaningful on top of a navigator that can reach stairs.
 
 ### 6a. Navigation ceiling (scripted, complete — `nav_ceiling.png`, `scripted_heatmap.png`)
 
-Across 20 full-depth seeds, the greedy-nav climber:
+Across 19 full-depth seeds, the greedy-nav climber:
 
-| start floor | n | P(reach top) | mean floors climbed | median stuck floor |
-|---|---|---|---|---|
-| 2 | 20 | 0.30 | 0.30 | 2 (the start) |
-| 3 | 20 | 0.05 | 0.35 | 3 |
-| 4 | 20 | 0.05 | 0.30 | 4 |
-| 5 | 20 | 0.05 | 0.25 | 5 |
-| 6 | 20 | 0.05 | 0.40 | 6 |
+| start floor | n | P(reach top) | P(reach next floor) | mean floors climbed | median stuck floor |
+|---|---|---|---|---|---|
+| 2 | 19 | 0.26 | 0.26 | 0.26 | 2 (the start) |
+| 3 | 19 | 0.00 | 0.26 | 0.26 | 3 |
+| 4 | 19 | 0.00 | 0.16 | 0.16 | 4 |
+| 5 | 19 | 0.00 | 0.05 | 0.05 | 5 |
+| 6 | 19 | 0.00 | 0.16 | 0.16 | 6 |
 
 The dominant outcome at **every** start floor is *stuck on the start floor* — the
-climber cannot reach that level's up-stair. Only ~30% of seeds permit even a
-single-floor climb; deeper starts essentially never reach the top. The per-seed
-heatmap shows reachability is **seed/level-specific** (e.g. seeds 5,6,7,19,22,29
+climber cannot reach that level's up-stair. It reaches the top **only** from floor
+2 (~26%), and **never** from floors 3–6 (it occasionally climbs one floor but never
+chains to the top). Reachability is **seed/level-specific** (e.g. seeds 5,6,7,19,29
 navigate floor 2; the rest do not), not a smooth function of depth.
+
+**Data-integrity note:** an earlier version of this table reported ~0.05 at floors
+3–6. That was entirely an artifact of **seed 22**, whose `goto_abs` silently lands
+the hero on floor 1 (not the intended deep floor) — faking a full-climb "win" with
+`floors_climbed = start − 1`. A construct-validation guard now rejects any cell
+whose landing floor ≠ the intended floor (`construct_start` raises; the scripted and
+LLM sweeps skip it). Re-running with the guard removed all five fake wins; seed 22
+is the only affected seed (the GLM seeds 19,0,4,5 were unaffected).
+
+### 6a-bis. Seeing a real win (`win_seed19_f2.gif`, `win_seed24_f4.gif`)
+
+Two deterministic replays make the result concrete:
+- **`win_seed19_f2`** — a clean full win: the `@` paths across DoD 2 to the `<` and
+  climbs to DoD 1 (the top).
+- **`win_seed24_f4`** — the agent climbs from **Gehennom 48 to DoD 3, crossing the
+  internal cross-branch jump-up**, then gets **stuck on DoD 3** unable to reach its
+  up-stair. One episode showing both a genuine win and the exact failure mode that
+  caps every deep climb.
 
 ### 6b. GLM-5.2 agent (partial — `glm_trajectories.png`)
 

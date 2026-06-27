@@ -183,7 +183,16 @@ def construct_start(env: CurriculumEngineEnv, obs, start_floor: int):
         return obs
     dnum, dlevel = _floor_to_abs(env, start_floor)
     env.goto_abs(dnum, dlevel)
-    return env.modify(**env._sample_upgrade())
+    obs = env.modify(**env._sample_upgrade())
+    # Guard: some seeds' goto_abs silently lands on floor 1 instead of the
+    # target (observed on seed 22), which would fake a full-climb "win". Reject
+    # any construct that did not land on the intended floor.
+    got = env.curriculum_floor(obs)
+    if got != start_floor:
+        raise ValueError(
+            f"construct for floor {start_floor} landed on floor {got} "
+            f"(invalid goto_abs); skip this (seed, floor) cell")
+    return obs
 
 
 import numpy as _np
