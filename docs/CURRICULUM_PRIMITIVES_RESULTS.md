@@ -71,3 +71,15 @@ worse than skill mode's 2/6. Code mode spends turns *perceiving* (each turn the
 agent prints the map / inspects cells before acting), so within a fixed turn
 budget it descends less far. The expressivity has a depth cost. Open: code mode
 with a larger turn budget (deliberate navigation given more time).
+
+## Code interface + larger turn budget (300 turns) — the turn budget IS the lever
+
+Same expressive code-mode agent, 300 turns instead of 150: **3/6 floor-4**
+(`{2:1, 3:2, 4:3}`), 5/6 at floor 3+. Up from 0/6 at 150 turns and beating skill
+mode's 2/6. The deliberate perceive-then-act agent does not stall — the shallower
+games were still actively navigating at the turn cap — so giving it more turns
+converts directly into depth. The floor-3 games sit at the DoD3→Gehennom boundary
+(one good navigation step from floor 4). WATCH: reward is scout-inflated over long
+runs (floor-2/3 games scored reward ~30-50 from exploration); always judge depth
+by `max_curriculum_floor`, never reward. Next: even larger budget to let the
+slow-but-genuine agent finish descending in all six.
