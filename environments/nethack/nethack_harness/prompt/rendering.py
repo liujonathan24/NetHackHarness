@@ -839,13 +839,12 @@ def format_observation_as_chat(
                     hp = structured.status.get("hitpoints", 0)
                     hp_max = structured.status.get("max_hitpoints", 1) or 1
                     if _prim:
-                        # Fragile low-level hero: combat is the main cause of
-                        # death before descending. Never suggest attacking —
-                        # route to the down-stairs to escape to the next level.
-                        hint = (f"Hostile adjacent ({mon_dir}) and you are a fragile "
-                                f"low-level hero (HP {hp}/{hp_max}). Do NOT fight — "
-                                "move_to the 'stairs DOWN at (x,y)' to escape to the "
-                                "next level; if HP is very low, `pray` once.")
+                        # Primitives curriculum: advise on the situation, not the
+                        # destination. Combat is the main early-death cause, so
+                        # discourage fighting — but do NOT hand a place to go.
+                        hint = (f"Hostile adjacent ({mon_dir}) (HP {hp}/{hp_max}). "
+                                "Fighting is risky — consider moving away from it; "
+                                "if HP is very low, `pray` once.")
                     elif hp / hp_max >= 0.5:
                         hint = f"Hostile adjacent ({mon_dir}). Call `attack(direction=\"{mon_dir}\")` — your HP is healthy."
                     else:
@@ -853,7 +852,11 @@ def format_observation_as_chat(
                 # Stairs visible (but not adjacent): proactively suggest move_to.
                 # Trace 9071d001 had stairs visible for many turns without the
                 # agent navigating to them — it kept autoexploring.
-                if hint is None and state is not None and "raw_obs" in state:
+                # NOT in the primitives curriculum: handing the agent the stairs
+                # coordinate + "move_to there" does its navigation for it and
+                # collapses play into a find->go->descend bot. There the agent
+                # must read the map and choose the target itself.
+                if hint is None and not _prim and state is not None and "raw_obs" in state:
                     try:
                         from nethack_core.observations import extract_visible_features
                         feats = extract_visible_features(state["raw_obs"].tty_chars)

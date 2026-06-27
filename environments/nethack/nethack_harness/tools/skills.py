@@ -241,35 +241,11 @@ def move(env: NetHackCoreEnv, obs: StructuredObservation, direction: str, run: b
     if canon is None:
         return SkillResult([], f"Invalid direction: {direction!r}. Use N/NE/E/SE/S/SW/W/NW (or 'wait').", interrupted=True)
     step = int(_DIRECTION_TO_ACTION[canon])
-    # SHORT-CIRCUIT: if `>` is visible and reachable, divert this move() to
-    # a path-to-stairs + descend. This rescues rollouts where the LM saw
-    # stairs in VISIBLE FEATURES but tried to micromanage with single
-    # move() calls instead of calling find_and_descend/autoexplore.
-    try:
-        chars2, start2 = _current_chars_and_player(env)
-        h2, w2 = chars2.shape
-        stair2 = None
-        for yy in range(h2):
-            for xx in range(w2):
-                if int(chars2[yy, xx]) == ord('>'):
-                    stair2 = (xx, yy); break
-            if stair2: break
-        if stair2 is not None and stair2 != start2:
-            p2 = a_star(chars2, start2, stair2)
-            if p2 and len(p2) <= 60:
-                acts = _enum_actions_to_indices(env, p2)
-                # Keystrokes consumed directly by the engine: MORE dismisses a
-                # prompt, then DOWN ('>') descends.
-                acts = acts + [int(nethack.MiscAction.MORE), int(nethack.MiscDirection.DOWN)]
-                return SkillResult(
-                    actions=acts,
-                    feedback=(
-                        f"move({canon}) — diverted: `>` visible at {stair2}, "
-                        f"pathing {len(p2)} steps and descending."
-                    ),
-                )
-    except Exception:
-        pass
+    # NOTE: `move` does exactly what it says — it moves in the requested
+    # direction. It does NOT scan the map for stairs and secretly path+descend
+    # to them; that auto-divert turned `move(N)` into a hidden find->go->descend
+    # and stripped the agent of any real navigation. The agent perceives the map
+    # and chooses where to go itself.
     if not run or canon == ".":
         return SkillResult([step], f"Moved {canon}.")
     # Compute path via a_star to a tile far in this direction — gives us
@@ -909,30 +885,23 @@ def _move_to_best_effort(env, chars, start, tx, ty) -> "SkillResult":
 def move_to(env: NetHackCoreEnv, obs: StructuredObservation, x: int, y: int) -> SkillResult:
     chars, start = _current_chars_and_player(env)
     tx, ty = int(x), int(y)
-    # SHORT-CIRCUIT: if the player ASKED for `>` (target tile is stairs DOWN)
-    # OR `>` is currently visible and reachable, path to `>` and append
-    # descend in one tool call. Same rescue logic as move().
+    # If the agent EXPLICITLY targeted a down-staircase tile (it read the map and
+    # chose to go there), path onto it and descend in one call — stepping onto a
+    # '>' descends. We do NOT scan the map for stairs ourselves: auto-locating the
+    # nearest '>' and diverting there would do the agent's navigation for it,
+    # collapsing play into a rigid find->go->descend bot. The agent must perceive
+    # the stairs and ask for them by coordinate.
     try:
         h2, w2 = chars.shape
-        stair2 = None
-        # honor explicit request first
-        if 0 <= ty < h2 and 0 <= tx < w2 and int(chars[ty, tx]) == ord('>'):
-            stair2 = (tx, ty)
-        else:
-            for yy in range(h2):
-                for xx in range(w2):
-                    if int(chars[yy, xx]) == ord('>'):
-                        stair2 = (xx, yy); break
-                if stair2: break
-        if stair2 is not None and stair2 != start:
-            p2 = a_star(chars, start, stair2)
+        if 0 <= ty < h2 and 0 <= tx < w2 and int(chars[ty, tx]) == ord('>') and (tx, ty) != start:
+            p2 = a_star(chars, start, (tx, ty))
             if p2:
                 acts = _enum_actions_to_indices(env, p2)
                 # Keystrokes consumed directly: MORE dismisses a prompt, DOWN descends.
                 acts = acts + [int(nethack.MiscAction.MORE), int(nethack.MiscDirection.DOWN)]
                 return SkillResult(
                     actions=acts,
-                    feedback=f"move_to({tx},{ty}) — diverted to `>` at {stair2}, pathing {len(p2)} steps and descending.",
+                    feedback=f"move_to({tx},{ty}) — pathing {len(p2)} steps onto the down-stairs and descending.",
                 )
     except Exception:
         pass
@@ -984,40 +953,11 @@ def _stairs_up_xy(chars):
 })
 def autoexplore(env: NetHackCoreEnv, obs: StructuredObservation, max_steps: int = 30) -> SkillResult:
     chars, start = _current_chars_and_player(env)
-    # Short-circuit: if stairs DOWN are already visible and reachable, walk
-    # to them instead of any frontier. Trace 9071d001 showed the agent
-    # calling autoexplore long after `>` was visible — autoexplore picked
-    # the closest *frontier*, not the goal. Now the goal wins.
-    try:
-        h, w = (chars.shape[0], chars.shape[1]) if hasattr(chars, "shape") else (len(chars), len(chars[0]))
-        stair_coords = None
-        for sy in range(h):
-            for sx in range(w):
-                if int(chars[sy, sx]) == ord('>'):
-                    stair_coords = (sx, sy)
-                    break
-            if stair_coords:
-                break
-        if stair_coords is not None and stair_coords != start:
-            path = a_star(chars, start, stair_coords)
-            if path:
-                trimmed = path[:max_steps]
-                acts = _enum_actions_to_indices(env, trimmed)
-                # Auto-descend: append MORE + DOWN keystrokes so a single
-                # autoexplore call when `>` is visible reaches the stairs
-                # AND descends without needing another LM round-trip.
-                # Without this, the agent saw the stairs hint but then
-                # picked move_to / move single-step instead of `descend`.
-                acts = acts + [int(nethack.MiscAction.MORE), int(nethack.MiscDirection.DOWN)]
-                return SkillResult(
-                    actions=acts,
-                    feedback=(
-                        f"Stairs DOWN at {stair_coords} are visible — "
-                        f"pathing {len(trimmed)} steps and descending."
-                    ),
-                )
-    except Exception:
-        pass
+    # `autoexplore` EXPLORES — it walks toward the nearest unseen frontier to
+    # reveal more map. It does NOT secretly scan for stairs and path+descend to
+    # them: that auto-divert turned exploration into a hidden find->go->descend
+    # and removed the agent's navigation. The agent reads the revealed map and
+    # decides where to go (e.g. move_to a `>` it chose) itself.
     # Wave-2 Track B: optional per-level frontier blacklist. The harness
     # ( nethack.py::_update_frontier_blacklist ) stashes the current-level
     # set onto the env via `frontier_blacklist_current` for

@@ -461,11 +461,6 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         # rendering reads stay bit-identical to the legacy variant checks.
         _obs_flags = self.spec.obs.setup_flags
         state["_descent_salient"] = _obs_flags.get("_descent_salient", False)
-        # Primitives curriculum is a pure descent task with a fragile hero —
-        # always inject the (now primitives-aware) descent-salient block so the
-        # agent is told, every turn, exactly how to descend via move_to.
-        if state.get("_primitives_curriculum"):
-            state["_descent_salient"] = True
         state["_e1_obs"] = _obs_flags.get("_e1_obs", False)
         state["_e2_obs"] = _obs_flags.get("_e2_obs", False)
         state["last_reward"] = 0.0
@@ -687,6 +682,9 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         last_obs = state["raw_obs"]
         hp_before = state["structured_obs"].status.get("hitpoints", 0) if state.get("structured_obs") else 0
         halt_reason: Optional[str] = None
+        # For navigation skills, track position so we can break the moment the
+        # A* path diverges from reality (a step that fails to advance us).
+        move_prev_pos = pre_pos
         if getattr(result, "pre_executed", False):
             # Closed-loop skill (e.g. explore_and_descend) already stepped the env
             # in its own re-observe loop. Adopt its outcome and skip our step loop.
@@ -722,6 +720,36 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
                     if "[yn" in msg or "--More--" in msg:
                         halt_reason = "prompt opened mid-sequence"
                         break
+            # Break a navigation skill (move_to/autoexplore) the instant a step
+            # fails to advance the hero — the planned A* path diverged from
+            # reality (a door we couldn't open, a monster that stepped into the
+            # path). Hand control back with the reason instead of blindly
+            # consuming the rest of the path. Keeps move_to honest: useful for
+            # crossing a clear room, but it stops and explains when something
+            # unexpected is in the way.
+            if skill_name in ("move_to", "autoexplore") and step_i + 1 < len(action_indices):
+                cur_pos = None
+                try:
+                    _b = last_obs.get("blstats") if isinstance(last_obs, dict) \
+                        else getattr(last_obs, "blstats", None)
+                    if _b is not None:
+                        cur_pos = (int(_b[0]), int(_b[1]))
+                except (KeyError, IndexError, TypeError, AttributeError):
+                    cur_pos = None
+                if cur_pos is not None and cur_pos == move_prev_pos:
+                    _gm = ""
+                    _mb = last_obs.get("message") if isinstance(last_obs, dict) \
+                        else getattr(last_obs, "message", None)
+                    if _mb is not None:
+                        _gm = bytes(_mb).split(b"\x00", 1)[0].decode(
+                            "ascii", errors="replace").strip()
+                    halt_reason = (
+                        f"{skill_name} stopped at {cur_pos}: the path is blocked"
+                        + (f" — {_gm}" if _gm else
+                           " by something unexpected; re-check your surroundings"))
+                    break
+                if cur_pos is not None:
+                    move_prev_pos = cur_pos
 
         scout_after = len(state["scout_tiles_seen"])
         state["scout_delta"] = scout_after - scout_before
