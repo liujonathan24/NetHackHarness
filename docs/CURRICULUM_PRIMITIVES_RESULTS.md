@@ -57,3 +57,17 @@ map and figure out where to go itself.
 GIF: `videos/honest_navigation_win.gif` — a full DoD→Gehennom honest descent.
 Run-log + per-iter traces: `outputs/ch_run_main/`. Browse with
 `tools/rollout_view/live_server.py --runs-root outputs/ch_run_main`.
+
+## Code interface (interface=code) — expressive but turn-hungry
+
+The agent writes Python against `nh`: reads the map itself (`nh.map.rows`),
+identifies cells (`nh.map.what_is`, `nh.map.neighbors`), and routes
+(`nh.move_to`) — finding the stairs by *reading the map*, not a find helper, and
+descending with `nh.press_down` (descend/ascend skills refuse here). Qualitatively
+this is the honest, expressive navigation we wanted.
+
+Quantitatively (6 games, 150 turns): **0/6 floor-4**, floors `{1:2, 2:3, 3:1}` —
+worse than skill mode's 2/6. Code mode spends turns *perceiving* (each turn the
+agent prints the map / inspects cells before acting), so within a fixed turn
+budget it descends less far. The expressivity has a depth cost. Open: code mode
+with a larger turn budget (deliberate navigation given more time).
