@@ -283,11 +283,27 @@ def _move_to(env, x, y, max_steps=150):
                         return obs, True, "died en route"
                     if moved:
                         break
+        if not moved:
+            # Best-effort: a_star had a route but the chosen step stalled. Step to
+            # whichever walkview-walkable neighbor is closest to the target (this
+            # also melees/​swaps a monster, or moves around it), guaranteeing
+            # progress whenever any neighbor toward the goal is open.
+            best, bestd = None, 1e9
+            for k, (ddx, ddy) in _DIRS.items():
+                nx, ny = cx + ddx, cy + ddy
+                if 0 <= nx < 79 and 0 <= ny < 21 and chr(int(wv[ny, nx])) != "|":
+                    d = abs(nx - tx) + abs(ny - ty)
+                    if d < bestd:
+                        bestd, best = d, k
+            if best is not None:
+                obs, done, moved = _try(env, best)
+                if done:
+                    return obs, True, "died en route"
         if moved:
             stuck = 0
             continue
         stuck += 1
-        if stuck >= 3:
+        if stuck >= 4:
             return obs, False, f"stuck near ({cx},{cy}) heading to ({tx},{ty})"
     return obs, False, f"reached vicinity of ({tx},{ty})"
 
