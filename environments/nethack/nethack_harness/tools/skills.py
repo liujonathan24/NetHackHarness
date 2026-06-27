@@ -770,7 +770,7 @@ def _cheb(ax: int, ay: int, bx: int, by: int) -> int:
     return max(abs(ax - bx), abs(ay - by))
 
 
-def _move_to_best_effort(env, chars, start, tx, ty) -> "SkillResult":
+def _move_to_best_effort(env, chars, start, tx, ty, obs=None) -> "SkillResult":
     """Best-effort single step toward (tx, ty) when no FULL path exists.
 
     Strategy (all one-step-at-a-time; never auto-explores or descends):
@@ -857,8 +857,29 @@ def _move_to_best_effort(env, chars, start, tx, ty) -> "SkillResult":
                         ),
                     )
 
-    # 3) Genuinely stuck: nearest reachable tile and an actionable hint.
+    # 3) Can't step toward the target (we're at the nearest reachable tile and
+    #    the way to the target is behind unexplored/blocked terrain). NEVER
+    #    return zero progress — that froze code-mode agents in a re-call loop.
+    #    Fall back to one exploration step toward the nearest unexplored
+    #    frontier: it reveals map that may open the path next call. The agent
+    #    chose this target (it read the map); move_to just navigates robustly
+    #    toward it instead of giving up.
     rx, ry = best if best is not None else start
+    if obs is not None:
+        try:
+            ax = autoexplore(env, obs, max_steps=8)
+            if ax.actions:
+                return SkillResult(
+                    actions=ax.actions,
+                    feedback=(
+                        f"No direct route to ({tx},{ty}) yet (it's behind "
+                        f"unexplored/blocked terrain) — exploring toward the "
+                        f"nearest frontier to reveal a path. Call move_to({tx},"
+                        f"{ty}) again as the map opens up."
+                    ),
+                )
+        except Exception:
+            pass
     return SkillResult(
         [],
         (
@@ -914,7 +935,7 @@ def move_to(env: NetHackCoreEnv, obs: StructuredObservation, x: int, y: int) -> 
         # best-effort progress so the agent closes distance and reveals map,
         # opening a real path on a subsequent call. Still ONE step per call;
         # we never auto-explore, auto-search, or auto-descend here.
-        return _move_to_best_effort(env, chars, start, tx, ty)
+        return _move_to_best_effort(env, chars, start, tx, ty, obs=obs)
     if not path:
         return SkillResult([], f"Already at ({tx},{ty}).", interrupted=False)
     return SkillResult(
