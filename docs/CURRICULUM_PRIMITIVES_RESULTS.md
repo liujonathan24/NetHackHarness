@@ -83,3 +83,35 @@ converts directly into depth. The floor-3 games sit at the DoD3→Gehennom bound
 runs (floor-2/3 games scored reward ~30-50 from exploration); always judge depth
 by `max_curriculum_floor`, never reward. Next: even larger budget to let the
 slow-but-genuine agent finish descending in all six.
+
+## The 3/6 ceiling is robust — and that's the honest result
+
+Best honest result: **code interface, 300 turns, plain — 3/6 games reach floor 4**
+(Gehennom) by genuine perceive-and-decide navigation, zero locating crutches.
+
+| approach | floor-4 of 6 |
+|---|---|
+| skill-mode CH loop (best) | 2/6 |
+| code 150t | 0/6 |
+| **code 300t (plain)** | **3/6** |
+| code 600t | 3/6 |
+| code + manual-move stuck hint | 3/6 (neutral) |
+| code + forced auto-unstuck | 2/6 (hurt) |
+
+Every intervention either matched or *hurt* the plain 3/6. Why the other 3 games
+fail: the agent descends DoD1→2→3 fine, then on a level it **loops** — re-issuing
+a `move_to` that breaks on the same blocked/unexplored path, or freezing on one
+tile (one game didn't move for 60 turns). The stuck detection fires correctly
+(42×/run) and the "stop, move manually" hint is sound, but GLM-5.2 **ignores it
+~2/3 of the time** and stays in the loop. That's a model behavior limit
+(loop-blindness / inconsistent stair-finding), not survival, time, or perception.
+
+Critically, a *useful* forced unstick must move the agent **toward** the stairs it
+can see — but "go to the stairs the agent perceived" is precisely the locating
+assistance the experiment removed. The only philosophy-safe break (`autoexplore`
+toward unexplored frontier) moves it **away** from its goal, so it hurt (2/6).
+
+**Conclusion.** With pure perceive-and-decide (no find/locate, no descend skill),
+GLM-5.2 genuinely beats **half** the games. 6/6 is not reachable within the honest
+principle on this model — it requires either re-introducing some locating
+assistance (the thing we deliberately removed) or a stronger policy model.
