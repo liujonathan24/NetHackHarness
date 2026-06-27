@@ -1072,10 +1072,13 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
                 stuck_hint = (
                     f"[stuck: you have not moved from {_pp} for "
                     f"{state['_cm_stuck']} turns — the move you keep issuing is "
-                    "not getting through (blocked, or the target is unreachable "
-                    "from here). STOP repeating it. Try nh.autoexplore() to open "
-                    "new corridors, nh.search(times=10) for a hidden passage, or "
-                    "move_to / move toward a DIFFERENT reachable tile.]"
+                    "not getting through. STOP using move_to here. Instead MOVE "
+                    "MANUALLY one tile at a time: look at nh.map.neighbors() to "
+                    "see which adjacent tiles are open (floor '.', corridor '#', "
+                    "door '+'), then nh.move('<dir>') a SINGLE step in an open "
+                    "direction you have not just come from. Step by step, feel "
+                    "your way out. If every direction is wall, nh.search(times=10) "
+                    "for a hidden passage.]"
                 )
                 state["_cm_stuck"] = 0
 
