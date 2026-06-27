@@ -1068,64 +1068,19 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
                 state["_cm_stuck"] = 0
             if _pp is not None:
                 state["_cm_prev_pos"] = _pp
-            _cms = state.get("_cm_stuck", 0)
-            if _cms >= 6:
-                # The manual-move hint (fired at >=3) has been ignored and the
-                # agent is still frozen. Physically break the loop — autoexplore
-                # walks toward the nearest unexplored frontier, which relocates
-                # the agent off the stuck tile (and kick an adjacent closed door
-                # first if one is wedging it). Same wedge-breaker the skill-mode
-                # deadlock detector uses; it unsticks movement, it does not find
-                # the goal. The agent reads the new map next turn and continues.
-                broke = 0
-                try:
-                    adjm = getattr(state["structured_obs"], "adjacent", None) or {}
-                    _dk = {"N": ord("k"), "S": ord("j"), "E": ord("l"), "W": ord("h"),
-                           "NE": ord("u"), "NW": ord("y"), "SE": ord("n"), "SW": ord("b")}
-                    door_dir = next((d for d, t in adjm.items()
-                                     if t and str(t).startswith("+")), None)
-                    from nethack_core import actions as _nh
-                    seq = []
-                    if door_dir is not None:
-                        seq = [int(_nh.Command.KICK), _dk.get(door_dir, ord("."))]
-                    if seq:
-                        for a in _to_action_indices(env, seq):
-                            last_obs, _r, _t, _tr, _i = env.step(a)
-                            terminated = terminated or _t; truncated = truncated or _tr
-                            if terminated or truncated: break
-                    if not (terminated or truncated):
-                        from nethack_harness.tools.skills import registry as _reg
-                        ax = _reg.call("autoexplore", env, state["structured_obs"], max_steps=20)
-                        for a in _to_action_indices(env, ax.actions or []):
-                            last_obs, _r, _t, _tr, _i = env.step(a)
-                            terminated = terminated or _t; truncated = truncated or _tr
-                            broke += 1
-                            if terminated or truncated: break
-                    state["raw_obs"] = last_obs
-                    state["structured_obs"] = shape_observation(last_obs, state["character"])
-                except Exception:
-                    pass
-                if terminated or truncated:
-                    state["terminated"] = True
-                    _detect_terminal_outcome(last_obs, state)
+            if state.get("_cm_stuck", 0) >= 3:
                 stuck_hint = (
-                    f"[auto-unstuck: you were frozen at {_pp} and the move-manually "
-                    f"advice was not followed, so I took {broke} exploration steps "
-                    f"({'kicked a door, ' if door_dir else ''}autoexplored) to break "
-                    "the loop. Read the NEW map now and continue toward deeper "
-                    "stairs — do not re-issue the move that was failing.]"
+                    f"[stuck: you have not moved from {_pp} for "
+                    f"{state['_cm_stuck']} turns — the move you keep issuing is "
+                    "not getting through. STOP using move_to here. Instead MOVE "
+                    "MANUALLY one tile at a time: look at nh.map.neighbors() to "
+                    "see which adjacent tiles are open (floor '.', corridor '#', "
+                    "door '+'), then nh.move('<dir>') a SINGLE step in an open "
+                    "direction you have not just come from. Step by step, feel "
+                    "your way out. If every direction is wall, nh.search(times=10) "
+                    "for a hidden passage.]"
                 )
                 state["_cm_stuck"] = 0
-            elif _cms >= 3:
-                stuck_hint = (
-                    f"[stuck: you have not moved from {_pp} for {_cms} turns — the "
-                    "move you keep issuing is not getting through. STOP using "
-                    "move_to here. Instead MOVE MANUALLY one tile at a time: look "
-                    "at nh.map.neighbors() to see which adjacent tiles are open "
-                    "(floor '.', corridor '#', door '+'), then nh.move('<dir>') a "
-                    "SINGLE step in an open direction you have not just come from. "
-                    "Step by step, feel your way out.]"
-                )
 
         # Autoexplore-loop detection: when autoexplore returns "short" feedback
         # repeatedly (frontier shrunk to 1-2 step paths near level edges), the
