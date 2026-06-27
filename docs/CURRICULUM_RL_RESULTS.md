@@ -47,7 +47,7 @@ likewise no longer force-takes a stair it lands on; it samples primitives
 | method | agent | deepest floor / 6 | climbed back | seeds |
 |---|---|---|---|---|
 | **Go-Explore** | random primitives (weighted compass/run/search/`>`/`<`; no forced stair) | **2** (seed 19); **1** (seeds 2, 9) | 0 | 19, 2, 9 (600 iters) |
-| **Voyager** | GLM 5.2, full vision, generic `move_to` + `open`/`kick`/`move`/`search` + `>`/`<` | **1** (seed 19, final); seeds 2, 9 running | 0 | 19 (45 turns); 2, 9 (45 turns, in progress) |
+| **Voyager** | GLM 5.2, full vision, generic `move_to` + `open`/`kick`/`move`/`search` + `>`/`<` | **1** (all seeds) | 0 | 19, 2, 9 (45 turns each) |
 
 Voyager seed 19 (in-spirit): 45 turns, **never left floor 1** — a genuine mix of
 22 `move_to`, ~18 `move` (attacking/bumping blockers), 5 `search`. The LLM *did*
@@ -122,6 +122,13 @@ A thin subclass of the engine env (`nethack_core/curriculum_engine_env.py`).
 - **Snapshot/restore:** `env.snapshot() -> handle`, `env.restore(handle)`,
   `env.free_snapshot(handle)` — full engine-state save/load (used by Go-Explore).
   `env.engine.reseed(core=, disp=)` re-randomizes without changing position.
+  **Fidelity verified** (DoD-1 and Gehennom-48): restore + a fixed step sequence
+  reproduces snapshot + the same sequence byte-for-byte across **all 27 blstats
+  (HP, max-HP, hunger, the condition bitmask, …), the glyph map + monsters, and
+  the rendered chars/colors** — including on repeated restores after abandoning a
+  different branch. Caveat: `restore()` rewrites engine state but does not refill
+  the numpy obs buffers until the next `step()`; Go-Explore always steps after
+  restoring, so it reads the correctly-restored state.
 
 ### Coordinate & map conventions (both algorithms)
 
