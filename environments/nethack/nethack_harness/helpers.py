@@ -786,11 +786,24 @@ def _code_tool_adapter():
     def code(source: str) -> str:
         """Execute Python against the `nh` namespace.
 
-        Available: nh.move/attack/descend/search/pickup/move_to/autoexplore,
-        nh.add_note/recall, nh.wiki_lookup/wiki_search, nh.status/inventory/
-        map_view/character. Constants: Direction.{N,NE,E,SE,S,SW,W,NW,WAIT},
-        Position(x, y). Imports and dunder access are blocked. Stdout returns
-        as the tool result. 5s wallclock cap.
+        PERCEIVE (read the map yourself; nothing is located for you):
+          nh.map.rows           # the ascii map, rows[y][x]; '>' down, '<' up
+          nh.map.player         # your (x, y)
+          nh.map.what_is(x, y)  # identify ONE cell you point at (terrain/monster)
+          nh.map.neighbors()    # the 8 cells around you, identified
+          nh.under_player, nh.adjacent, nh.status, nh.inventory, nh.character
+
+        ACT (move one decision at a time; move_to stops if the path is blocked):
+          nh.move(dir), nh.move_to(x, y), nh.autoexplore(), nh.search(times=),
+          nh.attack(dir), nh.kick(dir), nh.pickup(), nh.eat(item=), nh.pray()
+          nh.press_down()  # press '>' — descends ONLY if you stand on a '>'
+          nh.press_up()    # press '<' — ascends  ONLY if you stand on a '<'
+        (There is no find/locate helper and, in this mode, no descend/ascend
+        skill — you must read the map, route to the stairs, and press the key.)
+
+        Constants: Direction.{N,NE,E,SE,S,SW,W,NW,WAIT}, Position(x, y).
+        Imports and dunder access are blocked. Stdout returns as the tool
+        result. 5s wallclock cap.
         """
         return ""  # never called directly; env_response routes the source.
 

@@ -238,11 +238,44 @@ class _NhNamespace:
     def attack(self, direction: str) -> None:
         self._dispatch("attack", direction=direction)
 
+    def _no_stair_skill(self) -> bool:
+        # The primitives curriculum forbids descend/ascend mega-skills; the
+        # agent navigates and presses the raw keys itself.
+        return hasattr(self._env, "curriculum_floor")
+
     def descend(self) -> None:
+        if self._no_stair_skill():
+            raise RuntimeError(
+                "no `descend` skill here — navigate onto the '>' tile yourself "
+                "(move/move_to), then call nh.press_down().")
         self._dispatch("descend")
 
-    def search(self) -> None:
-        self._dispatch("search")
+    def ascend(self) -> None:
+        if self._no_stair_skill():
+            raise RuntimeError(
+                "no `ascend` skill here — navigate onto the '<' tile yourself, "
+                "then call nh.press_up().")
+        self._dispatch("ascend")
+
+    def press_down(self) -> None:
+        """Press the raw '>' key. Only descends if you are standing on a '>'."""
+        self._dispatch("press_down")
+
+    def press_up(self) -> None:
+        """Press the raw '<' key. Only ascends if you are standing on a '<'."""
+        self._dispatch("press_up")
+
+    def eat(self, item: str = None) -> None:
+        self._dispatch("eat", **({"item": item} if item is not None else {}))
+
+    def pray(self) -> None:
+        self._dispatch("pray")
+
+    def kick(self, direction: str) -> None:
+        self._dispatch("kick", direction=direction)
+
+    def search(self, times: int = 1) -> None:
+        self._dispatch("search", **({"times": times} if times != 1 else {}))
 
     def pickup(self) -> None:
         self._dispatch("pickup")
