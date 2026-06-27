@@ -37,7 +37,13 @@ _ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "environments" / "nethack"))
 
 from nethack_core.curriculum_engine_env import CurriculumEngineEnv  # noqa: E402
+from nethack_core.glyphs import (  # noqa: E402
+    CMAP_CLOSED_DOOR_INDICES, GLYPH_CMAP_OFF, cmap_clean_char_lut, glyph_is_cmap,
+    glyph_is_monster, glyph_is_object,
+)
 from nethack_harness.navigation.pathfinding import a_star, reachable_set  # noqa: E402
+
+_CMAP_LUT = cmap_clean_char_lut()
 
 BASE_URL = "https://api.pinference.ai/api/v1"
 MAX_FLOOR = 6
@@ -180,6 +186,28 @@ def _blocker_hint(chars, hero, target):
             f"need a door: try move(direction=...) toward {target} or search")
 
 
+def _walkview(glyphs):
+    """Build a clean walkability map from GLYPHS (unambiguous), not chars.
+
+    Chars can't tell an open door/doorway (renders as '|'/'-' — same as a wall)
+    from a real wall, so A* over chars wrongly refuses to path through doors.
+    Glyphs distinguish them: the cmap LUT maps open doors / doorways / corridors
+    / floor / stairs to walkable, and closed doors / walls / rock to blocked.
+    Monsters and items are made walkable too (stepping in swaps-with-pet /
+    attacks-hostile / picks-up-item), so A* routes through them."""
+    g = np.asarray(glyphs).astype(np.int64)
+    v = np.full(g.shape, ord("|"), dtype=np.uint8)   # default: blocked
+    cm = glyph_is_cmap(g)
+    idx = np.clip(g - GLYPH_CMAP_OFF, 0, len(_CMAP_LUT) - 1)
+    v[cm] = _CMAP_LUT[idx[cm]]
+    # Closed doors are walkable for pathing — you step in to open them (the
+    # move_to step logic opens a closed door it bumps).
+    v[cm & np.isin(idx, list(CMAP_CLOSED_DOOR_INDICES))] = ord(".")
+    v[glyph_is_monster(g)] = ord(".")
+    v[glyph_is_object(g)] = ord(".")
+    return v
+
+
 def _pos(obs):
     return int(obs.blstats[0]), int(obs.blstats[1])
 
@@ -204,21 +232,21 @@ def _move_to(env, x, y, max_steps=150):
         if (cx, cy) == (tx, ty):
             return obs, False, f"reached ({tx},{ty})"
         chars = np.array(obs.chars).reshape(21, 79)
-        path = a_star(chars, (cx, cy), (tx, ty))
+        wv = _walkview(np.array(obs.glyphs).reshape(21, 79))  # glyph-based walkability
+        path = a_star(wv, (cx, cy), (tx, ty))
         if not path:
-            # No walkable A* route — usually a monster on the only doorway/
-            # corridor. Walk to the FRONTIER (nearest reachable tile to the
-            # target) so the agent ends up next to the blocker, then report it
-            # actionably (which monster, which direction) for move()-to-attack.
-            reach = reachable_set(chars, (cx, cy))
+            # Still no route even through monsters — the target is genuinely
+            # disconnected on the visible map (needs an undiscovered corridor).
+            # Walk to the frontier and report it; the agent can search/explore.
+            reach = reachable_set(wv, (cx, cy))
             frontier = min(reach, key=lambda t: abs(t[0] - tx) + abs(t[1] - ty)) \
                 if reach else (cx, cy)
             if frontier == (cx, cy):
                 return obs, False, _blocker_hint(chars, (cx, cy), (tx, ty))
-            fpath = a_star(chars, (cx, cy), frontier)
+            fpath = a_star(wv, (cx, cy), frontier)
             if not fpath:
                 return obs, False, _blocker_hint(chars, (cx, cy), (tx, ty))
-            path = fpath   # walk toward the frontier with the normal step logic
+            path = fpath
         key = int(path[0])
         dx, dy = _DIRS[key]
         ax, ay = cx + dx, cy + dy
@@ -238,10 +266,16 @@ def _move_to(env, x, y, max_steps=150):
                     if moved:
                         break
             if not moved and (dx == 0 or dy == 0) and ahead == "+":
-                env.step(ord("o")); env.step(key)        # open the closed door
+                env.step(ord("o")); env.step(key)        # try to open the door
                 obs, done, moved = _try(env, key)
                 if done:
                     return obs, True, "died en route"
+                if not moved:                            # locked? kick it open (^D)
+                    env.step(4); env.step(key)
+                    env.step(4); env.step(key)           # twice (kick can take a few)
+                    obs, done, moved = _try(env, key)
+                    if done:
+                        return obs, True, "died en route"
             if not moved and (ahead.isalpha() or ahead in "@&;:"):
                 for _ in range(6):                       # attack a blocking monster
                     obs, done, moved = _try(env, key)
