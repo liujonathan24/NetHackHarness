@@ -31,13 +31,31 @@ START_FLOOR = {"climb_from_2": 2, "climb_from_3": 3, "climb_from_4": 4,
                "climb_from_5": 5, "climb_from_6": 6, "full_tour": 1}
 
 
+def _is_valid(e: dict) -> bool:
+    """Drop episodes that never got real LLM responses: a hard llm_error, or a
+    timeseries where every tool is None (the all-no-op signature of an episode
+    whose every call failed — e.g. Prime returning 402 out of credits)."""
+    if e.get("llm_error"):
+        return False
+    ts = e.get("timeseries") or []
+    if ts and not any(t.get("tool") is not None for t in ts):
+        return False
+    return True
+
+
 def load_episodes(out: pathlib.Path) -> list[dict]:
-    eps = []
+    eps, dropped = [], 0
     for p in sorted((out / "episodes").glob("*.json")):
         try:
-            eps.append(json.loads(p.read_text()))
+            e = json.loads(p.read_text())
         except Exception:
-            pass
+            continue
+        if _is_valid(e):
+            eps.append(e)
+        else:
+            dropped += 1
+    if dropped:
+        print(f"[analyze] dropped {dropped} invalid (no-LLM / errored) episodes")
     return eps
 
 

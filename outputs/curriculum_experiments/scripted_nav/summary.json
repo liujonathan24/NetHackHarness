@@ -1,0 +1,32 @@
+{
+  "2": {
+    "n": 20,
+    "p_top": 0.3,
+    "mean_climbed": 0.3,
+    "median_stuck": 2
+  },
+  "3": {
+    "n": 20,
+    "p_top": 0.05,
+    "mean_climbed": 0.35,
+    "median_stuck": 3
+  },
+  "4": {
+    "n": 20,
+    "p_top": 0.05,
+    "mean_climbed": 0.3,
+    "median_stuck": 4
+  },
+  "5": {
+    "n": 20,
+    "p_top": 0.05,
+    "mean_climbed": 0.25,
+    "median_stuck": 5
+  },
+  "6": {
+    "n": 20,
+    "p_top": 0.05,
+    "mean_climbed": 0.4,
+    "median_stuck": 6
+  }
+}

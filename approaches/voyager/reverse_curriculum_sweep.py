@@ -61,6 +61,64 @@ from nethack_core.curriculum_engine_env import CurriculumEngineEnv  # noqa: E402
 
 MODEL_DEFAULT = "z-ai/glm-5.2"
 
+# Endpoints. Model id prefix selects the backend + key:
+#   gemini-*  -> Google Generative Language OpenAI-compatible endpoint (GEMINI_API_KEY)
+#   else      -> Prime Inference (PI_API_KEY / REFINER_API_KEY)
+_PRIME_BASE = "https://api.pinference.ai/api/v1"
+_GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/openai"
+
+
+def _endpoint_for(model: str):
+    if model.startswith("gemini"):
+        return _GEMINI_BASE, os.environ.get("GEMINI_API_KEY", "")
+    return _PRIME_BASE, (os.environ.get("PI_API_KEY")
+                         or os.environ.get("REFINER_API_KEY") or "")
+
+
+class LLMError(RuntimeError):
+    pass
+
+
+def llm_call(model, messages, *, max_tokens=2000, retries=5):
+    """One chat-completion call with exponential backoff on transient errors.
+
+    Retries 429 (rate limit) and 5xx with backoff. Raises LLMError immediately on
+    402 (payment / out of credits) — retrying that is pointless and it must be
+    surfaced, not silently turned into a no-op turn (the bug that nulled whole
+    episodes when Prime ran out of credits mid-sweep)."""
+    import time as _t
+    import urllib.request
+    base, key = _endpoint_for(model)
+    body = json.dumps({
+        "model": model, "messages": messages,
+        "max_tokens": max_tokens, "temperature": 0.6,
+        "response_format": {"type": "json_object"},
+    }).encode()
+    last = None
+    for attempt in range(retries):
+        req = urllib.request.Request(
+            f"{base}/chat/completions", data=body,
+            headers={"Authorization": f"Bearer {key}",
+                     "Content-Type": "application/json",
+                     "User-Agent": "curl/8.4.0"})
+        try:
+            with urllib.request.urlopen(req, timeout=180) as r:
+                d = json.loads(r.read())
+            return d["choices"][0]["message"]["content"]
+        except urllib.error.HTTPError as e:
+            code = e.code
+            if code == 402:
+                raise LLMError("402 Payment Required (account out of credits)")
+            if code in (429, 500, 502, 503, 529):
+                last = f"HTTP {code}"
+                _t.sleep(min(2 ** attempt + attempt, 30))
+                continue
+            raise LLMError(f"HTTP {code}: {e.read()[:120]!r}")
+        except Exception as e:                       # noqa: BLE001
+            last = str(e)[:80]
+            _t.sleep(min(2 ** attempt, 20))
+    raise LLMError(f"exhausted {retries} retries: {last}")
+
 # Conditions: name -> (start_floor, max_turns). max_turns scales with the climb
 # distance (turns/floor budget set generously from the ~6.7s/turn smoke test).
 CONDITIONS: dict[str, tuple[int, int]] = {
@@ -314,13 +372,19 @@ def run_episode(*, condition: str, seed: int, rep: int, model: str, api_key: str
         last = "Begin."
 
     render = render_climb if is_climb else cv._render
+    llm_error = None
     for turn in range(max_turns):
         view, _pos, _downs, _ups = render(env, obs)
         user = f"{view}\n\nLast action result: {last}\nWhat is your next tool call?"
         t = time.time()
         try:
-            content = cv._glm(model, [{"role": "system", "content": system},
-                                      {"role": "user", "content": user}], api_key)
+            content = llm_call(model, [{"role": "system", "content": system},
+                                       {"role": "user", "content": user}])
+        except LLMError as exc:
+            # A hard LLM failure (out of credits, retries exhausted) must ABORT
+            # the episode — not run pointless no-op turns that masquerade as data.
+            llm_error = str(exc)
+            break
         except Exception as exc:               # noqa: BLE001
             content = "{}"
             last = f"(LLM error: {str(exc)[:80]})"
@@ -362,6 +426,7 @@ def run_episode(*, condition: str, seed: int, rep: int, model: str, api_key: str
         "deepest_floor": deepest, "min_floor": min_floor,
         "floors_climbed": int(floors_climbed),
         "reached_bottom": bool(reached_bottom), "died": died,
+        "llm_error": llm_error,
         "turns": len(timeseries),
         "wall_s": round(time.time() - t_start, 1),
         "mean_turn_s": round(float(np.mean(latencies)), 2) if latencies else 0.0,
