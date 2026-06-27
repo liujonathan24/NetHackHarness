@@ -54,31 +54,30 @@ UP. Taking the down stairs on dungeon level 3 jumps you deep into the game
 automatically; keep going down to the bottom, then turn around and climb all the
 way back up.
 
-Tools (no auto-descend, no "descend" skill):
-- move_to(x, y): A* path to tile (x,y) over the visible map and walk it. It
-  follows floor/corridor/door tiles only. It will FAIL when the route is blocked:
-  if a MONSTER (a letter like d, x, @) sits on the only doorway/corridor, A* sees
-  no walkable path and returns "no path"/"blocked by '<letter>'", because it
-  won't path through a monster.
-- move(direction): take ONE real step in a compass direction
-  (N, S, E, W, NE, NW, SE, SW). **Stepping INTO a monster ATTACKS it** (melee).
-  Use this to FIGHT a monster that is blocking your way, or to step around an
-  obstacle one tile at a time.
-- stairs_down / stairs_up: take the real '>' / '<' — you MUST already be standing
-  on that stair (move_to it first; the status says when you're on a stair).
-- search(times): search adjacent tiles for hidden passages (only when truly stuck
-  with no monster and no reachable stair).
+Tools (real NetHack primitives — YOU decide how to use them):
+- move_to(x, y): walk to tile (x,y) along VISIBLY-OPEN terrain (floor, corridor,
+  open doorway, stairs). It is plain navigation: it does NOT open/kick doors,
+  attack monsters, or push through anything. If the way is blocked it STOPS and
+  tells you what's adjacent (a closed door '+', a monster, etc.) and which way
+  the target is. Then it's YOUR job to act.
+- move(direction): one real step (N,S,E,W,NE,NW,SE,SW). Stepping into a monster
+  ATTACKS it; stepping into your pet swaps places.
+- open(direction): open an adjacent closed door '+'.
+- kick(direction): kick an adjacent door (use when open says it's LOCKED).
+- search(times): search adjacent tiles for hidden passages/doors.
+- stairs_down / stairs_up: take the real '>' / '<' (you must be standing on it).
 
-STRATEGY: To descend — move_to a '>' tile, then stairs_down. If move_to reports
-"no path" or "blocked by '<monster>'", a monster is in the way: look at the map,
-find that monster relative to you, and call move(direction) TOWARD it to attack
-it (repeat until it's dead / moves), then move_to the stair again. Do NOT just
-`search` when a monster is blocking — fight it. To go up, move_to a '<' then
-stairs_up.
+STRATEGY: To descend — move_to a visible '>', then stairs_down. When move_to
+stops "blocked", read what it reports and decide: a closed door -> open(dir)
+(if it says locked -> kick(dir)); a monster -> move(dir) to attack it until it's
+gone; nothing adjacent and no route -> search for a hidden passage or pick a
+different tile to move_to. Then continue toward the stair. To go up: move_to a
+'<', then stairs_up.
 
-Respond with ONLY a JSON object, e.g. {"tool":"move_to","x":50,"y":16} or
-{"tool":"move","direction":"SW"} or {"tool":"stairs_down"} or
-{"tool":"stairs_up"} or {"tool":"search","times":10}."""
+Respond with ONLY a JSON object, e.g. {"tool":"move_to","x":50,"y":16},
+{"tool":"move","direction":"SW"}, {"tool":"open","direction":"W"},
+{"tool":"kick","direction":"W"}, {"tool":"search","times":10},
+{"tool":"stairs_down"}, {"tool":"stairs_up"}."""
 
 
 def _glm(model, messages, api_key, max_tokens=8000):
@@ -152,38 +151,31 @@ def _is_monster(c):
 
 
 def _blocker_hint(chars, hero, target):
-    """Name the monster blocking the route and its compass direction. Prefers a
-    monster ADJACENT to the hero (the real blocker once the hero has walked to
-    the frontier); else the nearest monster toward the target."""
+    """Factual report of what is adjacent and in the way (closed doors '+' and
+    monsters), with directions, plus the rough direction to the target. It does
+    NOT prescribe an action — the agent decides whether to open/kick a door,
+    attack a monster, search, or go around."""
     cx, cy = hero
-    # adjacent monster (the actual doorway/corridor blocker at the frontier)
-    adj = []
-    for k, (dx, dy) in _DIRS.items():
+    doors, mons = [], []
+    for _k, (dx, dy) in _DIRS.items():
         x, y = cx + dx, cy + dy
-        if 0 <= x < 79 and 0 <= y < 21 and _is_monster(chr(int(chars[y, x]))):
-            adj.append((abs(x - target[0]) + abs(y - target[1]), x, y,
-                        chr(int(chars[y, x])), _dir_name(dx, dy)))
-    if adj:
-        _, mx, my, mc, dname = min(adj)
-        return (f"blocked: a monster '{mc}' is right next to you ({dname}, at "
-                f"({mx},{my})) on the only way to {target} — ATTACK it: "
-                f"move(direction='{dname}') (repeat until it dies), then move_to {target}")
-    # otherwise nearest monster overall
-    best, bestd = None, 1e9
-    for y in range(21):
-        for x in range(79):
-            if (x, y) != (cx, cy) and _is_monster(chr(int(chars[y, x]))):
-                d = abs(x - cx) + abs(y - cy)
-                if d < bestd:
-                    bestd, best = d, (x, y, chr(int(chars[y, x])))
-    if best is not None:
-        mx, my, mc = best
-        dn = _dir_name(mx - cx, my - cy)
-        return (f"no A* path to {target}: nearest monster '{mc}' at ({mx},{my}) "
-                f"is to your {dn} — head that way (move(direction='{dn}')) and "
-                f"attack it to clear the route, then move_to {target}")
-    return (f"no A* path from {hero} to {target}; no monster visible — the way may "
-            f"need a door: try move(direction=...) toward {target} or search")
+        if not (0 <= x < 79 and 0 <= y < 21):
+            continue
+        c = chr(int(chars[y, x]))
+        if c == "+":
+            doors.append(_dir_name(dx, dy))
+        elif _is_monster(c):
+            mons.append(f"'{c}' {_dir_name(dx, dy)}")
+    tgt_dir = _dir_name(target[0] - cx, target[1] - cy)
+    parts = [f"no open path to {target} (it's roughly {tgt_dir} of you)."]
+    if doors:
+        parts.append(f"Adjacent closed door(s): {', '.join(doors)}.")
+    if mons:
+        parts.append(f"Adjacent monster(s): {', '.join(mons)}.")
+    if not doors and not mons:
+        parts.append("No adjacent door/monster — the route may need exploration "
+                     "(a hidden passage) or you must go around.")
+    return " ".join(parts)
 
 
 def _walkview(glyphs):
@@ -200,10 +192,9 @@ def _walkview(glyphs):
     cm = glyph_is_cmap(g)
     idx = np.clip(g - GLYPH_CMAP_OFF, 0, len(_CMAP_LUT) - 1)
     v[cm] = _CMAP_LUT[idx[cm]]
-    # Closed doors are walkable for pathing — you step in to open them (the
-    # move_to step logic opens a closed door it bumps).
-    v[cm & np.isin(idx, list(CMAP_CLOSED_DOOR_INDICES))] = ord(".")
-    v[glyph_is_monster(g)] = ord(".")
+    # Items lying on the floor are walkable. Closed doors and monsters are NOT —
+    # walking there requires a deliberate action (open/kick a door, attack a
+    # monster), which is the agent's decision, not move_to's.
     v[glyph_is_object(g)] = ord(".")
     return v
 
@@ -218,94 +209,44 @@ def _try(env, key):
     return obs, done, (_pos(obs) != p0)
 
 
-def _move_to(env, x, y, max_steps=150):
-    """Adaptively walk to (x,y): re-path with A* from the CURRENT tile every
-    step (a single blocked step never desyncs the route). Opens a closed door
-    when one blocks an orthogonal step; decomposes a blocked diagonal into
-    orthogonal moves (NetHack forbids diagonal door entry). Real moves only —
-    never descends."""
+def _move_to(env, x, y, max_steps=80):
+    """GENERIC navigation only: A* over visibly-open terrain (floor, corridor,
+    OPEN door, doorway, stairs, items) and walk it. It does NOT open/kick doors,
+    attack monsters, or push through blockers — those are deliberate actions the
+    AGENT must choose via the move/open/kick/search primitives. If the path is
+    blocked (closed door, monster, or no open route), it stops and reports what
+    is in the way, factually, for the agent to decide. Re-paths each step so a
+    monster wandering onto the route just reroutes; never descends."""
     tx, ty = int(x), int(y)
     obs = env._engine.to_core_observation()
-    stuck = 0
     for _ in range(max_steps):
         cx, cy = _pos(obs)
         if (cx, cy) == (tx, ty):
             return obs, False, f"reached ({tx},{ty})"
         chars = np.array(obs.chars).reshape(21, 79)
-        wv = _walkview(np.array(obs.glyphs).reshape(21, 79))  # glyph-based walkability
+        wv = _walkview(np.array(obs.glyphs).reshape(21, 79))
         path = a_star(wv, (cx, cy), (tx, ty))
         if not path:
-            # Still no route even through monsters — the target is genuinely
-            # disconnected on the visible map (needs an undiscovered corridor).
-            # Walk to the frontier and report it; the agent can search/explore.
+            # The exact target isn't reachable over open terrain (a closed door
+            # / monster / unexplored gap is in the way). Walk as far toward it as
+            # open ground allows, then stop and report — the agent acts (open/
+            # kick/fight/search). This is plain navigation, not obstacle-solving.
             reach = reachable_set(wv, (cx, cy))
             frontier = min(reach, key=lambda t: abs(t[0] - tx) + abs(t[1] - ty)) \
                 if reach else (cx, cy)
             if frontier == (cx, cy):
                 return obs, False, _blocker_hint(chars, (cx, cy), (tx, ty))
-            fpath = a_star(wv, (cx, cy), frontier)
-            if not fpath:
+            path = a_star(wv, (cx, cy), frontier)
+            if not path:
                 return obs, False, _blocker_hint(chars, (cx, cy), (tx, ty))
-            path = fpath
-        key = int(path[0])
-        dx, dy = _DIRS[key]
-        ax, ay = cx + dx, cy + dy
-        ahead = chr(int(chars[ay, ax])) if 0 <= ay < 21 and 0 <= ax < 79 else " "
-        obs, done, moved = _try(env, key)
+        obs, done, moved = _try(env, int(path[0]))
         if done:
             return obs, True, "died en route"
         if not moved:
-            # Resolve the block, in priority order:
-            if dx != 0 and dy != 0:
-                # Diagonal block (incl. diagonally onto a door, which NetHack
-                # forbids): step around it orthogonally.
-                for ok in (_ORTH[(dx, 0)], _ORTH[(0, dy)]):
-                    obs, done, moved = _try(env, ok)
-                    if done:
-                        return obs, True, "died en route"
-                    if moved:
-                        break
-            if not moved and (dx == 0 or dy == 0) and ahead == "+":
-                env.step(ord("o")); env.step(key)        # try to open the door
-                obs, done, moved = _try(env, key)
-                if done:
-                    return obs, True, "died en route"
-                if not moved:                            # locked? kick it open (^D)
-                    env.step(4); env.step(key)
-                    env.step(4); env.step(key)           # twice (kick can take a few)
-                    obs, done, moved = _try(env, key)
-                    if done:
-                        return obs, True, "died en route"
-            if not moved and (ahead.isalpha() or ahead in "@&;:"):
-                for _ in range(6):                       # attack a blocking monster
-                    obs, done, moved = _try(env, key)
-                    if done:
-                        return obs, True, "died en route"
-                    if moved:
-                        break
-        if not moved:
-            # Best-effort: a_star had a route but the chosen step stalled. Step to
-            # whichever walkview-walkable neighbor is closest to the target (this
-            # also melees/​swaps a monster, or moves around it), guaranteeing
-            # progress whenever any neighbor toward the goal is open.
-            best, bestd = None, 1e9
-            for k, (ddx, ddy) in _DIRS.items():
-                nx, ny = cx + ddx, cy + ddy
-                if 0 <= nx < 79 and 0 <= ny < 21 and chr(int(wv[ny, nx])) != "|":
-                    d = abs(nx - tx) + abs(ny - ty)
-                    if d < bestd:
-                        bestd, best = d, k
-            if best is not None:
-                obs, done, moved = _try(env, best)
-                if done:
-                    return obs, True, "died en route"
-        if moved:
-            stuck = 0
-            continue
-        stuck += 1
-        if stuck >= 4:
-            return obs, False, f"stuck near ({cx},{cy}) heading to ({tx},{ty})"
-    return obs, False, f"reached vicinity of ({tx},{ty})"
+            # A tile that was open got blocked (a monster stepped in). Stop and
+            # report — the agent decides what to do.
+            return obs, False, _blocker_hint(chars, (cx, cy), (tx, ty))
+    return obs, False, f"still en route to ({tx},{ty})"
 
 
 _NAME_DIR = {"N": ord('k'), "S": ord('j'), "E": ord('l'), "W": ord('h'),
@@ -329,6 +270,16 @@ def _exec(env, action):
         moved = after != before
         return obs, done, (f"moved {action.get('direction')}" if moved
                            else f"attacked/blocked toward {action.get('direction')} (stayed {before})")
+    if tool in ("open", "kick"):
+        key = _NAME_DIR.get(str(action.get("direction", "")).upper().strip())
+        if key is None:
+            obs = env._engine.to_core_observation()
+            return obs, False, f"bad direction {action.get('direction')!r}"
+        cmd = ord("o") if tool == "open" else 4   # 'o'pen / ^D kick
+        env.step(cmd)
+        obs, done, _ = env.step(key)              # apply to the given direction
+        msg = bytes(obs.message).split(b"\x00")[0].decode("latin1")
+        return obs, bool(done), f"{tool} {action.get('direction')}: {msg[:50]}"
     if tool == "stairs_down":
         obs, done, _ = env.step(ord(">"))
         return obs, done, "took '>'"
