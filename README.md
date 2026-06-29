@@ -9,7 +9,7 @@ binding — `nle` / `minihack` are no longer used. The fork turns NetHack into a
 level blobs, secure state edits, and 17 live difficulty/generation knobs. On top
 of it sits an LLM-agent harness with a skill + code-mode interface, a 13-tier
 curriculum, a dozen-plus observation encodings, replay capture, a web console,
-and an in-browser rollout viewer.
+and an in-browser rollout viewer. Hosted as an environment in Prime Intellect's Verifiers library.
 
 **Mirrors:**
 - Prime Hub: [`jonathanliu/nethack`](https://app.primeintellect.ai/dashboard/environments/jonathanliu/nethack) (v0.0.66+)
