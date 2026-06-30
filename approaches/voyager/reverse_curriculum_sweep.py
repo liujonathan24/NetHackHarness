@@ -179,6 +179,12 @@ def construct_start(env: CurriculumEngineEnv, obs, start_floor: int):
     and is now climbing back (consistent survivability). floor 1 = the natural
     reset (full_tour); no teleport, no upgrade — the env applies the upgrade itself
     at the real jump-down."""
+    # Dismiss the initial "--More--" welcome prompt. Until it is cleared the game
+    # is frozen — every command (move, stairs, goto_abs) is a silent no-op, which
+    # otherwise makes goto_abs appear to leave the hero on floor 1. Sending
+    # space+enter clears it; if already clear these are harmless no-op commands.
+    obs, _d, _i = env.step(ord(" "))
+    obs, _d, _i = env.step(13)
     if start_floor <= 1:
         return obs
     dnum, dlevel = _floor_to_abs(env, start_floor)
@@ -278,21 +284,35 @@ def _bfs_path(walk, door, start, goal):
     return []
 
 
-def nav_to(env, x, y, max_steps: int = 200):
+def nav_to(env, x, y, max_steps: int = 200, fight: bool = False):
     """Door-aware ORTHOGONAL navigation: BFS over terrain where closed doors are
     passable; walk it, opening (or kicking, if locked) any closed door on the
-    path. Stops and reports if a MONSTER blocks the next tile (combat stays the
-    agent's call) or there is no route. Never descends/ascends — movement + doors
-    only (both legal primitives the agent already has)."""
+    path. A MONSTER on the next tile either stops nav (``fight=False`` — combat is
+    the agent's call) or is stepped into / fought through (``fight=True`` — used by
+    the scripted navigation-ceiling baseline). Never descends/ascends — movement +
+    doors + (optional) melee, all legal primitives the agent already has."""
     tx, ty = int(x), int(y)
     obs = env._engine.to_core_observation()
+    stall_pos, stall = cv._pos(obs), 0          # bail if no net progress for a while
     for _ in range(max_steps):
         cx, cy = cv._pos(obs)
         if (cx, cy) == (tx, ty):
             return obs, False, f"reached ({tx},{ty})"
+        if (cx, cy) == stall_pos:
+            stall += 1
+            if stall > 16:                      # wedged (unkillable mob / pet loop)
+                return obs, False, cv._blocker_hint(
+                    _np.array(obs.chars).reshape(21, 79), (cx, cy), (tx, ty))
+        else:
+            stall_pos, stall = (cx, cy), 0
         glyphs = _np.array(obs.glyphs).reshape(21, 79)
         chars = _np.array(obs.chars).reshape(21, 79)
         wv = _walk_open_doors(glyphs)
+        if fight:
+            # Route THROUGH monster tiles (otherwise a mob blocking the only
+            # corridor yields "no path" and the fight code below never fires).
+            wv = wv.copy()
+            wv[cv.glyph_is_monster(_np.asarray(glyphs).astype(_np.int64))] = ord(".")
         path = _bfs_path(wv, _door_mask(glyphs), (cx, cy), (tx, ty))
         if not path:
             return obs, False, cv._blocker_hint(chars, (cx, cy), (tx, ty))
@@ -300,8 +320,13 @@ def nav_to(env, x, y, max_steps: int = 200):
         dx, dy = cv._DIRS[key]
         nx, ny = cx + dx, cy + dy
         ch = chr(int(chars[ny, nx]))
-        if cv._is_monster(ch) and ch != "@":          # let the agent fight
-            return obs, False, cv._blocker_hint(chars, (cx, cy), (tx, ty))
+        if cv._is_monster(ch) and ch != "@":
+            if not fight:                        # let the agent decide combat
+                return obs, False, cv._blocker_hint(chars, (cx, cy), (tx, ty))
+            obs, done, _ = cv._try(env, key)     # step into it: attack / swap pet
+            if done:
+                return obs, True, "died fighting through"
+            continue
         if _is_closed_door(glyphs, nx, ny):
             env.step(ord("o")); o2, done, _ = env.step(key)   # open (orthogonal)
             msg = bytes(o2.message).split(b"\x00")[0].decode("latin1")

@@ -23,9 +23,9 @@ Concretely (P = probability of reaching floor 1, the top):
 
 P(reach the top / floor 1) from each start floor:
 
-| start floor (climb distance) | scripted greedy-nav, 19 seeds | GLM-5.2, real cells |
+| start floor (climb distance) | scripted greedy-nav, 20 seeds | GLM-5.2, real cells |
 |---|---|---|
-| 2 (1 floor) | **0.26** | **0.67** (4 seeds) |
+| 2 (1 floor) | **0.30** | **0.67** (4 seeds) |
 | 3 (2 floors) | 0.00 | 0.00 |
 | 4 (3 floors, crosses jump-up) | 0.00 | 0.00 |
 | 5 (4 floors) | 0.00 | *blocked — Prime 402* |
@@ -136,29 +136,51 @@ result is only meaningful on top of a navigator that can reach stairs.
 
 ### 6a. Navigation ceiling (scripted, complete — `nav_ceiling.png`, `scripted_heatmap.png`)
 
-Across 19 full-depth seeds, the greedy-nav climber:
+Across 20 full-depth seeds, the greedy-nav climber:
 
 | start floor | n | P(reach top) | P(reach next floor) | mean floors climbed | median stuck floor |
 |---|---|---|---|---|---|
-| 2 | 19 | 0.26 | 0.26 | 0.26 | 2 (the start) |
-| 3 | 19 | 0.00 | 0.26 | 0.26 | 3 |
-| 4 | 19 | 0.00 | 0.16 | 0.16 | 4 |
-| 5 | 19 | 0.00 | 0.05 | 0.05 | 5 |
-| 6 | 19 | 0.00 | 0.16 | 0.16 | 6 |
+| 2 | 20 | 0.30 | 0.30 | 0.30 | 2 (the start) |
+| 3 | 20 | 0.00 | 0.25 | 0.25 | 3 |
+| 4 | 20 | 0.00 | 0.15 | 0.15 | 4 |
+| 5 | 20 | 0.00 | 0.05 | 0.05 | 5 |
+| 6 | 20 | 0.00 | 0.15 | 0.15 | 6 |
 
 The dominant outcome at **every** start floor is *stuck on the start floor* — the
 climber cannot reach that level's up-stair. It reaches the top **only** from floor
-2 (~26%), and **never** from floors 3–6 (it occasionally climbs one floor but never
-chains to the top). Reachability is **seed/level-specific** (e.g. seeds 5,6,7,19,29
-navigate floor 2; the rest do not), not a smooth function of depth.
+2 (~30%), and **never** from floors 3–6 (it occasionally climbs one floor but never
+chains to the top). Reachability is **seed/level-specific** (some seeds navigate a
+floor, others do not), not a smooth function of depth.
 
-**Data-integrity note:** an earlier version of this table reported ~0.05 at floors
-3–6. That was entirely an artifact of **seed 22**, whose `goto_abs` silently lands
-the hero on floor 1 (not the intended deep floor) — faking a full-climb "win" with
-`floors_climbed = start − 1`. A construct-validation guard now rejects any cell
-whose landing floor ≠ the intended floor (`construct_start` raises; the scripted and
-LLM sweeps skip it). Re-running with the guard removed all five fake wins; seed 22
-is the only affected seed (the GLM seeds 19,0,4,5 were unaffected).
+**Reproducibility fix (initial-prompt freeze).** A re-test 3 days later showed
+*every* construct landing on floor 1 — `goto_abs` returning success but no level
+change. Root cause: the game starts blocked on the **`--More--` welcome prompt**;
+until it is dismissed (space+enter) *every* command — move, stairs, `goto_abs` — is
+a silent no-op, so the hero never leaves floor 1. This also explains the earlier
+"seed-22 only" fake wins: the prompt freeze is **intermittent across process
+launches**, and on the first run it happened to hit only seed 22's process. The fix
+dismisses the prompt in `construct_start`; with it, all 20 seeds construct
+deterministically (seed 22 included, now a genuine floor-2 result). A
+construct-validation guard (reject any landing floor ≠ intended) remains as
+defense-in-depth. The conclusion is unchanged and now reproducible run-to-run.
+
+**Why the climber gets stuck (diagnosis over 100 cells):** **89% of failures are
+monster-related** — 51% a monster blocking the path (not adjacent, so the climber
+can't engage) and 38% perpetual combat with an adjacent monster/pet (the starting
+pet, which it "attacks" = swaps with, oscillating). Doors (1%) and hidden passages
+(3%) are negligible.
+
+**Fight-through ablation (does solving monsters lift the ceiling? — barely).**
+Adding a navigator that paths *through* monster tiles and melees the blocker
+(`nav_to(fight=True)`) provably reaches up-stairs the stock navigator cannot
+(verified per-level), and lets the climber chain an extra floor on some seeds — but
+the **aggregate P(reach top) and mean-climbed are essentially unchanged** (floors
+3–6 still 0.00). Two reasons: reaching the *top* needs every floor's blocker solved,
+and the deep Gehennom levels are long, monster-dense **mazes** (e.g. a 141-tile path
+through 7+ wandering monsters) where greedy per-step re-pathing stalls regardless of
+melee. So monsters are the *proximate* blocker but not the whole story; a materially
+better navigator needs maze-robust global pathing + combat + the pet handled, not
+melee alone.
 
 ### 6a-bis. Seeing a real win (`win_seed19_f2.gif`, `win_seed24_f4.gif`)
 

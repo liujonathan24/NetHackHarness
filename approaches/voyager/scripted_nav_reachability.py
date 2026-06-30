@@ -50,7 +50,8 @@ def _attack_adjacent_monster(env, obs):
     return obs, False, False
 
 
-def scripted_climb(env, obs, start_floor: int, max_iters: int = 80) -> dict:
+def scripted_climb(env, obs, start_floor: int, max_iters: int = 80,
+                   fight: bool = False) -> dict:
     floors = [env.curriculum_floor(obs)]
     f_cur = floors[0]
     stuck = 0
@@ -66,7 +67,7 @@ def scripted_climb(env, obs, start_floor: int, max_iters: int = 80) -> dict:
             chars = np.array(obs.chars).reshape(21, 79)
             _downs, ups = cv._stairs(chars)
             if ups:
-                obs, done, msg = rc.nav_to(env, *_nearest(ups, cv._pos(obs)))
+                obs, done, msg = rc.nav_to(env, *_nearest(ups, cv._pos(obs)), fight=fight)
                 if env._engine.hero_on_stair() == -1:
                     obs, done, _ = cv._exec(env, {"tool": "stairs_up"})
                 elif "monster" in msg:
@@ -101,6 +102,8 @@ def main():
                     help="test seeds 0..N-1 that have a full 6-floor deep segment")
     ap.add_argument("--seeds", type=int, nargs="+", default=None)
     ap.add_argument("--out", default="outputs/curriculum_experiments/scripted_nav")
+    ap.add_argument("--fight", action="store_true",
+                    help="navigator fights through monsters/pet on the path")
     args = ap.parse_args()
     out = pathlib.Path(args.out); (out / "episodes").mkdir(parents=True, exist_ok=True)
 
@@ -123,7 +126,7 @@ def main():
                 obs = rc.construct_start(env, obs, floor)   # validates landing floor
             except ValueError:
                 continue   # unavailable depth OR invalid goto_abs (e.g. seed 22)
-            r = scripted_climb(env, obs, floor)
+            r = scripted_climb(env, obs, floor, fight=args.fight)
             r.update({"seed": s, "condition": f"climb_from_{floor}"})
             results.append(r)
             print(f"  seed{s:2d} climb_from_{floor}: top={r['reached_top']} "
