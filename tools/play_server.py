@@ -46,8 +46,18 @@ from flask import (Flask, copy_current_request_context, jsonify,  # noqa: E402
                    render_template, request, send_from_directory)
 
 from nethack_core.engine_env import EngineEnv  # noqa: E402
+from nethack_core.curriculum_engine_env import CurriculumEngineEnv  # noqa: E402
 
 from tools.rollout_view import dashboard, stats  # noqa: E402
+
+# Selectable env "modes" for the Map Viewer. "standard" is the normal game;
+# "curriculum" is the compressed 6-floor down/up tour (CurriculumEngineEnv), which
+# also enables the /curriculum/goto control to jump the hero onto any floor and
+# watch it climb back with real stairs only.
+_ENV_CLASSES = {"standard": EngineEnv, "curriculum": CurriculumEngineEnv}
+# Curriculum floor 1..6 -> human label, surfaced in the payload for the UI readout.
+_CURR_FLOOR_NAMES = {1: "DoD 1", 2: "DoD 2", 3: "DoD 3",
+                     4: "Gehennom 48", 5: "Gehennom 49", 6: "Gehennom 50"}
 
 _WEB = _ROOT / "tools" / "webconsole"
 app = Flask(
@@ -55,7 +65,7 @@ app = Flask(
     template_folder=str(_WEB / "templates"),
     static_folder=str(_WEB / "static"),
 )
-STATE: dict = {"env": None, "seed": 42, "tune": {}, "rec": None, "turn": 0,
+STATE: dict = {"env": None, "mode": "standard", "seed": 42, "tune": {}, "rec": None, "turn": 0,
                "ckpt_dlvl": None, "ckpt_path": None, "resumed": False,
                # "started" is True only after a /reset or /resume actually starts
                # a game. The env alone isn't enough: /catalog lazily constructs an
@@ -160,8 +170,33 @@ _DEFAULT_META = dict(group="Stat-based", kind="scale", reset=False, lo=0, hi=3, 
 
 def _env() -> EngineEnv:
     if STATE["env"] is None:
-        STATE["env"] = EngineEnv()
+        STATE["env"] = _ENV_CLASSES.get(STATE["mode"], EngineEnv)()
     return STATE["env"]
+
+
+def _set_mode(mode: str) -> None:
+    """Switch the env mode. If it changed, tear down the current env (on the
+    engine thread — callers are @_engine_locked) so _env() rebuilds the new class
+    on the next /reset. A no-op if the mode is unchanged."""
+    if mode not in _ENV_CLASSES or mode == STATE["mode"]:
+        return
+    old = STATE.get("env")
+    if old is not None:
+        try:
+            old.close()
+        except Exception:
+            pass
+    STATE["env"] = None
+    STATE["started"] = False
+    STATE["mode"] = mode
+
+
+def _curr_floor_to_abs(env, floor: int):
+    """Curriculum floor 1..6 -> (dnum, dlevel) for goto_abs. 1-3 = Dungeons of
+    Doom depth 1/2/3; 4-6 = Gehennom deep_lo + (floor-4)."""
+    if floor <= 3:
+        return env._dod_dnum, floor
+    return env._geh_dnum, env._deep_lo + (floor - 4) - env._geh_start + 1
 
 
 def _need_started():
@@ -222,11 +257,20 @@ def _status(obs):
 
 def _payload(obs) -> dict:
     msg = bytes(int(c) for c in obs.message).split(b"\x00")[0].decode("latin1", "replace")
-    return {"map": _rows(obs), "colors": [[int(c) for c in r] for r in obs.colors],
-            "message": msg, "status": _status(obs),
-            "tune": _env().get_tune(), "done": bool(obs is not None and _env().done),
-            "recording": STATE["rec"]["name"] if STATE["rec"] else None,
-            "undos": len(STATE["history"]), "marked": STATE["mark"] is not None}
+    pay = {"map": _rows(obs), "colors": [[int(c) for c in r] for r in obs.colors],
+           "message": msg, "status": _status(obs),
+           "tune": _env().get_tune(), "done": bool(obs is not None and _env().done),
+           "recording": STATE["rec"]["name"] if STATE["rec"] else None,
+           "undos": len(STATE["history"]), "marked": STATE["mark"] is not None,
+           "mode": STATE["mode"]}
+    if STATE["mode"] == "curriculum":
+        try:
+            fl = int(_env().curriculum_floor(obs))
+        except Exception:
+            fl = 0
+        pay["curriculum_floor"] = fl
+        pay["curriculum_floor_name"] = _CURR_FLOOR_NAMES.get(fl, "off-path")
+    return pay
 
 
 def _record(obs, action_key=None):
@@ -332,6 +376,12 @@ def reset():
         STATE["tune"] = {k: float(v) for k, v in (data.get("tune") or {}).items()}
     except (TypeError, ValueError):
         return jsonify({"error": "tune values must be numbers"}), 400
+    # Optional env mode switch (standard | curriculum). Rebuilds the env class if
+    # it changed, BEFORE the reset below constructs/starts the game.
+    mode = data.get("mode", STATE["mode"])
+    if mode not in _ENV_CLASSES:
+        return jsonify({"error": f"unknown mode {mode!r}"}), 400
+    _set_mode(mode)
     STATE["resumed"] = False  # an explicit reset supersedes any prior resume
     try:
         # reset applies the tune dict; an unknown knob name raises KeyError ->
@@ -373,6 +423,45 @@ def _settle(env, obs, max_iter=12):
         else:
             break
     return obs
+
+
+@app.route("/curriculum/goto", methods=["POST"])
+@_engine_locked
+def curriculum_goto():
+    """Curriculum mode only: place the hero on curriculum floor 1..6 (via the
+    internal goto_abs + deep stats-upgrade) and settle the frame, so you can watch
+    it climb back up with real stairs. The construct is validated — a seed whose
+    goto_abs mislands is rejected rather than faking a placement."""
+    ns = _need_started()
+    if ns:
+        return ns
+    if STATE["mode"] != "curriculum":
+        return jsonify({"error": "not in curriculum mode; reset with mode=curriculum first"}), 400
+    data = request.get_json(silent=True) or {}
+    try:
+        floor = int(data.get("floor"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "floor must be an integer 1-6"}), 400
+    if not 1 <= floor <= 6:
+        return jsonify({"error": "floor must be 1-6"}), 400
+    env = _env()
+    try:
+        if floor >= 2:
+            dnum, dlevel = _curr_floor_to_abs(env, floor)
+            env.goto_abs(dnum, dlevel)
+            obs = env.modify(**env._sample_upgrade())
+            got = int(env.curriculum_floor(obs))
+            if got != floor:
+                return jsonify({"error": f"could not place hero on floor {floor} "
+                                         f"(landed {got}) for seed {STATE['seed']}"}), 400
+        else:
+            obs = env.engine.to_core_observation()
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"error": f"goto floor failed: {e}"}), 400
+    obs = _settle(env, obs)
+    _clear_undo()
+    _clear_mark()
+    return jsonify(_payload(obs))
 
 
 @app.route("/step", methods=["POST"])

@@ -314,3 +314,17 @@ main[tabindex="-1"]:focus{outline:none}
   #nav{height:auto;flex-wrap:wrap;padding:6px 10px;gap:2px}
   #nav .spacer{flex-basis:100%;height:0}
 }
+
+/* ---- curriculum tour mode (map page) ---- */
+#moderow{display:flex;align-items:center;gap:8px;margin:0 0 10px}
+#moderow label{color:var(--ink-dim);font-size:13px}
+#moderow select{flex:1;background:var(--panel-2);color:var(--ink);
+  border:1px solid var(--ctl-border);border-radius:6px;padding:5px 8px;font:inherit}
+#currpanel{border:1px solid var(--line);border-radius:8px;background:var(--panel-2);
+  padding:10px 12px;margin:0 0 12px}
+#currpanel h2{margin:0 0 6px;font-size:14px}
+#currfloor{color:var(--stairs);font-weight:600;margin-bottom:8px}
+.currbtns{display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+.currbtns .mname{color:var(--ink-dim);font-size:13px;margin-right:2px}
+.currbtns .mbtn{min-width:30px}
+#currstat{color:var(--ink-dim);font-size:12px;min-height:1em;margin-top:6px}

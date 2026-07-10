@@ -210,3 +210,42 @@ def test_play_routes_reject_unstarted_env(client, monkeypatch):
                        ("/modify", {"changes": {"hp": 5}})]:
         code, err = _err(client.post(path, json=body))
         assert code == 400 and "reset" in (err or "").lower(), f"{path} must 400 when unstarted"
+
+
+# --- curriculum mode + /curriculum/goto -------------------------------------
+def test_curriculum_reset_reports_floor(client):
+    """reset with mode=curriculum starts the tour env and reports curriculum_floor."""
+    r = client.post("/reset", json={"seed": 19, "mode": "curriculum"}).get_json()
+    assert r["mode"] == "curriculum"
+    assert r["curriculum_floor"] == 1
+    assert r["curriculum_floor_name"] == "DoD 1"
+
+
+def test_curriculum_goto_places_hero_deep(client):
+    client.post("/reset", json={"seed": 19, "mode": "curriculum"})
+    r = client.post("/curriculum/goto", json={"floor": 4}).get_json()
+    assert r["curriculum_floor"] == 4
+    assert r["status"]["dlvl"] == 48  # Gehennom 48
+
+
+def test_curriculum_goto_bad_floor_is_400(client):
+    client.post("/reset", json={"seed": 19, "mode": "curriculum"})
+    assert client.post("/curriculum/goto", json={"floor": 9}).status_code == 400
+    assert client.post("/curriculum/goto", json={"floor": "x"}).status_code == 400
+
+
+def test_curriculum_goto_in_standard_mode_is_400(client):
+    client.post("/reset", json={"seed": 42, "mode": "standard"})
+    r = client.post("/curriculum/goto", json={"floor": 3})
+    assert r.status_code == 400
+    assert "curriculum mode" in (r.get_json() or {}).get("error", "")
+
+
+def test_reset_unknown_mode_is_400(client):
+    assert client.post("/reset", json={"mode": "banana"}).status_code == 400
+
+
+def test_standard_mode_has_no_curriculum_floor(client):
+    r = client.post("/reset", json={"seed": 42, "mode": "standard"}).get_json()
+    assert r["mode"] == "standard"
+    assert "curriculum_floor" not in r

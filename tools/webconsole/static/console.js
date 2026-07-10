@@ -99,6 +99,7 @@ function initGifToggle(){
 /* ---------- knob + play machinery (map page) ---------- */
 const KEYMAP={'ArrowUp':'k','ArrowDown':'j','ArrowLeft':'h','ArrowRight':'l','Enter':'\r','Escape':'\x1b'};
 let curTune={}, META={};
+let curMode='standard';  // 'standard' | 'curriculum' (map page env mode)
 
 function setDirty(v){const r=document.getElementById('reset'); if(r)r.classList.toggle('dirty',v);
   // Non-color cue (WCAG 1.4.1): the orange tint isn't the only signal that a
@@ -133,6 +134,34 @@ function apply(d){
   syncRec(!!d.recording);
   syncUndo(d.undos);
   syncMark(d.marked);
+  if(d.mode){ curMode=d.mode; syncModeUI(); }
+  const cf=document.getElementById('currfloor');
+  if(cf){
+    if(d.curriculum_floor!==undefined){
+      const n=d.curriculum_floor||0;
+      cf.textContent = n>=1 ? ('Curriculum floor '+n+'/6 — '+(d.curriculum_floor_name||'')) : 'Off the tour path';
+    } else cf.textContent='Floor: —';
+  }
+}
+/* Reflect curMode in the selector + show/hide the curriculum panel. */
+function syncModeUI(){
+  const sel=document.getElementById('modesel'); if(sel&&sel.value!==curMode) sel.value=curMode;
+  const panel=document.getElementById('currpanel'); if(panel) panel.hidden = (curMode!=='curriculum');
+}
+/* Switching mode rebuilds the env class, so it does a fresh reset in that mode. */
+function onModeChange(){
+  const sel=document.getElementById('modesel'); if(!sel) return;
+  curMode=sel.value; syncModeUI(); doReset();
+}
+/* Curriculum mode: jump the hero onto floor n (1..6) and settle, then render so
+   you can watch it climb back with real < stairs. */
+function gotoCurr(n){
+  return engineCall(()=>post('/curriculum/goto',{floor:n}).then(d=>{
+    const cs=document.getElementById('currstat');
+    if(d&&d.error){ if(cs)cs.textContent='⚠ '+d.error; return; }
+    if(cs)cs.textContent='placed on floor '+n;
+    apply(d); const scr=document.getElementById('screen'); if(scr)scr.focus();
+  }));
 }
 /* Single source of truth for the record button's visual + a11y + label state,
    shared by apply() (server-driven) and toggleRec() (click-driven). */
@@ -206,7 +235,7 @@ function doReset(){
   // 0 into 42 (0 is falsy). Only blank/non-numeric input falls back to 42.
   const raw=document.getElementById('seed').value.trim();
   const seed=(raw!==''&&Number.isFinite(+raw))?Math.trunc(+raw):42;
-  return engineCall(()=>post('/reset',{seed:seed,tune:curTune}).then(d=>{
+  return engineCall(()=>post('/reset',{seed:seed,tune:curTune,mode:curMode}).then(d=>{
     apply(d); setDirty(false);  // the floor was regenerated with curTune -> nothing pending
     document.getElementById('screen').focus();}));}
 function toggleRec(){
