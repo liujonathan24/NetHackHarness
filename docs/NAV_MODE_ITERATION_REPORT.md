@@ -222,3 +222,35 @@ Brute-force boundary-searching from the driver did not crack it within budget
   hidden-passage search strategy (harness or agent), then a real GLM-5.2 eval on the
   fixed harness for a clean baseline. The prior "3/6 floor-4 ceiling" was measured
   on the broken harness and should be re-measured.
+
+## Iteration 5 — dark-corridor exploration built; 21/22/23 need hidden-passage SEARCH
+
+Built the foundation for navigating unreachable stairs (reveal_map shows rooms, not
+corridors, so the stair often looks disconnected): `a_star(unknown_ok=True)` paths
+optimistically through dark tiles (dark costs 6×, diagonal-into-dark forbidden since
+those are stone corners), `a_star(blocked=set)` + `move_to` wall-memory remembers
+bumped stone (bumping stone doesn't reveal it in the obs). Effect: the hero now
+explores dark corridors toward the stair (seed 21: 0 → 16+ steps) instead of being
+stuck at the revealed-region boundary. Validated: no regression (19/20/24 descend).
+
+**Honest correction + conclusion.** My earlier "dark-flood reaches the stair on
+21/22" test treated ALL unrevealed tiles as walkable — including solid stone — so it
+does NOT prove a real corridor connects. Frontier exploration fully covers the
+hero's reachable component (46 tiles on seed 21) and finds **0 frontiers** with the
+stair still unreached: the connection is a **hidden passage** (dark terrain that
+reads as wall until searched). Walking can't find it — only systematic **search** at
+dead-end walls. My search attempts didn't crack it within budget (needs search at
+the exact hidden spot, possibly 10+ times). So 21/22/23 require a hidden-passage
+search capability — a distinct, hard exploration problem, not a navigation bug.
+
+### FINAL STATUS on the 6/6 goal
+- **Harness navigation: comprehensively fixed** (11 bugs, all via free agent-driven
+  testing). Movement, prompts, doors (open+kick), monsters, descent, multi-floor,
+  honest reporting, and now dark-corridor exploration all work.
+- **3/6 seeds (19, 20, 24) descend multiple floors** (seed 19 → floor 3) — all were
+  stuck on floor 1 before this work.
+- **3/6 seeds (21, 22, 23) are gated by hidden-passage levels** — reaching their
+  stairs needs systematic searching for hidden passages, which neither the harness
+  nor a simple policy does yet. This is the clearly-scoped remaining work for 6/6.
+- The prior "3/6 floor-4 ceiling" was measured on the broken harness; a clean
+  GLM-5.2 re-run on the fixed harness is the next measurement.
