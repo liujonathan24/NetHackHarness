@@ -16,6 +16,28 @@
     </div>
   </main>
   <aside id="side" aria-label="Controls">
+    <div id="moderow">
+      <label for="modesel">Mode</label>
+      <select id="modesel" onchange="onModeChange()" aria-label="Environment mode">
+        <option value="standard">Standard game</option>
+        <option value="curriculum">Curriculum tour</option>
+      </select>
+    </div>
+    <div id="currpanel" hidden>
+      <h2>Curriculum tour</h2>
+      <div id="currfloor" role="status" aria-live="polite">Floor: —</div>
+      <div class="currbtns" role="group" aria-label="Start at curriculum floor">
+        <span class="mname">Start at floor</span>
+        <button type="button" class="mbtn" onclick="gotoCurr(1)" aria-label="Start at floor 1, DoD 1">1</button>
+        <button type="button" class="mbtn" onclick="gotoCurr(2)" aria-label="Start at floor 2, DoD 2">2</button>
+        <button type="button" class="mbtn" onclick="gotoCurr(3)" aria-label="Start at floor 3, DoD 3">3</button>
+        <button type="button" class="mbtn" onclick="gotoCurr(4)" aria-label="Start at floor 4, Gehennom 48">4</button>
+        <button type="button" class="mbtn" onclick="gotoCurr(5)" aria-label="Start at floor 5, Gehennom 49">5</button>
+        <button type="button" class="mbtn" onclick="gotoCurr(6)" aria-label="Start at floor 6, Gehennom 50">6</button>
+      </div>
+      <div id="currstat" role="status" aria-live="polite"></div>
+      <p class="note">1–3 = Dungeons of Doom, 4–6 = Gehennom. Jump onto a floor, then climb back with the real <code>&lt;</code> stairs.</p>
+    </div>
     <div id="groups"></div>
     <div id="modify">
       <h2>Modify state</h2>
