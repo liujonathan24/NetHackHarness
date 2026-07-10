@@ -140,3 +140,50 @@ next high-value item (own commit; legacy `autoexplore`/`nearest_frontier`).
 **Net:** the closed-loop move_to + door/monster fixes convert the *directly
 navigable* seeds from stuck→descending. The autoexplore loop is the remaining
 gate for the explore-required seeds.
+
+## Iteration 3 — multi-floor descent works; autoexplore loop scoped
+
+Re-ran all 3 nav modes with subagent play-testers on the fixed harness. **All three
+descended floor 1 → 2 cleanly and honestly** ("walked 41 steps onto the down-stairs
+and DESCENDED", real position, doors traversed). They found one more bug, now fixed:
+
+- **Post-descent freeze (FIXED).** After a descent, "You descend the stairs."
+  lingered and swallowed the next movement key — the hero appeared frozen on the
+  new floor (every move_to = 0 steps, stale blocker). Closed-loop move_to now sends
+  MORE to settle the transition before returning. Validated: seed 19 step_count now
+  descends through **floor 3** (was stuck at floor 2).
+
+**Current depth (free driver, greedy move_to+autoexplore policy, 30 calls):**
+`seed 19→floor 3, 20→2, 24→2, 21/22/23→floor 1`. So **3/6 reach floor 2+**, the
+directly-navigable seeds now descend multiple floors.
+
+### The remaining gate: legacy autoexplore frontier loop (seeds 21/22/23)
+These seeds spawn with the `>` behind unrevealed terrain, so they need exploration —
+but autoexplore loops. Precise diagnosis (seed 21): the hero reaches a corridor
+junction at (72,15); `nearest_frontier` picks (72,14) (a `#` corridor directly N),
+`a_star` returns a valid 1-step N path and `is_walkable((72,14))` is True — **yet a
+raw N step does not move the hero and produces no "wall" message** (only ambient
+pet-combat text). So the frontier picker and A* both believe (72,14) is reachable,
+but the engine silently refuses the step. autoexplore re-picks the same frontier
+every call → infinite loop, no new tiles revealed. This is a genuine
+pathfinding-vs-engine edge case (likely a doorway/movement subtlety) in legacy
+`autoexplore`/`nearest_frontier` — the clearly-scoped #1 item for the next
+iteration. It — not model incapacity — is why the explore-required half of the
+seeds were unwinnable.
+
+## Session summary (bugs fixed, all via free agent-driven testing)
+1. `nh.map.rows` never existed (518 errors/78 traces) — the map-read idiom was broken every code-mode run.
+2. Code-mode discarded nav feedback (move_to reports + preview plan never reached the agent).
+3. A* diagonal squeeze between walls (hero stalled one tile short).
+4. A* diagonal into/out of doorways (engine refuses).
+5. Fire-and-forget descend (pressed '>' without checking arrival).
+6. move_to reported PREDICTED not ACTUAL outcome (false "descended"/"reached") → **closed-loop rewrite**.
+7. No door handling → now **opens closed doors, kicks locked doors**.
+8. Monster stop fired for statues/objects/pets/trailing monsters → now **live non-pet monster ON THE ROUTE AHEAD only**.
+9. Post-descent freeze (undismissed transition message) → now settled.
+
+**Impact:** seeds that all three play-test agents were permanently stuck on (floor 1)
+now descend multiple floors. The historical "3/6 ceiling" and "reachability
+bottleneck" were substantially these harness bugs, not GLM-5.2's capability.
+Remaining work: the autoexplore frontier loop (explore-required seeds), then re-run
+the real GLM-5.2 eval on the fixed harness for a clean baseline.
