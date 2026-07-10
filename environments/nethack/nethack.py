@@ -228,12 +228,20 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
         setup_tune: Optional[dict] = None,
         setup_modify: Optional[dict] = None,
         setup_level_blob: Optional[str] = None,
+        # Navigation mode (A/B knob): how move_to commits an A* route.
+        #   "step_count" – walk up to max_steps (default 8), stop early at a
+        #                  monster on the route. (default)
+        #   "auto_stop"  – walk until the first monster on the route.
+        #   "preview"    – return the annotated plan without moving; the model
+        #                  then commits with max_steps.
+        nav_mode: str = "step_count",
         **kwargs,
     ):
         self.interface = interface
         self._setup_tune = setup_tune
         self._setup_modify = setup_modify
         self._setup_level_blob = setup_level_blob
+        self._nav_mode = nav_mode
         # Pluggable LM backends. Both default to None → the rollout-time code
         # falls back to the deterministic Offline* implementations. Swap in
         # prime-rl-backed clients by passing them here from load_environment.
@@ -365,6 +373,9 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
                 modify=self._setup_modify,
                 level_blob=self._setup_level_blob,
             )
+        # Navigation mode knob (A/B tested): how move_to commits a route.
+        # 'step_count' | 'auto_stop' | 'preview'. Read by tools/skills.move_to.
+        env.nav_mode = getattr(self, "_nav_mode", "step_count")
         env.seed(core=seed, disp=seed)
         # NB: bootstrap_character() is currently a stub; once wired up it
         # auto-invokes #attributes and stores role/race/alignment in state.
@@ -1415,6 +1426,7 @@ def load_environment(
     refiner_model: Optional[str] = None,
     bootstrap_dir: Optional[str] = None,
     refine: bool = False,
+    nav_mode: str = "step_count",   # move_to commit policy: step_count|auto_stop|preview
     **kwargs: Any,
 ) -> vf.Environment:
     """
@@ -1534,6 +1546,7 @@ def load_environment(
         setup_tune=tune,
         setup_modify=modify,
         setup_level_blob=level_blob,
+        nav_mode=nav_mode,
         **kwargs,
     )
 

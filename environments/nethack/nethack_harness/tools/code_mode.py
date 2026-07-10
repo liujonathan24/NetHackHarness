@@ -115,6 +115,14 @@ class MapView:
     def player(self):
         return self._m.player
 
+    @property
+    def rows(self):
+        """The uncompressed ASCII map, rows[y][x] — the agent's primary way to
+        read terrain/monsters/stairs and pick coordinates. (Previously only
+        used internally by what_is; exposing it is required by the documented
+        `for y,row in enumerate(nh.map.rows)` idiom.)"""
+        return getattr(self._m, "rows", []) or []
+
     def at(self, x, y):
         for e in self._m.entities:
             if e.x == x and e.y == y:
@@ -225,12 +233,21 @@ class _NhNamespace:
     # execution (which would change observations and make the user code's
     # reasoning go stale).
 
-    def _dispatch(self, skill: str, **kwargs) -> "SkillResult":
+    # Skills whose feedback the agent MUST see (navigation reports where it
+    # stopped / what's ahead / the preview plan). Unlike skill-mode — where
+    # SkillResult.feedback is always surfaced — code-mode discards it, so we
+    # print it to the code stdout the agent reads next turn.
+    _VERBOSE_SKILLS = {"move_to", "autoexplore"}
+
+    def _dispatch(self, skill: str, **kwargs) -> str:
         from .skills import registry
         result = registry.call(skill, self._env, self._obs, **kwargs)
         if result.actions:
             self._log.extend(int(a) for a in result.actions)
-        return result
+        fb = result.feedback or ""
+        if skill in self._VERBOSE_SKILLS and fb:
+            print(fb)
+        return fb
 
     def move(self, direction: str) -> None:
         self._dispatch("move", direction=direction)
@@ -280,11 +297,14 @@ class _NhNamespace:
     def pickup(self) -> None:
         self._dispatch("pickup")
 
-    def autoexplore(self, max_steps: int = 30) -> None:
-        self._dispatch("autoexplore", max_steps=max_steps)
+    def autoexplore(self, max_steps: int = 30) -> str:
+        return self._dispatch("autoexplore", max_steps=max_steps)
 
-    def move_to(self, x: int, y: int) -> None:
-        self._dispatch("move_to", x=x, y=y)
+    def move_to(self, x: int, y: int, max_steps: int = None, preview: bool = False) -> str:
+        kw = {"x": x, "y": y, "preview": preview}
+        if max_steps is not None:
+            kw["max_steps"] = max_steps
+        return self._dispatch("move_to", **kw)
 
     def add_note(self, key: str, text: str) -> None:
         if self._journal is not None:
