@@ -1118,21 +1118,22 @@ def move_to(env: NetHackCoreEnv, obs: StructuredObservation, x: int, y: int,
         last_obs, r, term, trunc, _ = env.step(int(act)); total_r += r
         _, pos2 = _current_chars_and_player(env)
         if pos2 == pos_now and not (term or trunc):
-            # Didn't advance. An ambient --More-- prompt (e.g. a pet fighting a
-            # monster nearby) can SWALLOW the movement key — so dismiss any
-            # prompt and retry the same step once before declaring a real block.
-            m = _obs_message(env)
-            if "--More--" in m or "(end)" in m:
-                for _ in range(4):
-                    if "--More--" not in _obs_message(env) and "(end)" not in _obs_message(env):
-                        break
-                    last_obs, r, term, trunc, _ = env.step(int(nethack.MiscAction.MORE)); total_r += r
-                    if term or trunc:
-                        break
-                if not (term or trunc):
-                    last_obs, r, term, trunc, _ = env.step(int(act)); total_r += r
-                    _, pos2 = _current_chars_and_player(env)
-        if pos2 == pos_now:  # still didn't advance = a real block
+            # Didn't advance. A pending prompt (pet fighting a monster nearby, a
+            # multi-message turn) can SWALLOW the movement key even when the
+            # `message` field shows no literal "--More--". So UNCONDITIONALLY
+            # send MORE to clear any prompt and retry the same step (up to twice)
+            # before declaring a real block.
+            for _ in range(2):
+                if term or trunc:
+                    break
+                last_obs, r, term, trunc, _ = env.step(int(nethack.MiscAction.MORE)); total_r += r
+                if term or trunc:
+                    break
+                last_obs, r, term, trunc, _ = env.step(int(act)); total_r += r
+                _, pos2 = _current_chars_and_player(env)
+                if pos2 != pos_now:
+                    break
+        if pos2 == pos_now:  # still didn't advance = a real block (wall/monster)
             gm = _obs_message(env)
             stop = f"blocked at {pos2}" + (f" — {gm}" if gm else " (unexpected obstacle)")
             break
