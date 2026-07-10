@@ -889,7 +889,7 @@ _ACTION_DELTA = {
 _DEFAULT_STEP_COMMIT = 8
 
 
-def _plan_path(chars, start, tx, ty):
+def _plan_path(chars, start, tx, ty, unknown_ok=False, blocked=None):
     """Build an ANNOTATED navigation plan from `start` to (tx, ty).
 
     Returns None if no full A* path exists (caller falls back to best-effort).
@@ -902,7 +902,7 @@ def _plan_path(chars, start, tx, ty):
     This is the substrate for all three nav modes: the model can preview it,
     cap how far it commits, or let the harness auto-stop at the first hazard.
     """
-    actions = a_star(chars, start, (tx, ty))
+    actions = a_star(chars, start, (tx, ty), unknown_ok=unknown_ok, blocked=blocked)
     if actions is None:
         return None
     coords = [start]
@@ -1056,7 +1056,24 @@ def move_to(env: NetHackCoreEnv, obs: StructuredObservation, x: int, y: int,
     tx, ty = int(x), int(y)
     nav_mode = getattr(env, "nav_mode", "step_count")
 
-    plan = _plan_path(chars, start, tx, ty)
+    # Per-episode memory of dark tiles we bumped and learned are impassable
+    # (bumping stone doesn't reveal it in the obs, so without this the optimistic
+    # path retries the same wall forever).
+    blocked = getattr(env, "_nav_blocked", None)
+    if blocked is None:
+        blocked = set()
+        env._nav_blocked = blocked
+
+    plan = _plan_path(chars, start, tx, ty, blocked=blocked)
+    optimistic = False
+    if plan is None:
+        # No path over the REVEALED map — but dungeon corridors stay dark until
+        # walked, so the target may connect through unrevealed tiles. Plan
+        # OPTIMISTICALLY through the dark toward it and walk step-by-step; each
+        # step reveals terrain, a step into a wall fails-to-advance, and we
+        # remember that tile so the next plan routes around it.
+        plan = _plan_path(chars, start, tx, ty, unknown_ok=True, blocked=blocked)
+        optimistic = True
     if plan is None:
         return _move_to_best_effort(env, chars, start, tx, ty)
     if not plan["actions"]:
@@ -1135,6 +1152,12 @@ def move_to(env: NetHackCoreEnv, obs: StructuredObservation, x: int, y: int,
                     break
         if pos2 == pos_now:  # still didn't advance = a real block (wall/monster)
             gm = _obs_message(env)
+            # Remember a bumped dark/stone tile so future plans route around it
+            # (bumping stone doesn't reveal it in the obs).
+            gl = gm.lower()
+            if "stone" in gl or "wall" in gl or \
+                    chr(int(chars_now[ny, nx])) == ' ':
+                blocked.add((nx, ny))
             stop = f"blocked at {pos2}" + (f" — {gm}" if gm else " (unexpected obstacle)")
             break
         steps += 1
