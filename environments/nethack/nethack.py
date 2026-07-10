@@ -644,7 +644,17 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
             stdout = cm_result.stdout or ""
             err = f"\n[code error: {cm_result.error}]" if cm_result.error else ""
             feedback = (stdout + err).strip() or "(code executed; no stdout)"
-            result = SkillResult(actions=cm_result.actions_taken, feedback=feedback)
+            # If a closed-loop skill (move_to) stepped the env during the code,
+            # adopt its post-move obs/outcome instead of re-stepping the log.
+            result = SkillResult(
+                actions=[] if cm_result.pre_executed else cm_result.actions_taken,
+                feedback=feedback,
+                pre_executed=cm_result.pre_executed,
+                pre_reward=cm_result.pre_reward,
+                final_obs=cm_result.final_obs,
+                pre_terminated=cm_result.pre_terminated,
+                pre_truncated=cm_result.pre_truncated,
+            )
         else:
             result = skill_registry.call(
                 skill_name, env, state["structured_obs"], **skill_args

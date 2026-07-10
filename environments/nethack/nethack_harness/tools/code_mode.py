@@ -104,6 +104,14 @@ class CodeModeResult:
     stdout: str
     error: Optional[str] = None
     actions_taken: list[int] = field(default_factory=list)
+    # A closed-loop skill (e.g. move_to) may step the env itself during code
+    # execution. When it does, these carry its outcome so env_response adopts
+    # the post-move obs instead of re-stepping (mirrors skill-mode pre_executed).
+    pre_executed: bool = False
+    pre_reward: float = 0.0
+    final_obs: Any = None
+    pre_terminated: bool = False
+    pre_truncated: bool = False
 
 
 class MapView:
@@ -182,6 +190,9 @@ class _NhNamespace:
         self._journal = journal
         self._log = action_log if action_log is not None else []
         self._sub_lm = sub_lm or _default_sub_lm()
+        # Set by _dispatch when a closed-loop skill (move_to) steps the env
+        # itself, so run_user_code can hand its outcome to env_response.
+        self._closed_loop = None
 
     # ----- read-only views -----
 
@@ -244,6 +255,10 @@ class _NhNamespace:
         result = registry.call(skill, self._env, self._obs, **kwargs)
         if result.actions:
             self._log.extend(int(a) for a in result.actions)
+        if getattr(result, "pre_executed", False):
+            # A closed-loop skill already stepped the env. Record its outcome so
+            # env_response adopts the post-move obs (last write wins if several).
+            self._closed_loop = result
         fb = result.feedback or ""
         if skill in self._VERBOSE_SKILLS and fb:
             print(fb)
@@ -398,10 +413,16 @@ def run_user_code(
         if have_alarm:
             signal.alarm(0)
 
+    cl = nh._closed_loop
     return CodeModeResult(
         stdout=buf.getvalue(),
         error=error,
         actions_taken=list(nh._log),
+        pre_executed=bool(cl is not None),
+        pre_reward=(cl.pre_reward if cl is not None else 0.0),
+        final_obs=(cl.final_obs if cl is not None else None),
+        pre_terminated=(cl.pre_terminated if cl is not None else False),
+        pre_truncated=(cl.pre_truncated if cl is not None else False),
     )
 
 

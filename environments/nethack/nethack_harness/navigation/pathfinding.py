@@ -177,14 +177,16 @@ def a_star(
             if not is_walkable(nch):
                 continue
             if block_diagonals_through_doors and dx != 0 and dy != 0:
-                # NetHack forbids two kinds of diagonal move; A* must not
-                # propose either or the engine silently refuses the step and
-                # the hero stalls one tile short of the target (observed bug:
-                # move_to onto a stair pressed '>' from the wrong tile).
+                # NetHack forbids several diagonal moves; A* must not propose any
+                # or the engine silently refuses the step and the hero stalls one
+                # tile short (observed bugs: '>' pressed from the wrong tile;
+                # "can't move diagonally into an intact doorway").
                 corner_h = int(chars[cy, nx])   # tile horizontally adjacent
                 corner_v = int(chars[ny, cx])   # tile vertically adjacent
-                # (1) No diagonal into/out of a doorway corner.
-                if chr(corner_h) in "+'" or chr(corner_v) in "+'":
+                # (1) No diagonal INTO or OUT OF a doorway (source or dest is a
+                #     door), nor clipping a doorway corner.
+                if chr(int(chars[cy, cx])) in "+'" or chr(nch) in "+'" \
+                        or chr(corner_h) in "+'" or chr(corner_v) in "+'":
                     continue
                 # (2) No diagonal SQUEEZE between two walls/rock: if BOTH
                 # orthogonal corner cells are non-walkable, the gap can't be
