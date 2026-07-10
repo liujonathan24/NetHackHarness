@@ -65,3 +65,78 @@ connect corridors before a direct path exists.
 **Impact:** #1 and #2 mean prior code-mode results are not a clean measure of the
 agent's ability — it was navigating half-blind (no `nh.map.rows`) and deaf (no
 move_to feedback). Re-running after these fixes is the real baseline.
+
+## Iteration 1 — 3 subagents play seed 19 (one per mode). MAJOR findings.
+
+Instead of paid inference, spawned 3 Claude subagents to play seed 19 through the
+driver (one per nav mode) and report bugs. All three got stuck on floor 1 and
+independently surfaced the same critical bugs:
+
+### CRITICAL 1 — `move_to` reports PREDICTED outcome, not ACTUAL.
+Its feedback ("walked 18 steps onto the down-stairs and descended", "walked N
+steps to (x,y) — reached target") is generated from the A* plan *before/without*
+knowing what the engine did. When the engine stops the hero short, move_to still
+claims success — even a false "descended". An agent trusting the message loops
+forever. **The feedback must be a report of actual execution, not a plan.**
+
+### CRITICAL 2 — closed doors: A* paths through them; engine won't; no way to open.
+Seed 19's `>` is behind a CLOSED DOOR at (58,5). `is_walkable('+')` is true, so A*
+routes through it and reports the stair reachable (my offline reachability scan was
+fooled the same way — "6/12 reachable" over-counted closed-door paths). But the
+engine won't step onto a closed door, so the hero stalls one tile short. There is
+NO open/kick/explore primitive in the `nh` namespace, so any level with the stair
+behind a closed door or fog is unwinnable. **This — not model incapacity — likely
+explains much of the "reachability bottleneck" and the historical failure rate.**
+
+### Other confirmed issues
+- Over-eager monster stop: halts for monsters within 2 tiles even when off-path.
+- `what_is`/`neighbors` mislabels the `x` grid-bug monster as `object [item]`.
+- `move()` can be a silent no-op (blocked by wall/door) with no feedback; a single
+  `move()` sometimes reports `actions_executed=2/3`.
+- Sandbox strips common builtins (`repr`) with no hint; `what_is` scans can hit the
+  5s code timeout.
+
+### Fix plan (next)
+1. Make `move_to` **closed-loop + honest**: step the env internally, observe after
+   each step, report the ACTUAL final position/floor; descend only when genuinely
+   standing on the target `>`.
+2. **Door handling**: when the path hits a closed door, OPEN it as part of
+   navigation (traversal, not a locating crutch) instead of stalling.
+3. Tighten monster-stop to on/adjacent-to-path only; fix `x` monster typing.
+
+## Iteration 2 — closed-loop honest move_to. Validated descents.
+
+Rewrote move_to as **closed-loop** (steps the env itself, reports ACTUAL outcome)
+and fixed the door/monster issues the play-test agents found. Fixes (all validated
+on the free local driver):
+- **Honest reporting** — no more predicted "walked N / descended" lies; reports the
+  real final position, real descent, or the real blocker. Works in code-mode too
+  (propagates pre_executed/final_obs through CodeModeResult — the skill-mode-only
+  break-on-deviation no longer relied on).
+- **Doors** — opens closed doors on the route; **KICKS locked doors open** (up to
+  6×). A* also blocks diagonal-into/out-of-doorway (engine refuses it).
+- **Monster stop** — only halts for a live, non-pet monster **on the route ahead**
+  (glyphs array). Statues/objects that render as a letter no longer false-stop;
+  pets ignored; **trailing** monsters behind the hero no longer halt navigation.
+
+**Result (free driver, greedy "move_to the nearest `>`" policy):**
+
+| seed | before (3 play-test agents) | after |
+|---|---|---|
+| 19 | stuck floor 1 (locked door + false success) | **descends to floor 2** |
+| 20 | — | **floor 2** |
+| 24 | stuck floor 1 (trailing-monster stop) | **floor 2 (1 call)** |
+| 21, 22, 23 | stuck floor 1 | still floor 1 — see below |
+
+**Remaining bug (legacy autoexplore) — gates the unreachable-stair seeds.**
+Seeds 21/22/23 spawn with the `>` behind unrevealed corridors (reveal_map shows
+terrain the hero has *seen*; dark corridors read as rock, so A* can't path). Those
+need exploration — but **autoexplore loops**: on seed 21 it repeatedly picks
+frontier (72,14), can't actually step there (blocked), and never reveals new
+ground (reachable stuck at 39/40 across 15 calls). This frontier-selection loop —
+not model incapacity — is why ~half the seeds were unwinnable. Fixing it is the
+next high-value item (own commit; legacy `autoexplore`/`nearest_frontier`).
+
+**Net:** the closed-loop move_to + door/monster fixes convert the *directly
+navigable* seeds from stuck→descending. The autoexplore loop is the remaining
+gate for the explore-required seeds.
