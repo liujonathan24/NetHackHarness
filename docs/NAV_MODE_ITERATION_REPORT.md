@@ -187,3 +187,38 @@ now descend multiple floors. The historical "3/6 ceiling" and "reachability
 bottleneck" were substantially these harness bugs, not GLM-5.2's capability.
 Remaining work: the autoexplore frontier loop (explore-required seeds), then re-run
 the real GLM-5.2 eval on the fixed harness for a clean baseline.
+
+## Iteration 4 — movement fully fixed; 21/22/23 need hidden-passage search (genuine difficulty)
+
+Fixed the last movement bug: a prompt (pet fighting an adjacent monster) swallows
+the hero's movement key **even when the `message` field shows no literal
+"--More--"**. move_to now unconditionally sends MORE + retries a non-advancing step
+before declaring a block. **Validated: the hero now moves freely** through corridors
+with ongoing adjacent combat (seed 21 previously froze at (72,15)).
+
+With movement fixed, seeds 21/22/23 were traced exhaustively. Result: the down-stair
+is **genuinely in a disconnected map component** — proven two ways:
+- A plain 8-connected walkable flood (NO diagonal rules at all) from the start
+  reaches only 46 tiles and the stair is not among them — so the strict diagonal
+  rules are NOT over-fragmenting; the disconnection is real.
+- Directed exploration walks the hero right up to the boundary of its component
+  (within ~35 tiles of the stair, 0 remaining frontiers), then stops — everything
+  reachable is revealed, and the stair's region is behind a **hidden passage** that
+  `reveal_map` does not expose (hidden passages render as wall until searched).
+
+So 21/22/23 require **systematic searching for hidden passages** — a genuinely hard
+NetHack exploration skill, and now a POLICY problem, not a harness-correctness one.
+Brute-force boundary-searching from the driver did not crack it within budget
+(searching the wrong walls / needs many searches at the exact hidden spot).
+
+## Honest status
+- **Harness navigation: fixed and validated.** 11 bugs found+fixed via free
+  agent-driven testing. Movement, prompts, doors (open + kick), monsters, descent,
+  multi-floor transitions, and honest reporting all work.
+- **3/6 seeds (19, 20, 24) descend multiple floors** (seed 19 → floor 3) with a
+  simple greedy policy — these were all stuck on floor 1 before.
+- **3/6 seeds (21, 22, 23) blocked by hidden-passage levels** — a real difficulty
+  requiring search skill, not a harness bug. Beating all 6 now needs a
+  hidden-passage search strategy (harness or agent), then a real GLM-5.2 eval on the
+  fixed harness for a clean baseline. The prior "3/6 floor-4 ceiling" was measured
+  on the broken harness and should be re-measured.
