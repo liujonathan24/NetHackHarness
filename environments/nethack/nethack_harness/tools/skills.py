@@ -1134,6 +1134,20 @@ def move_to(env: NetHackCoreEnv, obs: StructuredObservation, x: int, y: int,
         last_obs, r, term, trunc, _ = env.step(int(nethack.MiscDirection.DOWN)); total_r += r
         descended = (_level_key(env) != lvl_before)
 
+    # Settle any trailing prompt / level-transition message so the NEXT turn's
+    # first movement key isn't swallowed. Found via agent play-testing: after a
+    # descent, "You descend the stairs." lingers and eats the next move — the
+    # hero appears frozen. One MORE clears it. Also dismiss --More--/(end) menus.
+    for _ in range(6):
+        if term or trunc:
+            break
+        m = _obs_message(env).lower()
+        if "--more--" in m or "(end)" in m or (descended and "descend" in m):
+            last_obs, r, term, trunc, _ = env.step(int(nethack.MiscAction.MORE)); total_r += r
+        else:
+            break
+    _, pos_f = _current_chars_and_player(env)  # re-read after settling
+
     # honest report of what ACTUALLY happened.
     if descended:
         fb = f"move_to({tx},{ty}): walked {steps} steps onto the down-stairs and DESCENDED."
