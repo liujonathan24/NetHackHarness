@@ -139,3 +139,37 @@ navigation is optimal; harness crutches degrade it. The robust honest result is
 **3/6** — GLM-5.2 genuinely beats half the games by reading the map and routing to
 the real stairs. 6/6 on this model requires re-introducing locating (against the
 principle) or a stronger policy model.
+
+## Best-of-N from the full trace corpus — why 6/6 is a probability problem
+
+Analyzing **all 90 trace files** across every run (inference-free, from
+`outputs/*/trace/*.ndjson`, judged strictly by `max_curriculum_floor`):
+
+- Every trace has a **distinct DoD1 terrain hash** — 90 files ⇒ **90 different
+  seeds**. The eval **reseeds each episode** rather than pinning
+  `explicit_seeds=[19..24]`, so this corpus is 90 independent games, *not* 6 games
+  repeated. (Consequence: a clean fixed-seed best-of-N cannot be reconstructed
+  post-hoc from these traces — it must be run with reseeding disabled.)
+- **21 / 90 games reached floor 4 ⇒ a 23% per-game floor-4 base rate.**
+- **No game ever reached floor 5 or 6** (max floor observed = 4). The DoD3→Gehennom
+  jump lands the hero at floor 4 (Gehennom 48); none navigated 48→49. So "reach
+  floor 4" is the only achievable win criterion; "reach floor 6" is 0/90.
+- Best **single** 6-game run = **3/6** (`exp_codemode_600`, `exp_codemode_long`,
+  `exp_codemode_unstuck` — code interface, long budget).
+
+At a 23% i.i.d. base rate, the chance a *best-of-N* sweep beats **all 6** seeds:
+
+| sweep | P(one game hits floor 4) | P(all 6 hit floor 4) |
+|---|---|---|
+| best-of-1 | 0.23 | 0.01% |
+| best-of-3 | 0.54 | 2.6% |
+| best-of-5 | 0.73 | 15% |
+| best-of-10 | 0.93 | 63% |
+
+So even **best-of-5 has only ~15%** odds of a clean 6/6, and this is *optimistic* —
+seeds are not i.i.d.: some are robustly hard (the up/down-stair isn't reachable
+without the exact navigation GLM-5.2 loops on), so their true per-game rate is well
+below 23% and no number of retries lands them. **Reliable 6/6 under the honest
+no-locating principle would need ≈best-of-10 AND the reseeding fixed to pin the six
+seeds** — both requiring inference. This is the quantitative form of the same
+conclusion: 6/6 is not a harness gap, it is a GLM-5.2 capability gap.
