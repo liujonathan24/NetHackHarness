@@ -17,7 +17,7 @@ REPO_ID="$USER/$SPACE_NAME"
 echo "Deploying to Hugging Face Space: $REPO_ID"
 
 # Create the Docker Space (idempotent).
-hf repo create "$REPO_ID" --repo-type space --space_sdk docker -y || true
+hf repo create "$REPO_ID" --repo-type space --space_sdk docker --exist-ok
 
 # Push the Dockerfile + README (the image clones the app repo itself at build).
 WORK="$(mktemp -d)"
