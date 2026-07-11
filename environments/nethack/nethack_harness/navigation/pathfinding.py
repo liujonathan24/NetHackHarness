@@ -203,10 +203,11 @@ def a_star(
                 # "can't move diagonally into an intact doorway").
                 corner_h = int(chars[cy, nx])   # tile horizontally adjacent
                 corner_v = int(chars[ny, cx])   # tile vertically adjacent
-                # (1) No diagonal INTO or OUT OF a doorway (source or dest is a
-                #     door), nor clipping a doorway corner.
-                if chr(int(chars[cy, cx])) in "+'" or chr(nch) in "+'" \
-                        or chr(corner_h) in "+'" or chr(corner_v) in "+'":
+                # (1) No diagonal INTO or OUT OF a doorway — NetHack's real rule
+                # keys on the SOURCE or DESTINATION tile being a door (a corner
+                # cell being a door does NOT forbid the move; checking corners
+                # over-blocked legitimate diagonals, e.g. seed 22).
+                if chr(int(chars[cy, cx])) in "+'" or chr(nch) in "+'":
                     continue
                 # (2) No diagonal SQUEEZE between two walls/rock: if BOTH
                 # orthogonal corner cells are non-walkable, the gap can't be
