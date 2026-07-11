@@ -137,6 +137,7 @@ def a_star(
     block_diagonals_through_doors: bool = True,
     unknown_ok: bool = False,
     blocked: Optional[set] = None,
+    pass_monsters: bool = False,
 ) -> Optional[list[int]]:
     """
     Compute a path from `start` to `goal` over the visible map.
@@ -156,8 +157,15 @@ def a_star(
     step-by-step (closed-loop); a step onto a tile that turns out to be wall just
     fails-to-advance and the caller re-plans on the freshly revealed map.
     """
+    def _is_monster(ch):
+        # letters (and '@') render monsters in the map area; used only for the
+        # opt-in attack-through path (walking into a monster = attacking it).
+        c = chr(ch)
+        return c.isalpha()
+
     def _passable(ch):
-        return is_walkable(ch) or (unknown_ok and ch == ord(' '))
+        return (is_walkable(ch) or (unknown_ok and ch == ord(' '))
+                or (pass_monsters and _is_monster(ch)))
     sx, sy = start
     gx, gy = goal
     h, w = chars.shape
@@ -218,7 +226,11 @@ def a_star(
             # REVEALED corridors as far as possible and only dips into the dark
             # at the true frontier (rather than diving straight through dark
             # tiles that turn out to be walls).
-            step_cost = 6 if (unknown_ok and nch == ord(' ')) else 1
+            step_cost = 1
+            if unknown_ok and nch == ord(' '):
+                step_cost = 6
+            elif pass_monsters and not is_walkable(nch) and chr(nch).isalpha():
+                step_cost = 10   # attacking through a monster: prefer routing around
             tentative = g_score[current] + step_cost
             if tentative < g_score.get((nx, ny), 10**9):
                 g_score[(nx, ny)] = tentative

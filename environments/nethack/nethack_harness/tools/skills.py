@@ -889,7 +889,7 @@ _ACTION_DELTA = {
 _DEFAULT_STEP_COMMIT = 8
 
 
-def _plan_path(chars, start, tx, ty, unknown_ok=False, blocked=None):
+def _plan_path(chars, start, tx, ty, unknown_ok=False, blocked=None, pass_monsters=False):
     """Build an ANNOTATED navigation plan from `start` to (tx, ty).
 
     Returns None if no full A* path exists (caller falls back to best-effort).
@@ -902,7 +902,8 @@ def _plan_path(chars, start, tx, ty, unknown_ok=False, blocked=None):
     This is the substrate for all three nav modes: the model can preview it,
     cap how far it commits, or let the harness auto-stop at the first hazard.
     """
-    actions = a_star(chars, start, (tx, ty), unknown_ok=unknown_ok, blocked=blocked)
+    actions = a_star(chars, start, (tx, ty), unknown_ok=unknown_ok, blocked=blocked,
+                     pass_monsters=pass_monsters)
     if actions is None:
         return None
     coords = [start]
@@ -1066,6 +1067,13 @@ def move_to(env: NetHackCoreEnv, obs: StructuredObservation, x: int, y: int,
 
     plan = _plan_path(chars, start, tx, ty, blocked=blocked)
     optimistic = False
+    attack_through = False
+    if plan is None:
+        # A monster may be sitting in the only corridor (a_star treats monster
+        # tiles as impassable). Try a path that routes THROUGH a monster —
+        # walking into it attacks it — preferring to go around (high cost).
+        plan = _plan_path(chars, start, tx, ty, blocked=blocked, pass_monsters=True)
+        attack_through = plan is not None
     if plan is None:
         # No path over the REVEALED map — but dungeon corridors stay dark until
         # walked, so the target may connect through unrevealed tiles. Plan
@@ -1106,7 +1114,7 @@ def move_to(env: NetHackCoreEnv, obs: StructuredObservation, x: int, y: int,
             stop = f"committed {steps}/{n} steps (max_steps)"
             break
         chars_now, pos_now = _current_chars_and_player(env)
-        if steps > 0:  # never stop on the very first step
+        if steps > 0 and not attack_through:  # never stop on step 0; attack-through walks INTO monsters
             mon = _monster_on_route(env, chars_now, coords, i + 1, lookahead=4)
             if mon:
                 stop = f"stopped — monster {mon} on the route ahead"
@@ -1135,21 +1143,32 @@ def move_to(env: NetHackCoreEnv, obs: StructuredObservation, x: int, y: int,
         last_obs, r, term, trunc, _ = env.step(int(act)); total_r += r
         _, pos2 = _current_chars_and_player(env)
         if pos2 == pos_now and not (term or trunc):
-            # Didn't advance. A pending prompt (pet fighting a monster nearby, a
-            # multi-message turn) can SWALLOW the movement key even when the
-            # `message` field shows no literal "--More--". So UNCONDITIONALLY
-            # send MORE to clear any prompt and retry the same step (up to twice)
-            # before declaring a real block.
-            for _ in range(2):
-                if term or trunc:
-                    break
-                last_obs, r, term, trunc, _ = env.step(int(nethack.MiscAction.MORE)); total_r += r
-                if term or trunc:
-                    break
-                last_obs, r, term, trunc, _ = env.step(int(act)); total_r += r
-                _, pos2 = _current_chars_and_player(env)
-                if pos2 != pos_now:
-                    break
+            nxt = (chr(int(chars_now[ny, nx]))
+                   if (0 <= ny < chars_now.shape[0] and 0 <= nx < chars_now.shape[1]) else '')
+            if nxt.isalpha() and nxt != '@':
+                # A monster is on the next tile — walking into it ATTACKS it.
+                # Retry the step (keep attacking) until it dies and we advance.
+                for _ in range(6):
+                    last_obs, r, term, trunc, _ = env.step(int(act)); total_r += r
+                    _, pos2 = _current_chars_and_player(env)
+                    if pos2 != pos_now or term or trunc:
+                        break
+            else:
+                # Didn't advance. A pending prompt (pet fighting a monster nearby,
+                # a multi-message turn) can SWALLOW the movement key even when the
+                # `message` field shows no literal "--More--". So UNCONDITIONALLY
+                # send MORE to clear any prompt and retry the step (up to twice)
+                # before declaring a real block.
+                for _ in range(2):
+                    if term or trunc:
+                        break
+                    last_obs, r, term, trunc, _ = env.step(int(nethack.MiscAction.MORE)); total_r += r
+                    if term or trunc:
+                        break
+                    last_obs, r, term, trunc, _ = env.step(int(act)); total_r += r
+                    _, pos2 = _current_chars_and_player(env)
+                    if pos2 != pos_now:
+                        break
         if pos2 == pos_now:  # still didn't advance = a real block (wall/monster)
             gm = _obs_message(env)
             # Remember a bumped dark/stone tile so future plans route around it
