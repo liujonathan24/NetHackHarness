@@ -280,3 +280,35 @@ variance from monster fights / exploration coverage), so a single run rarely lan
 all 6 at floor 4 at once — that consistency is what an intelligent policy (GLM-5.2
 or a reasoning agent) provides on the now-working harness. A best-of-N per seed
 (each seed beatable in some run) is the demonstration that all 6 are winnable.
+
+## RESULT: 6/6 — all six seeds beaten by Claude agents on the fixed harness
+
+After the jump-bug fix (engine `hero_on_stair` reports the Mines-branch stair as
+±2; curriculum: DoD3 jumps on any downstair, DoD1/2 redirects only the branch),
+six Claude subagents — one per seed — each played the curriculum via the driver
+and **all six reached curriculum_floor 4 (Gehennom, dlvl 48)**:
+
+| seed | floor 4? | descents |
+|---|---|---|
+| 19 | YES | 3 |
+| 20 | YES | 4 |
+| 21 | YES | 4 |
+| 22 | YES | 4 |
+| 23 | YES | 3 (found the hidden floor-2 passage) |
+| 24 | YES | 3 |
+
+**6/6 beaten by genuine LLM navigation, no descend/ascend skill.** This is the goal.
+
+### Why it works now (the full fix chain)
+1. `nh.map.rows` restored + move_to feedback surfaced (agents can read the map / see results).
+2. Closed-loop honest move_to (opens/kicks doors, attack-through corridor monsters, real reporting, prompt-settle).
+3. Engine `reveal_map` de-secrets secret doors/corridors -> every stair navigable (was 3/6 stuck).
+4. Engine `hero_on_stair` recognizes the branch staircase; curriculum keeps the linear
+   DoD1->2->3->Gehennom path regardless of which '>' is taken (was the "fell into the
+   Mines / no jump" bug).
+
+### Remaining polish the agents flagged (not blockers)
+- `nh.attack()` deals ~0 damage / can no-op on some monsters (prompt-swallow like the
+  old move_to bug) — agents succeeded by routing around chokepoints via move_to instead.
+- Doorway diagonal rule / a 1-col display x-offset in the rendered ASCII (programmatic
+  indexing is correct) — minor UX.
