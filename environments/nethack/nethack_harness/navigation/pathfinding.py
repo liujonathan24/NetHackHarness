@@ -135,6 +135,9 @@ def a_star(
     start: tuple[int, int],
     goal: tuple[int, int],
     block_diagonals_through_doors: bool = True,
+    unknown_ok: bool = False,
+    blocked: Optional[set] = None,
+    pass_monsters: bool = False,
 ) -> Optional[list[int]]:
     """
     Compute a path from `start` to `goal` over the visible map.
@@ -146,7 +149,23 @@ def a_star(
     `block_diagonals_through_doors` disallows diagonal moves that would clip
     a doorway corner — NetHack disallows this in-game so the agent would
     bounce.
+
+    `unknown_ok` treats unrevealed (` `, dark) tiles as walkable — for
+    OPTIMISTIC navigation toward a visible-but-unreached target: dungeon
+    corridors stay dark until walked, so the honest revealed map often shows the
+    goal disconnected even though a dark corridor connects it. Walk this path
+    step-by-step (closed-loop); a step onto a tile that turns out to be wall just
+    fails-to-advance and the caller re-plans on the freshly revealed map.
     """
+    def _is_monster(ch):
+        # letters (and '@') render monsters in the map area; used only for the
+        # opt-in attack-through path (walking into a monster = attacking it).
+        c = chr(ch)
+        return c.isalpha()
+
+    def _passable(ch):
+        return (is_walkable(ch) or (unknown_ok and ch == ord(' '))
+                or (pass_monsters and _is_monster(ch)))
     sx, sy = start
     gx, gy = goal
     h, w = chars.shape
@@ -155,7 +174,7 @@ def a_star(
         return None
     if start == goal:
         return []
-    if not is_walkable(int(chars[gy, gx])):
+    if not _passable(int(chars[gy, gx])):
         return None
 
     open_heap: list[tuple[int, int, tuple[int, int]]] = []
@@ -173,14 +192,46 @@ def a_star(
             nx, ny = cx + dx, cy + dy
             if not (0 <= nx < w and 0 <= ny < h):
                 continue
+            if blocked is not None and (nx, ny) in blocked:
+                continue  # a tile we bumped and learned is impassable (dark stone)
             nch = int(chars[ny, nx])
-            if not is_walkable(nch):
+            if not _passable(nch):
+                continue
+            if unknown_ok and nch == ord(' ') and dx != 0 and dy != 0:
+                # Optimistic mode: never step DIAGONALLY into a dark tile — dark
+                # diagonals are usually solid-stone corners you bounce off of
+                # (and bumping stone doesn't reveal it, so the path loops).
+                # Corridors are walked by following revealed tiles and stepping
+                # ORTHOGONALLY into the dark continuation.
                 continue
             if block_diagonals_through_doors and dx != 0 and dy != 0:
-                # Disallow diagonal moves that pass through/around doors.
-                if chr(int(chars[cy, nx])) in "+'" or chr(int(chars[ny, cx])) in "+'":
+                # NetHack forbids several diagonal moves; A* must not propose any
+                # or the engine silently refuses the step and the hero stalls one
+                # tile short (observed bugs: '>' pressed from the wrong tile;
+                # "can't move diagonally into an intact doorway").
+                corner_h = int(chars[cy, nx])   # tile horizontally adjacent
+                corner_v = int(chars[ny, cx])   # tile vertically adjacent
+                # (1) No diagonal INTO or OUT OF a doorway — NetHack's real rule
+                # keys on the SOURCE or DESTINATION tile being a door (a corner
+                # cell being a door does NOT forbid the move; checking corners
+                # over-blocked legitimate diagonals, e.g. seed 22).
+                if chr(int(chars[cy, cx])) in "+'" or chr(nch) in "+'":
                     continue
-            tentative = g_score[current] + 1
+                # (2) No diagonal SQUEEZE between two walls/rock: if BOTH
+                # orthogonal corner cells are non-walkable, the gap can't be
+                # traversed diagonally (you may still round a single corner).
+                if not is_walkable(corner_h) and not is_walkable(corner_v):
+                    continue
+            # Dark/unrevealed tiles cost more so an optimistic path follows
+            # REVEALED corridors as far as possible and only dips into the dark
+            # at the true frontier (rather than diving straight through dark
+            # tiles that turn out to be walls).
+            step_cost = 1
+            if unknown_ok and nch == ord(' '):
+                step_cost = 6
+            elif pass_monsters and not is_walkable(nch) and chr(nch).isalpha():
+                step_cost = 10   # attacking through a monster: prefer routing around
+            tentative = g_score[current] + step_cost
             if tentative < g_score.get((nx, ny), 10**9):
                 g_score[(nx, ny)] = tentative
                 came_from[(nx, ny)] = (current, int(action))

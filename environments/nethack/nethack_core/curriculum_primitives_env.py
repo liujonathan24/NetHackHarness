@@ -134,20 +134,36 @@ class CurriculumPrimitivesEnv(NetHackCoreEnv):
             obs0 = raw.to_core_observation()
             dnum = int(obs0.blstats[_DNUM])
             depth = int(obs0.blstats[_DEPTH])
-            on_stair = raw.hero_on_stair()  # +1 down, -1 up, 0 none
+            # +1/-1 on the level's MAIN down/up stair; +2/-2 on the BRANCH
+            # staircase (Gnomish Mines entrance). 0 otherwise.
+            on_stair = raw.hero_on_stair()
 
-            # DoD level 3's DOWN stair: real '>' jumps to the deep segment.
-            if (action == _DOWN and dnum == self._dod_dnum
-                    and depth == self._shallow_hi and on_stair == 1):
-                self._engine.goto_abs(
-                    self._geh_dnum, self._deep_lo - self._geh_start + 1)
-                stats = self._sample_upgrade()
-                obs = self.modify(**stats)  # NetHackCoreEnv.modify updates last_obs
-                reward = self._reward_model.step(obs)
-                return obs, reward, bool(self._engine.done), False, {
-                    "curriculum": "jump_down", "to_depth": self._deep_lo,
-                    "upgrade": stats,
-                }
+            # DoD levels 2-4 carry the Mines branch entrance (a second '>'); an
+            # agent going to the nearest '>' would fall into the Mines and off the
+            # curriculum. Handle the two DoD downstairs so the hero stays on the
+            # linear DoD 1->2->3->Gehennom path:
+            #   * On DoD3, ANY downstair (main==1 or branch==2) jumps to Gehennom.
+            #   * On DoD1/2, only the BRANCH stair (==2) is redirected to the next
+            #     DoD level; the MAIN stair (==1) descends NORMALLY (untouched), so
+            #     ordinary within-DoD descent keeps its real engine behavior.
+            if action == _DOWN and dnum == self._dod_dnum:
+                if depth == self._shallow_hi and on_stair in (1, 2):
+                    self._engine.goto_abs(
+                        self._geh_dnum, self._deep_lo - self._geh_start + 1)
+                    stats = self._sample_upgrade()
+                    obs = self.modify(**stats)  # NetHackCoreEnv.modify updates last_obs
+                    reward = self._reward_model.step(obs)
+                    return obs, reward, bool(self._engine.done), False, {
+                        "curriculum": "jump_down", "to_depth": self._deep_lo,
+                        "upgrade": stats,
+                    }
+                if depth < self._shallow_hi and on_stair == 2:
+                    obs = self._engine.goto_abs(self._dod_dnum, depth + 1)
+                    self._last_observation = obs
+                    reward = self._reward_model.step(obs)
+                    return obs, reward, bool(self._engine.done), False, {
+                        "curriculum": "dod_descend", "to_depth": depth + 1,
+                    }
 
             # Deep segment top (Gehennom deep_lo) UP stair: real '<' jumps back.
             if (action == _UP and dnum == self._geh_dnum

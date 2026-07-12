@@ -870,57 +870,355 @@ def _move_to_best_effort(env, chars, start, tx, ty) -> "SkillResult":
     )
 
 
+# action-enum int -> (dx, dy), the inverse of pathfinding._NEIGHBOR_DIRS. Used
+# to reconstruct the coordinate path from A*'s action list so move_to can
+# annotate the route (hazards, junctions) and know where each step lands.
+_ACTION_DELTA = {
+    int(nethack.CompassDirection.N): (0, -1),
+    int(nethack.CompassDirection.NE): (1, -1),
+    int(nethack.CompassDirection.E): (1, 0),
+    int(nethack.CompassDirection.SE): (1, 1),
+    int(nethack.CompassDirection.S): (0, 1),
+    int(nethack.CompassDirection.SW): (-1, 1),
+    int(nethack.CompassDirection.W): (-1, 0),
+    int(nethack.CompassDirection.NW): (-1, -1),
+}
+
+# Default number of steps to commit per move_to call in step_count mode. Small
+# so the agent re-perceives often; the model can override with max_steps.
+_DEFAULT_STEP_COMMIT = 8
+
+
+def _plan_path(chars, start, tx, ty, unknown_ok=False, blocked=None, pass_monsters=False):
+    """Build an ANNOTATED navigation plan from `start` to (tx, ty).
+
+    Returns None if no full A* path exists (caller falls back to best-effort).
+    Otherwise a dict:
+      actions  – A* action-enum list
+      coords   – [start, ...] one (x,y) per step (len == len(actions)+1)
+      reaches  – bool: does the path actually end on (tx, ty)?
+      annos    – list of (step_index, kind, detail) hazards ALONG the route,
+                 kind in {"door","junction","monster"}
+    This is the substrate for all three nav modes: the model can preview it,
+    cap how far it commits, or let the harness auto-stop at the first hazard.
+    """
+    actions = a_star(chars, start, (tx, ty), unknown_ok=unknown_ok, blocked=blocked,
+                     pass_monsters=pass_monsters)
+    if actions is None:
+        return None
+    coords = [start]
+    cur = start
+    for a in actions:
+        dx, dy = _ACTION_DELTA.get(int(a), (0, 0))
+        cur = (cur[0] + dx, cur[1] + dy)
+        coords.append(cur)
+    h, w = chars.shape
+    pathset = set(coords)
+    annos = []
+    for i, (px, py) in enumerate(coords):
+        if i == 0:
+            continue
+        ch = chr(int(chars[py, px]))
+        if ch in "+'":
+            annos.append((i, "door", f"door at ({px},{py})"))
+        if 0 < i < len(coords) - 1:
+            branches = 0
+            for dx, dy in ((0, -1), (1, 0), (0, 1), (-1, 0)):
+                nx, ny = px + dx, py + dy
+                if 0 <= nx < w and 0 <= ny < h and is_walkable(int(chars[ny, nx])) \
+                        and (nx, ny) not in pathset:
+                    branches += 1
+            if branches >= 2:
+                annos.append((i, "junction", f"junction at ({px},{py})"))
+    # hostile monster glyphs within Chebyshev 2 of any route tile (letters are
+    # monsters in the map area; items/features are punctuation). Report the
+    # earliest step index each is near, so the caller can stop before it.
+    mon_seen = {}
+    for i, (px, py) in enumerate(coords):
+        for yy in range(max(0, py - 2), min(h, py + 3)):
+            for xx in range(max(0, px - 2), min(w, px + 3)):
+                if (xx, yy) == start or (xx, yy) in mon_seen:
+                    continue
+                g = chr(int(chars[yy, xx]))
+                if g.isalpha():
+                    mon_seen[(xx, yy)] = (i, g)
+    for (xx, yy), (i, g) in mon_seen.items():
+        annos.append((i, "monster", f"'{g}' near ({xx},{yy})"))
+    annos.sort(key=lambda a: a[0])
+    return {"actions": actions, "coords": coords,
+            "reaches": coords[-1] == (tx, ty), "annos": annos}
+
+
+def _first_hazard(plan, after=1, kinds=("monster",)):
+    """Earliest STOP-worthy annotation at step >= `after`.
+
+    Only `kinds` force a stop (monsters by default — a genuine
+    danger/decision). Doors and junctions stay in the annotation list for the
+    feedback string but do NOT halt movement, else the agent would freeze one
+    step into every open room (every tile there looks like a junction).
+    """
+    for (idx, kind, detail) in plan["annos"]:
+        if idx >= after and kind in kinds:
+            return (idx, kind, detail)
+    return None
+
+
+def _fmt_annos(annos, limit=4):
+    if not annos:
+        return "clear route"
+    parts = [f"step {i}: {d}" for (i, _k, d) in annos[:limit]]
+    if len(annos) > limit:
+        parts.append(f"(+{len(annos) - limit} more)")
+    return "; ".join(parts)
+
+
+# (dx, dy) -> vi movement key, for issuing OPEN <dir> and stepping.
+_DELTA_VIKEY = {(0, -1): 'k', (1, -1): 'u', (1, 0): 'l', (1, 1): 'n',
+                (0, 1): 'j', (-1, 1): 'b', (-1, 0): 'h', (-1, -1): 'y'}
+
+
+def _obs_message(env) -> str:
+    try:
+        last = env.last_observation
+        mb = last[env.observation_keys.index("message")]
+        return bytes(mb).split(b"\x00", 1)[0].decode("ascii", "replace").strip()
+    except Exception:
+        return ""
+
+
+def _level_key(env, obs=None):
+    """A hashable id for the current level (curriculum floor if available, else
+    dungeon depth). Used to detect a real descent."""
+    o = obs if obs is not None else env.last_observation
+    cf = getattr(env, "curriculum_floor", None)
+    if callable(cf):
+        try:
+            return ("cf", cf(o))
+        except Exception:
+            pass
+    try:
+        bl = o[env.observation_keys.index("blstats")]
+        return ("dl", int(bl[12]), int(bl[23]) if len(bl) > 23 else 0)
+    except Exception:
+        return ("dl", None)
+
+
+def _monster_on_route(env, chars, coords, start_idx, lookahead=4):
+    """Return a live, non-pet monster sitting ON one of the next `lookahead`
+    tiles of the planned route (i.e. AHEAD, blocking), or None. Uses the GLYPHS
+    array so statues/objects that render as a letter are not mistaken for a
+    monster, and pets are excluded. Trailing monsters behind the hero do NOT
+    trigger a stop — only ones actually on the way forward."""
+    try:
+        glyphs = env.last_observation[env.observation_keys.index("glyphs")]
+    except Exception:
+        return None
+    from nethack_core import glyphs as _G
+    h, w = chars.shape
+    for j in range(start_idx, min(len(coords), start_idx + lookahead)):
+        x, y = coords[j]
+        if not (0 <= x < w and 0 <= y < h):
+            continue
+        g = int(glyphs[y, x])
+        if _G.glyph_is_monster(g) and not _G.glyph_is_pet(g):
+            return f"'{chr(int(chars[y, x]))}' at ({x},{y})"
+    return None
+
+
 @registry.register("move_to", schema={
     "description": (
-        "Pathfind to a specific (x, y) tile on the current level. Uses A* "
-        "over the visible map. The path is precomputed — if a monster steps "
-        "into the path mid-traversal, the rollout will end up engaging it. "
-        "For careful exploration, call autoexplore instead."
+        "Pathfind (A*) toward a specific (x, y) tile you read off the map and "
+        "WALK there, opening closed doors on the way. Reports what ACTUALLY "
+        "happened — where you ended up, whether you descended, or what blocked "
+        "you (never a guess). nav_mode controls how far it commits per call: "
+        "'step_count' walks up to max_steps (default 8), stopping early if a "
+        "monster steps adjacent; 'auto_stop' walks the whole route until a "
+        "monster is adjacent; 'preview' returns the plan WITHOUT moving so you "
+        "commit with max_steps. Descends only when genuinely standing on a '>' "
+        "you targeted."
     ),
     "parameters": {
         "x": {"type": "integer", "description": "Column 0..78"},
         "y": {"type": "integer", "description": "Row 0..20"},
+        "max_steps": {"type": "integer",
+                      "description": "Cap steps committed this call (step_count mode). Omit for the mode default."},
+        "preview": {"type": "boolean",
+                    "description": "If true, return the annotated plan without moving."},
     },
 })
-def move_to(env: NetHackCoreEnv, obs: StructuredObservation, x: int, y: int) -> SkillResult:
+def move_to(env: NetHackCoreEnv, obs: StructuredObservation, x: int, y: int,
+            max_steps: int = None, preview: bool = False) -> SkillResult:
+    """CLOSED-LOOP navigation: steps the env itself, opens closed doors on the
+    route, stops honestly when a step fails to advance, and reports the ACTUAL
+    outcome (never a predicted one). Descends only when genuinely standing on the
+    targeted '>'. Works identically in skill- and code-mode because it does its
+    own stepping (skill-mode-only break-on-deviation isn't relied on)."""
     chars, start = _current_chars_and_player(env)
     tx, ty = int(x), int(y)
-    # If the agent EXPLICITLY targeted a down-staircase tile (it read the map and
-    # chose to go there), path onto it and descend in one call — stepping onto a
-    # '>' descends. We do NOT scan the map for stairs ourselves: auto-locating the
-    # nearest '>' and diverting there would do the agent's navigation for it,
-    # collapsing play into a rigid find->go->descend bot. The agent must perceive
-    # the stairs and ask for them by coordinate.
-    try:
-        h2, w2 = chars.shape
-        if 0 <= ty < h2 and 0 <= tx < w2 and int(chars[ty, tx]) == ord('>') and (tx, ty) != start:
-            p2 = a_star(chars, start, (tx, ty))
-            if p2:
-                acts = _enum_actions_to_indices(env, p2)
-                # Keystrokes consumed directly: MORE dismisses a prompt, DOWN descends.
-                acts = acts + [int(nethack.MiscAction.MORE), int(nethack.MiscDirection.DOWN)]
-                return SkillResult(
-                    actions=acts,
-                    feedback=f"move_to({tx},{ty}) — pathing {len(p2)} steps onto the down-stairs and descending.",
-                )
-    except Exception:
-        pass
-    path = a_star(chars, start, (tx, ty))
-    if path is None:
-        # No FULL path to the exact target (it's a wall, out of bounds, or —
-        # most often — visible-but-not-yet-connected behind unexplored
-        # terrain). A bare "No path" sent the model into spin loops: it can
-        # SEE the stairs but can never approach them. Instead, make
-        # best-effort progress so the agent closes distance and reveals map,
-        # opening a real path on a subsequent call. Still ONE step per call;
-        # we never auto-explore, auto-search, or auto-descend here.
+    nav_mode = getattr(env, "nav_mode", "step_count")
+
+    # Per-episode memory of dark tiles we bumped and learned are impassable
+    # (bumping stone doesn't reveal it in the obs, so without this the optimistic
+    # path retries the same wall forever).
+    blocked = getattr(env, "_nav_blocked", None)
+    if blocked is None:
+        blocked = set()
+        env._nav_blocked = blocked
+
+    plan = _plan_path(chars, start, tx, ty, blocked=blocked)
+    optimistic = False
+    attack_through = False
+    if plan is None:
+        # A monster may be sitting in the only corridor (a_star treats monster
+        # tiles as impassable). Try a path that routes THROUGH a monster —
+        # walking into it attacks it — preferring to go around (high cost).
+        plan = _plan_path(chars, start, tx, ty, blocked=blocked, pass_monsters=True)
+        attack_through = plan is not None
+    if plan is None:
+        # No path over the REVEALED map — but dungeon corridors stay dark until
+        # walked, so the target may connect through unrevealed tiles. Plan
+        # OPTIMISTICALLY through the dark toward it and walk step-by-step; each
+        # step reveals terrain, a step into a wall fails-to-advance, and we
+        # remember that tile so the next plan routes around it.
+        plan = _plan_path(chars, start, tx, ty, unknown_ok=True, blocked=blocked)
+        optimistic = True
+    if plan is None:
         return _move_to_best_effort(env, chars, start, tx, ty)
-    if not path:
+    if not plan["actions"]:
         return SkillResult([], f"Already at ({tx},{ty}).", interrupted=False)
-    return SkillResult(
-        actions=_enum_actions_to_indices(env, path),
-        feedback=f"Pathing to ({x},{y}): {len(path)} steps.",
-    )
+
+    n = len(plan["actions"])
+    target_is_stair = (0 <= ty < chars.shape[0] and 0 <= tx < chars.shape[1]
+                       and int(chars[ty, tx]) == ord('>'))
+
+    # preview: describe the plan, do NOT move.
+    if preview or (nav_mode == "preview" and max_steps is None):
+        short = "" if plan["reaches"] else \
+            f" NOTE: A* route ends at {plan['coords'][-1]}, short of ({tx},{ty})."
+        stair = " Ends ON the down-stairs — commit to walk there and descend." if (target_is_stair and plan["reaches"]) else ""
+        return SkillResult(
+            [], f"PLAN to ({tx},{ty}): {n} steps. Ahead — {_fmt_annos(plan['annos'])}.{short}{stair} "
+                f"Commit with move_to(x,y,max_steps=N).", interrupted=True)
+
+    cap = max_steps if max_steps is not None else (n if nav_mode == "auto_stop" else _DEFAULT_STEP_COMMIT)
+
+    # ---- closed-loop execution ----
+    coords, actions = plan["coords"], plan["actions"]
+    total_r = 0.0
+    term = trunc = False
+    steps = 0
+    stop = None
+    last_obs = env.last_observation
+    for i, act in enumerate(actions):
+        if steps >= cap:
+            stop = f"committed {steps}/{n} steps (max_steps)"
+            break
+        chars_now, pos_now = _current_chars_and_player(env)
+        if steps > 0 and not attack_through:  # never stop on step 0; attack-through walks INTO monsters
+            mon = _monster_on_route(env, chars_now, coords, i + 1, lookahead=4)
+            if mon:
+                stop = f"stopped — monster {mon} on the route ahead"
+                break
+        nx, ny = coords[i + 1]
+        # A closed door on the route: OPEN it; if it's LOCKED, kick it open —
+        # rather than stalling against it. (Traversal, not a locating crutch.)
+        if 0 <= ny < chars_now.shape[0] and 0 <= nx < chars_now.shape[1] \
+                and chr(int(chars_now[ny, nx])) == '+':
+            vik = _DELTA_VIKEY.get((nx - pos_now[0], ny - pos_now[1]))
+            if vik:
+                last_obs, r, term, trunc, _ = env.step(int(nethack.Command.OPEN)); total_r += r
+                if not (term or trunc):
+                    last_obs, r, term, trunc, _ = env.step(int(ord(vik))); total_r += r
+                # Still a door here? It's locked/stuck — kick it (up to 6x).
+                kicks = 0
+                while kicks < 6 and not (term or trunc):
+                    ch_k, _ = _current_chars_and_player(env)
+                    if chr(int(ch_k[ny, nx])) != '+':
+                        break  # opened or broken through
+                    last_obs, r, term, trunc, _ = env.step(0x04); total_r += r  # kick cmd
+                    if term or trunc:
+                        break
+                    last_obs, r, term, trunc, _ = env.step(int(ord(vik))); total_r += r
+                    kicks += 1
+        last_obs, r, term, trunc, _ = env.step(int(act)); total_r += r
+        _, pos2 = _current_chars_and_player(env)
+        if pos2 == pos_now and not (term or trunc):
+            nxt = (chr(int(chars_now[ny, nx]))
+                   if (0 <= ny < chars_now.shape[0] and 0 <= nx < chars_now.shape[1]) else '')
+            if nxt.isalpha() and nxt != '@':
+                # A monster is on the next tile — walking into it ATTACKS it.
+                # Retry the step (keep attacking) until it dies and we advance.
+                for _ in range(6):
+                    last_obs, r, term, trunc, _ = env.step(int(act)); total_r += r
+                    _, pos2 = _current_chars_and_player(env)
+                    if pos2 != pos_now or term or trunc:
+                        break
+            else:
+                # Didn't advance. A pending prompt (pet fighting a monster nearby,
+                # a multi-message turn) can SWALLOW the movement key even when the
+                # `message` field shows no literal "--More--". So UNCONDITIONALLY
+                # send MORE to clear any prompt and retry the step (up to twice)
+                # before declaring a real block.
+                for _ in range(2):
+                    if term or trunc:
+                        break
+                    last_obs, r, term, trunc, _ = env.step(int(nethack.MiscAction.MORE)); total_r += r
+                    if term or trunc:
+                        break
+                    last_obs, r, term, trunc, _ = env.step(int(act)); total_r += r
+                    _, pos2 = _current_chars_and_player(env)
+                    if pos2 != pos_now:
+                        break
+        if pos2 == pos_now:  # still didn't advance = a real block (wall/monster)
+            gm = _obs_message(env)
+            # Remember a bumped dark/stone tile so future plans route around it
+            # (bumping stone doesn't reveal it in the obs).
+            gl = gm.lower()
+            if "stone" in gl or "wall" in gl or \
+                    chr(int(chars_now[ny, nx])) == ' ':
+                blocked.add((nx, ny))
+            stop = f"blocked at {pos2}" + (f" — {gm}" if gm else " (unexpected obstacle)")
+            break
+        steps += 1
+        if term or trunc:
+            break
+
+    _, pos_f = _current_chars_and_player(env)
+    arrived = (pos_f == (tx, ty))
+    descended = False
+    if arrived and target_is_stair and not (term or trunc):
+        lvl_before = _level_key(env)
+        last_obs, r, term, trunc, _ = env.step(int(nethack.MiscAction.MORE)); total_r += r
+        last_obs, r, term, trunc, _ = env.step(int(nethack.MiscDirection.DOWN)); total_r += r
+        descended = (_level_key(env) != lvl_before)
+
+    # Settle any trailing prompt / level-transition message so the NEXT turn's
+    # first movement key isn't swallowed. Found via agent play-testing: after a
+    # descent, "You descend the stairs." lingers and eats the next move — the
+    # hero appears frozen. One MORE clears it. Also dismiss --More--/(end) menus.
+    for _ in range(6):
+        if term or trunc:
+            break
+        m = _obs_message(env).lower()
+        if "--more--" in m or "(end)" in m or (descended and "descend" in m):
+            last_obs, r, term, trunc, _ = env.step(int(nethack.MiscAction.MORE)); total_r += r
+        else:
+            break
+    _, pos_f = _current_chars_and_player(env)  # re-read after settling
+
+    # honest report of what ACTUALLY happened.
+    if descended:
+        fb = f"move_to({tx},{ty}): walked {steps} steps onto the down-stairs and DESCENDED."
+    elif arrived and target_is_stair:
+        fb = f"move_to({tx},{ty}): reached the '>' at ({tx},{ty}) but did not descend (press_down to try)."
+    elif arrived:
+        fb = f"move_to({tx},{ty}): arrived at ({tx},{ty})."
+    else:
+        remaining = _plan_path(*(_current_chars_and_player(env)), tx, ty)
+        rem = f"; ~{len(remaining['actions'])} steps still to go" if remaining and remaining.get("actions") else ""
+        fb = f"move_to({tx},{ty}): walked {steps} steps to {pos_f} — {stop or 'stopped'}{rem}. Re-check the map and continue."
+    return SkillResult(actions=[], feedback=fb, pre_executed=True, pre_reward=total_r,
+                       final_obs=last_obs, pre_terminated=bool(term), pre_truncated=bool(trunc))
 
 
 def _stairs_up_xy(chars):
