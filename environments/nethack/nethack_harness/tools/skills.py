@@ -290,27 +290,24 @@ def move(env: NetHackCoreEnv, obs: StructuredObservation, direction: str, run: b
     "parameters": {"direction": {"type": "string", "enum": list(_DIRECTION_TO_ACTION.keys())}},
 })
 def attack(env: NetHackCoreEnv, obs: StructuredObservation, direction: str) -> SkillResult:
-    # In NetHack, melee = move toward the monster. Same action.
-    # We separate it as a skill for legibility in traces.
+    # FORCE-FIGHT ('F' + direction) rather than a plain move. A plain move toward
+    # a monster only attacks it when the tile is "clean"; if the monster is
+    # hidden under an item pile (ubiquitous in Gehennom), peaceful, or displaced,
+    # a move gives a "Wait! There's a <mon> hiding under ..." prompt and does NOT
+    # attack — so melee silently never landed. Force-fight always strikes the
+    # adjacent tile in that direction.
     canon = _normalize_direction(direction)
-    if canon is None:
-        return SkillResult([], f"Invalid direction: {direction!r}.", interrupted=True)
-    # Sanity check: is there actually a letter glyph adjacent in this
-    # direction? If not, the agent is "attacking" empty space — likely a
-    # misread of the map. Warn but still pass the action through (NetHack
-    # will just walk one step, harmless).
+    if canon is None or canon not in _DIRECTION_VI_KEY or canon == ".":
+        return SkillResult([], f"Invalid attack direction: {direction!r}.", interrupted=True)
     adj = getattr(obs, "adjacent", None) or {}
     tile = adj.get(canon, "")
-    target_warning = ""
+    warn = ""
     if tile and not (len(tile) >= 1 and tile[0].isalpha() and tile[0] != "@"):
-        target_warning = (
-            f" (note: ADJACENT shows {canon}={tile!r}, no monster there — "
-            "this will just walk forward.)"
-        )
-    result = move(env, obs, direction=direction)
-    if target_warning and result.feedback:
-        result = SkillResult(actions=result.actions, feedback=result.feedback + target_warning, interrupted=result.interrupted)
-    return result
+        warn = f" (note: ADJACENT {canon}={tile!r} shows no monster.)"
+    return SkillResult(
+        [int(ord('F')), int(ord(_DIRECTION_VI_KEY[canon]))],
+        f"Force-fight {canon}." + warn,
+    )
 
 
 @registry.register("descend", schema={
