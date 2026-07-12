@@ -134,25 +134,20 @@ class CurriculumPrimitivesEnv(NetHackCoreEnv):
             obs0 = raw.to_core_observation()
             dnum = int(obs0.blstats[_DNUM])
             depth = int(obs0.blstats[_DEPTH])
-            on_stair = raw.hero_on_stair()  # +1 on any down stair (main OR branch), -1 up
+            # +1/-1 on the level's MAIN down/up stair; +2/-2 on the BRANCH
+            # staircase (Gnomish Mines entrance). 0 otherwise.
+            on_stair = raw.hero_on_stair()
 
-            # LINEAR curriculum: a DOWN stair out of the DoD shallow segment
-            # keeps the hero on the DoD 1->2->3->Gehennom path regardless of
-            # WHICH '>' is taken. DoD levels 2-4 also carry the Gnomish Mines
-            # branch entrance (a second '>'); an agent navigating to the nearest
-            # '>' would otherwise fall into the Mines and off the curriculum.
-            # hero_on_stair()==1 now covers the branch stair too (engine fix), so
-            # any downstair on DoD depth 1/2 -> next DoD level, and on DoD depth 3
-            # -> the deep segment (with the stats upgrade).
-            if action == _DOWN and dnum == self._dod_dnum and on_stair == 1:
-                if depth < self._shallow_hi:
-                    obs = self._engine.goto_abs(self._dod_dnum, depth + 1)
-                    self._last_observation = obs
-                    reward = self._reward_model.step(obs)
-                    return obs, reward, bool(self._engine.done), False, {
-                        "curriculum": "dod_descend", "to_depth": depth + 1,
-                    }
-                if depth == self._shallow_hi:
+            # DoD levels 2-4 carry the Mines branch entrance (a second '>'); an
+            # agent going to the nearest '>' would fall into the Mines and off the
+            # curriculum. Handle the two DoD downstairs so the hero stays on the
+            # linear DoD 1->2->3->Gehennom path:
+            #   * On DoD3, ANY downstair (main==1 or branch==2) jumps to Gehennom.
+            #   * On DoD1/2, only the BRANCH stair (==2) is redirected to the next
+            #     DoD level; the MAIN stair (==1) descends NORMALLY (untouched), so
+            #     ordinary within-DoD descent keeps its real engine behavior.
+            if action == _DOWN and dnum == self._dod_dnum:
+                if depth == self._shallow_hi and on_stair in (1, 2):
                     self._engine.goto_abs(
                         self._geh_dnum, self._deep_lo - self._geh_start + 1)
                     stats = self._sample_upgrade()
@@ -161,6 +156,13 @@ class CurriculumPrimitivesEnv(NetHackCoreEnv):
                     return obs, reward, bool(self._engine.done), False, {
                         "curriculum": "jump_down", "to_depth": self._deep_lo,
                         "upgrade": stats,
+                    }
+                if depth < self._shallow_hi and on_stair == 2:
+                    obs = self._engine.goto_abs(self._dod_dnum, depth + 1)
+                    self._last_observation = obs
+                    reward = self._reward_model.step(obs)
+                    return obs, reward, bool(self._engine.done), False, {
+                        "curriculum": "dod_descend", "to_depth": depth + 1,
                     }
 
             # Deep segment top (Gehennom deep_lo) UP stair: real '<' jumps back.
