@@ -684,6 +684,25 @@ def format_observation_as_chat(
     # Wave-2: descent-salience block (variants ND/FD). Placed immediately after
     # the journal/objective so it's the first concrete thing the model reads.
     lines.extend(_descent_status_block(structured, state))
+    # Invocation-level domain knowledge (always on, every variant). The Gehennom
+    # maze directly above Moloch's Sanctum has NO down-staircase BY DESIGN —
+    # NetHack's maze builder skips the down-stair on the Invocation level, whose
+    # descent is the invocation ritual, not a stair. Without this the agent burns
+    # turns hunting a `>` that can never appear. This is game knowledge, not a
+    # locating crutch, so it is surfaced regardless of curriculum/variant.
+    if state is not None and state.get("_on_invocation_level"):
+        lines.append(
+            "=== INVOCATION LEVEL ===\n"
+            "There is NO down-staircase on this level and none can appear — do "
+            "NOT `search`/`autoexplore` for a `>`. This is the maze directly "
+            "above Moloch's Sanctum (the dungeon's bottom). The ONLY way down is "
+            "the invocation ritual: stand on the vibrating square and ring the "
+            "Bell of Opening while carrying the lit Candelabrum of Invocation (7 "
+            "candles attached) and the Book of the Dead. Without all three "
+            "artifacts the Sanctum cannot be reached, so this Invocation level is "
+            "the deepest a hero can navigate to on foot."
+        )
+        lines.append("")
     # Wave-3 Track C (variant E1): frontier + coverage + spatial-belief
     # blocks. Gated on state["_e1_obs"] so the legacy variants stay
     # bit-identical. The SPATIAL BELIEF block REPLACES (does not augment)
@@ -928,7 +947,8 @@ def format_observation_as_chat(
         # surface the door coords and route to kick. This is the failure mode
         # the no-compact trace exposed: the agent autoexplores forever inside
         # the room because the BFS frontier resolves to `<` (stairs up).
-        if hint is None and not _on_stairs_override and state is not None and "raw_obs" in state:
+        if (hint is None and not _on_stairs_override and state is not None
+                and not state.get("_on_invocation_level") and "raw_obs" in state):
             try:
                 from nethack_core.observations import extract_visible_features
                 feats = extract_visible_features(state["raw_obs"].tty_chars)

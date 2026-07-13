@@ -94,6 +94,7 @@ class CurriculumPrimitivesEnv(NetHackCoreEnv):
         self._shallow_hi = 3
         self._deep_lo = 48
         self._deep_hi = 50
+        self._geh_max = 50  # absolute depth of Gehennom's bottom (Moloch's Sanctum)
 
     # ----- lifecycle -----
 
@@ -114,6 +115,7 @@ class CurriculumPrimitivesEnv(NetHackCoreEnv):
         self._geh_dnum = geh["dnum"]
         self._geh_start = geh["depth_start"]
         geh_max = geh["depth_start"] + geh["num_dunlevs"] - 1
+        self._geh_max = geh_max  # Gehennom's bottom = Moloch's Sanctum
         # Clamp the deep segment into Gehennom's actual (seed-dependent) range.
         self._deep_lo = max(geh["depth_start"], min(geh_max, self._deep_req[0]))
         self._deep_hi = max(geh["depth_start"], min(geh_max, self._deep_req[-1]))
@@ -178,3 +180,20 @@ class CurriculumPrimitivesEnv(NetHackCoreEnv):
         if dnum == self._geh_dnum and depth >= self._deep_lo:
             return 3 + (depth - self._deep_lo + 1)
         return 0
+
+    def on_invocation_level(self, obs) -> bool:
+        """True when the hero stands on Gehennom's **Invocation level** — the
+        maze directly above Moloch's Sanctum (the dungeon's bottom).
+
+        That level has NO down-staircase *by design*: NetHack's maze builder
+        places a down-stair only ``if (!Invocation_lev(&u.uz))`` (mkmaze.c), and
+        ``Invocation_lev`` is exactly ``In_hell && dlevel == num_dunlevs - 1``.
+        The descent to the Sanctum is the invocation ritual (ring the Bell of
+        Opening while holding the lit Candelabrum of Invocation and the Book of
+        the Dead on the vibrating square), which opens a hole — not a stair.
+
+        Surfaced to the agent so it doesn't burn turns hunting a ``>`` that
+        cannot exist. This is game *knowledge*, not a locating crutch."""
+        dnum = int(obs.blstats[_DNUM])
+        depth = int(obs.blstats[_DEPTH])
+        return dnum == self._geh_dnum and depth == self._geh_max - 1

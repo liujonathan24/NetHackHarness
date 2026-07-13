@@ -890,6 +890,16 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
                     state.get("max_curriculum_floor", 0), floor)
             except Exception:
                 pass
+        # Invocation-level knowledge: Gehennom's maze directly above the Sanctum
+        # has NO down-staircase (the descent is the invocation ritual, not a
+        # stair). Flag it so the DESCENT STATUS hint stops telling the agent to
+        # hunt for a `>` that cannot exist. Domain knowledge, not a locating crutch.
+        _oil = getattr(state.get("env"), "on_invocation_level", None)
+        if callable(_oil):
+            try:
+                state["_on_invocation_level"] = bool(_oil(last_obs))
+            except Exception:
+                state["_on_invocation_level"] = False
 
         # Belief-state distillation (Track B v0.3): two trigger conditions.
         # 1) Level transition: summarize the prior level into the journal.
