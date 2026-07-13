@@ -296,6 +296,15 @@ def attack(env: NetHackCoreEnv, obs: StructuredObservation, direction: str) -> S
     # a move gives a "Wait! There's a <mon> hiding under ..." prompt and does NOT
     # attack — so melee silently never landed. Force-fight always strikes the
     # adjacent tile in that direction.
+    #
+    # The leading MORE (13) is essential: a monster's attack the previous turn
+    # (e.g. "A cobra was hidden under 6 orcish arrows!  The cobra bites!") is long
+    # enough to raise a blocking `--More--`. If we sent 'F' first it would be
+    # eaten dismissing that prompt, degrading force-fight to a bare direction move
+    # that never lands on a hiding monster — so in monster-dense Gehennom the hero
+    # bit forever and dealt no damage. Draining first (same idiom as
+    # press_down/press_up) makes 'F' start the command cleanly. See the memory
+    # note "ch-curriculum-primitives" for the full diagnosis.
     canon = _normalize_direction(direction)
     if canon is None or canon not in _DIRECTION_VI_KEY or canon == ".":
         return SkillResult([], f"Invalid attack direction: {direction!r}.", interrupted=True)
@@ -305,7 +314,7 @@ def attack(env: NetHackCoreEnv, obs: StructuredObservation, direction: str) -> S
     if tile and not (len(tile) >= 1 and tile[0].isalpha() and tile[0] != "@"):
         warn = f" (note: ADJACENT {canon}={tile!r} shows no monster.)"
     return SkillResult(
-        [int(ord('F')), int(ord(_DIRECTION_VI_KEY[canon]))],
+        [int(nethack.MiscAction.MORE), int(ord('F')), int(ord(_DIRECTION_VI_KEY[canon]))],
         f"Force-fight {canon}." + warn,
     )
 
