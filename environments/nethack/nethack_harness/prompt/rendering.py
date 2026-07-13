@@ -691,17 +691,42 @@ def format_observation_as_chat(
     # turns hunting a `>` that can never appear. This is game knowledge, not a
     # locating crutch, so it is surfaced regardless of curriculum/variant.
     if state is not None and state.get("_on_invocation_level"):
-        lines.append(
-            "=== INVOCATION LEVEL ===\n"
-            "There is NO down-staircase on this level and none can appear — do "
-            "NOT `search`/`autoexplore` for a `>`. This is the maze directly "
-            "above Moloch's Sanctum (the dungeon's bottom). The ONLY way down is "
-            "the invocation ritual: stand on the vibrating square and ring the "
-            "Bell of Opening while carrying the lit Candelabrum of Invocation (7 "
-            "candles attached) and the Book of the Dead. Without all three "
-            "artifacts the Sanctum cannot be reached, so this Invocation level is "
-            "the deepest a hero can navigate to on foot."
-        )
+        sq = state.get("_invocation_square")
+        inv_desc = " ".join(
+            (getattr(it, "description", "") or "").lower()
+            for it in (getattr(structured, "inventory", None) or []))
+        has_kit = ("candelabrum" in inv_desc and "bell" in inv_desc
+                   and "book of the dead" in inv_desc)
+        if has_kit and sq:
+            # The agent carries the primed kit and the square is revealed — give
+            # the exact ritual steps. This is the descent path (no down-stair
+            # exists here); it is game knowledge, not a locating crutch.
+            lines.append(
+                "=== INVOCATION LEVEL — RITUAL READY ===\n"
+                "There is NO down-staircase here and none can appear by searching. "
+                "You carry the lit Candelabrum of Invocation, the charged Bell of "
+                "Opening, and the Book of the Dead, and you START right next to the "
+                "vibrating square. To open the way down to Moloch's Sanctum, perform "
+                f"the invocation ON the vibrating square at ({sq[0]}, {sq[1]}):\n"
+                f"  1. move_to({sq[0]}, {sq[1]})  — step onto the vibrating square (one move)\n"
+                "  2. nh.apply('bell')            — ring the Bell of Opening\n"
+                "  3. nh.read('Book of the Dead') — begin reciting (within 5 turns of ringing)\n"
+                "  4. wait a few turns for the recitation to finish (e.g. nh.search()) —\n"
+                "     the floor shakes and a down-staircase opens beneath you\n"
+                "  5. nh.press_down()             — descend to the Sanctum (floor 6)."
+            )
+        else:
+            lines.append(
+                "=== INVOCATION LEVEL ===\n"
+                "There is NO down-staircase on this level and none can appear — do "
+                "NOT `search`/`autoexplore` for a `>`. This is the maze directly "
+                "above Moloch's Sanctum (the dungeon's bottom). The ONLY way down is "
+                "the invocation ritual: stand on the vibrating square and ring the "
+                "Bell of Opening while carrying the lit Candelabrum of Invocation (7 "
+                "candles attached) and the Book of the Dead. Without all three "
+                "artifacts the Sanctum cannot be reached, so this Invocation level is "
+                "the deepest a hero can navigate to on foot."
+            )
         lines.append("")
     # Wave-3 Track C (variant E1): frontier + coverage + spatial-belief
     # blocks. Gated on state["_e1_obs"] so the legacy variants stay

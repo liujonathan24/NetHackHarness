@@ -714,7 +714,28 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
             terminated = bool(result.pre_terminated)
             truncated = bool(result.pre_truncated)
             action_indices = []
+        # MORE/CR action index, for draining --More-- between flushed actions.
+        _more_idx_list = _to_action_indices(env, [13])
         for step_i, action in enumerate(action_indices):
+            # Drain any pending --More-- page(s) BEFORE issuing this action, so a
+            # raw-key skill's bytes start a real command instead of being consumed
+            # dismissing the prompt. Multi-message turns (stepping onto the
+            # invocation square, monster-dense Gehennom) stack several pages;
+            # without this a skill like apply/read/attack silently loses its
+            # leading keys. Fires only on a literal --More-- (never a [yn]/getlin,
+            # left for the agent); closed-loop nav skills don't reach this loop
+            # (action_indices == []). MORE at a clean prompt is a harmless,
+            # turnless "Unknown command".
+            if _more_idx_list:
+                for _ in range(8):
+                    if not _obs_tty_has_more(last_obs):
+                        break
+                    last_obs, _rm, terminated, truncated, info = env.step(_more_idx_list[0])
+                    total_reward += _rm
+                    if terminated or truncated:
+                        break
+                if terminated or truncated:
+                    break
             last_obs, r, terminated, truncated, info = env.step(action)
             total_reward += r
             # Scout reward: count newly-revealed dungeon tiles.
@@ -900,6 +921,15 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
                 state["_on_invocation_level"] = bool(_oil(last_obs))
             except Exception:
                 state["_on_invocation_level"] = False
+        # Reveal the vibrating-square coords so the agent can navigate onto it
+        # (the trap is hidden by default). Consistent with the reveal_map "lights
+        # on" approach; consumed by the RITUAL-READY obs note.
+        _isq = getattr(state.get("env"), "invocation_square", None)
+        if callable(_isq):
+            try:
+                state["_invocation_square"] = _isq(last_obs)  # (x, y) or None
+            except Exception:
+                state["_invocation_square"] = None
 
         # Belief-state distillation (Track B v0.3): two trigger conditions.
         # 1) Level transition: summarize the prior level into the journal.

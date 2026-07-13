@@ -506,7 +506,36 @@ def read(env: NetHackCoreEnv, obs: StructuredObservation, item: Optional[str] = 
     letter, feedback = _find_inv_letter(obs, item, ("scroll", "spellbook", "book"))
     if letter is None:
         return SkillResult([], feedback, interrupted=True)
-    return SkillResult([int(ord('r')), int(ord(letter))], feedback)
+    # Leading MORE(13) drains a pending --More-- (e.g. from a just-rung Bell of
+    # Opening in the invocation ritual) so the 'r' isn't eaten dismissing the
+    # prompt — same idiom as attack/press_down. Reading the Book of the Dead on
+    # the vibrating square routes straight to deadbook (no interactive subprompt).
+    return SkillResult([int(nethack.MiscAction.MORE), int(ord('r')), int(ord(letter))], feedback)
+
+
+@registry.register("apply", schema={
+    "description": (
+        "Apply (use) a tool from inventory — e.g. ring the Bell of Opening, or "
+        "use a pick-axe/lamp/horn. Pass `item` = substring of the tool's "
+        "description (e.g. 'bell') OR its inventory letter. If no matching tool "
+        "exists or `item` doesn't match, the turn is NOT consumed and you get "
+        "feedback listing candidates. On the invocation vibrating square, "
+        "`apply('bell')` rings the Bell of Opening (no direction is asked)."
+    ),
+    "parameters": {"item": {"type": "string", "description": "substring or letter of the tool", "default": None}},
+})
+def apply(env: NetHackCoreEnv, obs: StructuredObservation, item: Optional[str] = None) -> SkillResult:
+    letter, feedback = _find_inv_letter(
+        obs, item,
+        ("bell", "candelabrum", "candle", "lamp", "lantern", "horn", "whistle",
+         "mirror", "pick-axe", "pick", "tool", "leash", "key"))
+    if letter is None:
+        return SkillResult([], feedback, interrupted=True)
+    # MORE(13) drains any blocking --More-- (a prior monster/ritual message) so
+    # 'a' starts the apply command cleanly, then the tool's letter. The invoking
+    # Bell of Opening asks for no direction; any resulting message is drained by
+    # the next skill's leading MORE.
+    return SkillResult([int(nethack.MiscAction.MORE), int(ord('a')), int(ord(letter))], feedback)
 
 
 @registry.register("pray", schema={

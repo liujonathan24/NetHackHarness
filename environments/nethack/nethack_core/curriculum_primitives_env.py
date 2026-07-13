@@ -95,6 +95,7 @@ class CurriculumPrimitivesEnv(NetHackCoreEnv):
         self._deep_lo = 48
         self._deep_hi = 50
         self._geh_max = 50  # absolute depth of Gehennom's bottom (Moloch's Sanctum)
+        self._was_on_invocation = False  # seat-adjacent-once tracking
 
     # ----- lifecycle -----
 
@@ -120,6 +121,7 @@ class CurriculumPrimitivesEnv(NetHackCoreEnv):
         self._deep_lo = max(geh["depth_start"], min(geh_max, self._deep_req[0]))
         self._deep_hi = max(geh["depth_start"], min(geh_max, self._deep_req[-1]))
         self._shallow_hi = max(self._shallow)
+        self._was_on_invocation = False
         # Apply the starting survivability/attack boost so DoD monster deaths
         # stop and the curriculum tests navigation, not early-game RNG survival.
         if self._start_stats:
@@ -152,6 +154,10 @@ class CurriculumPrimitivesEnv(NetHackCoreEnv):
                 if depth == self._shallow_hi and on_stair in (1, 2):
                     self._engine.goto_abs(
                         self._geh_dnum, self._deep_lo - self._geh_start + 1)
+                    # Grant the invocation kit so the agent can perform the ritual
+                    # on the Invocation level (dlvl 49) — the only descent to the
+                    # Sanctum (dlvl 50), which has no down-staircase.
+                    self._engine.grant_invocation_kit()
                     stats = self._sample_upgrade()
                     obs = self.modify(**stats)  # NetHackCoreEnv.modify updates last_obs
                     reward = self._reward_model.step(obs)
@@ -179,7 +185,21 @@ class CurriculumPrimitivesEnv(NetHackCoreEnv):
 
         # Default: the real engine handles the action (incl. within-segment real
         # '>'/'<', which require the hero to actually be on a stair).
-        return super().step(action)
+        result = super().step(action)
+        obs = result[0]
+        now_inv = self.on_invocation_level(obs)
+        if now_inv and not self._was_on_invocation:
+            # Just arrived on the Invocation level. Its maze is monster/trap-choked
+            # and effectively unnavigable to the single hidden vibrating square, so
+            # stage the hero one tile from it (the artifact kit was granted at the
+            # DoD3->Gehennom jump). The agent still performs the ritual itself: step
+            # onto the square, ring the Bell of Opening, read the Book of the Dead,
+            # then descend the stairway that opens.
+            obs = self._engine.seat_on_invocation_square(adjacent=True)
+            self._last_observation = obs
+            result = (obs,) + tuple(result[1:])
+        self._was_on_invocation = now_inv
+        return result
 
     def _sample_upgrade(self) -> dict:
         rng = random.Random((self._curr_seed << 8) ^ self._deep_lo)
@@ -213,3 +233,12 @@ class CurriculumPrimitivesEnv(NetHackCoreEnv):
         dnum = int(obs.blstats[_DNUM])
         depth = int(obs.blstats[_DEPTH])
         return dnum == self._geh_dnum and depth == self._geh_max - 1
+
+    def invocation_square(self, obs):
+        """(x, y) of the vibrating square when the hero is on the Invocation
+        level, else None. Surfaced to the agent (via the obs note) so it can
+        navigate onto the square and perform the ritual — the square's trap is
+        hidden by default, but the tile is walkable maze floor."""
+        if not self.on_invocation_level(obs):
+            return None
+        return self._engine.invocation_pos()

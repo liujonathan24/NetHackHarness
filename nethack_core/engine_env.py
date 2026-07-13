@@ -222,6 +222,27 @@ class EngineEnv:
         """Return the dungeon-branch layout (name/depth_start/num_dunlevs)."""
         return self._engine.dungeon_table()
 
+    def grant_invocation_kit(self) -> CoreObservation:
+        """Grant the pre-primed invocation artifacts into the hero's pack.
+
+        Dedicated engine call (NOT a ``modify()`` scalar field) — it injects the
+        lit 7-candle Candelabrum, charged Bell of Opening, and Book of the Dead
+        (all uncursed) via addinv, so the curriculum agent can perform the
+        invocation ritual on the Invocation level. Returns the refreshed obs.
+        """
+        self._engine.grant_invocation_kit()
+        return self._engine.to_core_observation()
+
+    def invocation_pos(self):
+        """(x, y) of the vibrating square on the Invocation level, else None."""
+        return self._engine.invocation_pos()
+
+    def seat_on_invocation_square(self, adjacent: bool = True) -> CoreObservation:
+        """Stage the hero at the vibrating square (ritual site). adjacent=True lands
+        the hero next to it (agent steps on); adjacent=False lands on it. Returns obs."""
+        self._engine.seat_on_invocation_square(adjacent=adjacent)
+        return self._engine.to_core_observation()
+
     @property
     def done(self) -> bool:
         """Whether the current game has ended (hero dead / ascended / quit)."""

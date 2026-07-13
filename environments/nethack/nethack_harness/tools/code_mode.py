@@ -9,6 +9,9 @@ sequences.
 v0 capabilities:
 
   * `nh.move(direction)` / `nh.attack(direction)` / `nh.descend()` etc.
+  * `nh.apply(item)` / `nh.read(item)` — use a tool / read a scroll or book
+    (e.g. ring the Bell of Opening + read the Book of the Dead for the
+    invocation ritual on the Invocation level)
   * `nh.autoexplore(max_steps)` — same as the skill but in a code namespace
   * `nh.add_note(key, text)` / `nh.recall(query)`
   * `nh.wiki_lookup(entity)` / `nh.wiki_search(query)`
@@ -299,6 +302,14 @@ class _NhNamespace:
 
     def eat(self, item: str = None) -> None:
         self._dispatch("eat", **({"item": item} if item is not None else {}))
+
+    def apply(self, item: str = None) -> None:
+        """Apply (use) a tool, e.g. nh.apply('bell') to ring the Bell of Opening."""
+        self._dispatch("apply", **({"item": item} if item is not None else {}))
+
+    def read(self, item: str = None) -> None:
+        """Read a scroll/spellbook, e.g. nh.read('Book of the Dead')."""
+        self._dispatch("read", **({"item": item} if item is not None else {}))
 
     def pray(self) -> None:
         self._dispatch("pray")
