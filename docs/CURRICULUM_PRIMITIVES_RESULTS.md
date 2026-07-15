@@ -173,3 +173,109 @@ below 23% and no number of retries lands them. **Reliable 6/6 under the honest
 no-locating principle would need ≈best-of-10 AND the reseeding fixed to pin the six
 seeds** — both requiring inference. This is the quantitative form of the same
 conclusion: 6/6 is not a harness gap, it is a GLM-5.2 capability gap.
+
+---
+
+# Deep segment (floors 4 → 5 → 6): combat fix, invocation ritual, 10-seed eval
+
+The deep segment (Gehennom 48/49/50 = floors 4/5/6) was previously hard-blocked at
+floor 4 for *every* seed. Two fixes plus one feature opened it up. Engine work is on
+the fork branch `feature/invocation-ritual` (off `feature/reveal-map-desecret`);
+harness work is on `ch-curriculum-primitives`.
+
+## 1. Combat `--More--` fix (floor 4 → 5)
+
+`attack()` force-fights (`F`+dir), but after a monster's turn a long message
+(e.g. `A cobra was hidden under 6 orcish arrows!  The cobra bites!`) raises a
+blocking `--More--`. The `F` byte was consumed dismissing that prompt, degrading
+force-fight to a bare move that never strikes a `hides_under` monster — so in
+monster-dense Gehennom the hero bit forever and dealt **zero damage**, stalling
+every deep run at dlvl 48. Fix: prepend `MORE` (13) to drain the prompt first
+(commit `c44dc27`). This unblocks navigating 48 → 49.
+
+## 2. Invocation ritual (floor 5 → 6 = Moloch's Sanctum)
+
+dlvl 49 is NetHack's **Invocation level** — it has **no down-staircase by design**
+(`mkmaze.c` places a maze down-stair only `if (!Invocation_lev)`;
+`Invocation_lev == In_hell && dlevel == num_dunlevs-1`). The only way down to the
+Sanctum (dlvl 50) is the **invocation ritual** on the vibrating square. Implemented
+(commits `ebe854a`, `94caa03`, `2caf7a4`; engine `c7eea07`):
+
+- **Engine hooks:** `nle_grant_invocation_kit` (drops the pre-primed, pre-identified
+  artifacts — Candelabrum of Invocation `spe=7` + lit, Bell of Opening charged,
+  Book of the Dead, all uncursed — via `mksobj`+`addinv`), `nle_invocation_pos`
+  (vibrating-square coords), `nle_seat_on_invocation_square(adjacent)`.
+- **Curriculum:** grant the kit at the DoD3→Gehennom jump; on first arrival at the
+  Invocation level, **auto-seat the hero one tile from the (hidden) vibrating
+  square** (the deep goto_abs mazes are effectively unnavigable to the single
+  hidden square — see §4).
+- **Tools/obs:** new `apply`/`read` primitives (code-mode `nh.apply`/`nh.read`);
+  `--More--` drained before each flushed raw-key action; a `RITUAL READY` obs note
+  gives the exact steps + revealed square coords.
+- **Agent flow:** `move_to(square)` → `apply('bell')` → `read('Book of the Dead')`
+  → wait for the multi-turn recitation → `press_down` → Sanctum.
+
+Verified end-to-end (`outputs/solver/ritual_full_test.py`): the ritual opens the
+stairwell (`mkinvokearea`) and the hero descends to dlvl 50 / `curriculum_floor 6`.
+
+## 3. 10-seed subagent eval (seeds 19–28, started at the deep jump = floor 4)
+
+Ten Claude subagents each played the deep segment via the driver (`--start-deep`,
+floor 4, with the kit). `reached` = max `curriculum_floor`; `max` = deepest the
+seed's Gehennom geometry allows.
+
+| Seed | Reached | Max | Notes |
+|---|:---:|:---:|---|
+| 19 | **6** | 6 | Descended 48→49, ritual flawless → Moloch's Sanctum |
+| 20 | 5 | 6 | Floor-5 maze down-stair walled off by a master-lich/Aleax nest |
+| 21 | 4 | 4 | Short Gehennom — jump lands on its Sanctum (at max) |
+| 22 | 4 | 6 | Boxed in a 10-tile pocket (2 boulders + hostile `f`) — see §4 |
+| 23 | 4 | 6 | Master lich + bone devil (wand of fire) jammed the dlvl-48 corridor |
+| 24 | 4 | 6 | Mind flayer + vrock pack on the path to the stair |
+| 25 | 4 | 6 | Boxed in a **1-tile** pocket (single hostile `f`); searched walls |
+| 26 | **5** | 5 | Auto-seated on its floor-4 Invocation level, ritual → its Sanctum |
+| 27 | 4 | 4 | Short Gehennom — jump lands on its Sanctum (at max) |
+| 28 | 4 | 4 | Short Gehennom — jump lands on its Sanctum (at max) |
+
+**Distribution:** floor 6 ×1, floor 5 ×2, floor 4 ×7. **5/10 reached their seed's
+achievable max.** The **ritual is solid**: every subagent that reached an Invocation
+level and was auto-seated (19, 26) performed it flawlessly — **2/2**.
+
+Per-seed geometry: floor 6 needs the ritual only where the deep segment reaches the
+Sanctum (`deep_hi == geh_max`: seeds 19/23/24; seed 26 needs it for floor 5).
+Seeds 20/22/25 reach the deep floors by *normal* maze descent; 21/27/28 have a short
+Gehennom, so the jump lands directly on their Sanctum (floor 4 = max).
+
+## 4. The floor-4/5 caps are a pathfinder GATE, not disconnection
+
+Subagents reported "disconnected maze / no path to the down-stair." **This is
+false** — manual trace probe (reproduce via `goto_abs(deep_lo)` + grant + modify,
+then compare `reachable_set` vs `a_star(pass_monsters=True)` vs a permissive flood):
+
+- Every dlvl-48 Gehennom maze is **one connected component** (683 / 696 / 572 walk-
+  able tiles), and the down-stair is **always reachable in-game** —
+  `a_star(pass_monsters=True)` always finds a path (length 20–149).
+- The heroes were boxed into tiny pockets — **seed 25 = 1 tile**, seed 22 = 10 —
+  by a **single hostile monster (`f`)** and/or **boulders (`` ` ``)** at the
+  chokepoint.
+- Root cause: `move_to`'s reachability **gate** uses the strict `reachable_set`
+  (`navigation/pathfinding.py`, `_WALKABLE_CHARS` excludes monsters, boulders,
+  traps, water). A blocker at a chokepoint makes the target "unreachable" →
+  `move_to` reports "no route, nearest reachable X" → the subagent concludes
+  "disconnected" and searches walls **instead of attacking the adjacent blocker**.
+  (`move_to` already attacks monsters *on* its planned route — but the gate rejects
+  the target before it plans through the blocker.)
+
+**Recommended fix (next):** plan + gate `move_to` with `pass_monsters` — attack/
+displace weak blockers, push boulders, swap with pets — while still halting on
+dangerous mobs (master lich, mind flayer). This should lift most of seeds
+20/22/23/24/25 from floor 4 to their real achievable max.
+
+## Reproduce (scripts in `outputs/solver/`)
+
+- `ritual_full_test.py` — full flow: jump → auto-seat adjacent → ritual → floor 6.
+- `ritual_test.py` — ritual mechanics (grant kit, seat, bell, book, stairwell).
+- `deep_solver.py` — greedy deep-segment solver (jumps to 48, descends).
+- `harness_step.py` — turn-by-turn driver used by the subagents:
+  `reset --game G --seed N --start-deep`, then `step --game G` with code on stdin
+  (`nh.move_to/attack/apply/read/search/press_down`, `nh.map.rows`).
