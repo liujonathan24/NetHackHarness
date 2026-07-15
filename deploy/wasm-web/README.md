@@ -1,19 +1,20 @@
 # NetHack in the browser (WebAssembly)
 
-This directory is a **self-contained static site** that runs the NetHack Learning
-Environment engine entirely **client-side in the visitor's browser** — no server,
-no hosted runtime. Each visitor's browser downloads the WASM module and runs the
-whole game locally in their own tab.
+This directory is a **self-contained static site** that runs the NetHack web
+console (the local Flask app's Map Viewer) entirely **client-side in the visitor's
+browser** — no server, no hosted runtime. It's the same UI (`console.js`/`console.css`,
+unchanged) driven by a `fetch()` shim (`console_backend.js`) over the WASM engine.
 
 ## What's here
 
-| File | Size | Purpose |
-|------|------|---------|
-| `index.html` | 5 KB | the page (renders the TTY, handles keys, curriculum selector) |
-| `nethack.js` | 83 KB | Emscripten JS loader/glue |
-| `nethack.wasm` | 3.7 MB | the NLE engine compiled to WebAssembly |
-| `nethack.data` | 1.2 MB | preloaded NetHack data files (`nhdat`, dungeon, `.lev`) |
-| `nethack_web.js` | 5 KB | the `NetHackGame` driver (reset / step / render / `gotoFloor`) |
+| File | Purpose |
+|------|---------|
+| `index.html` | the Map Viewer page (screen, grouped difficulty knobs, modify panel, undo/checkpoint, six-level curriculum toggle) |
+| `console.js` / `console.css` | the local web console's client + styles, used **unchanged** |
+| `console_backend.js` | client-side backend: a `fetch()` shim implementing the console's JSON API (`/catalog` `/reset` `/step` `/live` `/undo` `/mark` `/modify`) over the engine |
+| `nethack.js` | Emscripten JS loader/glue |
+| `nethack.wasm` | the NLE engine compiled to WebAssembly (~3.7 MB) |
+| `nethack.data` | preloaded NetHack data files |
 
 Total ~5 MB, downloaded once and cached by the browser.
 
