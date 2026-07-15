@@ -160,6 +160,12 @@ class CurriculumPrimitivesEnv(NetHackCoreEnv):
                     self._engine.grant_invocation_kit()
                     stats = self._sample_upgrade()
                     obs = self.modify(**stats)  # NetHackCoreEnv.modify updates last_obs
+                    if self.on_invocation_level(obs):
+                        # Rare seeds where deep_lo IS the Invocation level: the jump
+                        # lands here directly, so seat adjacent to the square now.
+                        obs = self._engine.seat_on_invocation_square(adjacent=True)
+                        self._last_observation = obs
+                        self._was_on_invocation = True
                     reward = self._reward_model.step(obs)
                     return obs, reward, bool(self._engine.done), False, {
                         "curriculum": "jump_down", "to_depth": self._deep_lo,
