@@ -29,6 +29,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+        # enablement: turn Pages on (GitHub Actions build type) via the API if it
+        # isn't already, so the very first run can't fail with "Get Pages site
+        # failed ... Not Found" (the enable-before-read chicken-and-egg).
+        with:
+          enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
           path: deploy/wasm-web
