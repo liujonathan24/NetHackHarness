@@ -12,7 +12,7 @@ REPO="$(cd "$HERE/../.." && pwd)"
 SRC="$REPO/third_party/NetHack/src"
 BW="$SRC/build-wasm"
 
-EXP='["_nleweb_new_obs","_nleweb_tty_chars","_nleweb_tty_colors","_nleweb_chars","_nleweb_colors","_nleweb_glyphs","_nleweb_blstats","_nleweb_message","_nleweb_misc","_nleweb_done","_nleweb_in_game","_nleweb_rows","_nleweb_cols","_nleweb_tty_rows","_nleweb_tty_cols","_nleweb_blstats_size","_nleweb_start","_nleweb_step","_nleweb_ctx","_nleweb_goto_abs","_nleweb_hero_on_stair","_nleweb_num_dungeons","_nleweb_dungeon_info","_nleweb_tune_count","_nleweb_tune_name","_nleweb_set_tune","_nleweb_clear_tune","_nleweb_get_tune","_nleweb_live_tune","_nleweb_set_state","_nleweb_goto_depth","_nleweb_seat_on_stair","_nleweb_level_up","_nle_end","_malloc","_free"]'
+EXP='["_nleweb_new_obs","_nleweb_tty_chars","_nleweb_tty_colors","_nleweb_chars","_nleweb_colors","_nleweb_glyphs","_nleweb_blstats","_nleweb_message","_nleweb_misc","_nleweb_done","_nleweb_in_game","_nleweb_rows","_nleweb_cols","_nleweb_tty_rows","_nleweb_tty_cols","_nleweb_blstats_size","_nleweb_start","_nleweb_step","_nleweb_ctx","_nleweb_goto_abs","_nleweb_hero_on_stair","_nleweb_num_dungeons","_nleweb_dungeon_info","_nleweb_tune_count","_nleweb_tune_name","_nleweb_set_tune","_nleweb_clear_tune","_nleweb_get_tune","_nleweb_live_tune","_nleweb_set_state","_nleweb_goto_depth","_nleweb_seat_on_stair","_nleweb_level_up","_nleweb_inv_strs","_nleweb_inv_letters","_nleweb_inv_oclasses","_nleweb_inv_size","_nleweb_inv_str_len","_nle_end","_malloc","_free"]'
 
 cd "$BW"
 # Fixed 256 MB (NO ALLOW_MEMORY_GROWTH): a growable wasm memory is backed by a

@@ -66,7 +66,7 @@ app = Flask(
     static_folder=str(_WEB / "static"),
 )
 STATE: dict = {"env": None, "mode": "standard", "seed": 42, "tune": {}, "rec": None, "turn": 0,
-               "ckpt_dlvl": None, "ckpt_path": None, "resumed": False,
+               "ckpt_dlvl": None, "ckpt_path": None, "resumed": False, "quiet_tty": None,
                # "started" is True only after a /reset or /resume actually starts
                # a game. The env alone isn't enough: /catalog lazily constructs an
                # (unstarted) env to read the knob list, and calling engine ops on
@@ -262,7 +262,8 @@ def _payload(obs) -> dict:
            "tune": _env().get_tune(), "done": bool(obs is not None and _env().done),
            "recording": STATE["rec"]["name"] if STATE["rec"] else None,
            "undos": len(STATE["history"]), "marked": STATE["mark"] is not None,
-           "mode": STATE["mode"]}
+           "mode": STATE["mode"],
+           "popup": _popup(obs), "inventory": _inventory(obs)}
     if STATE["mode"] == "curriculum":
         try:
             fl = int(_env().curriculum_floor(obs))
@@ -412,17 +413,121 @@ def _settle(env, obs, max_iter=12):
     change, which otherwise leaves the new floor half-drawn until the user
     presses a key). Mimics auto-pressing escape. NEVER auto-answers a real
     question: only acts when waiting-for-space is set and no yn/getlin prompt is
-    active (obs.misc = [in_yn_function, in_getlin, waitingforspace])."""
+    active (obs.misc = [in_yn_function, in_getlin, waitingforspace]).
+
+    A MENU also sets waiting-for-space, so that flag alone cannot tell a
+    ``--More--`` from an inventory/pickup/drop list the user still has to answer
+    -- ESCing on the flag tore every menu down before it could be seen. A real
+    ``--More--`` always writes that literal marker onto the top tty row, so use
+    that as the discriminator."""
     for _ in range(max_iter):
         misc = getattr(obs, "misc", None)
         if misc is None:
             break
         in_yn, in_getlin, waiting = int(misc[0]), int(misc[1]), int(misc[2])
-        if waiting and not in_yn and not in_getlin:
+        if waiting and not in_yn and not in_getlin and "--More--" in _tty_row(obs, 0):
             obs, _, _ = env.step(27)  # ESC flushes the --More-- queue
         else:
             break
     return obs
+
+
+def _tty_row(obs, y: int) -> str:
+    """One row of the 24x80 terminal as text (menus/prompts live here, not on
+    the 21x79 dungeon map)."""
+    tty = getattr(obs, "tty_chars", None)
+    if tty is None:
+        return ""
+    return bytes(int(c) for c in tty[y]).decode("latin1", "replace")
+
+
+def _prompting(obs) -> bool:
+    """True while the engine is showing something the user must answer or read
+    (yn/getlin prompt, or a menu) -- but not a bare ``--More--``, which settles."""
+    misc = getattr(obs, "misc", None)
+    if misc is None:
+        return False
+    in_yn, in_getlin, waiting = int(misc[0]), int(misc[1]), int(misc[2])
+    return bool(in_yn or in_getlin or (waiting and "--More--" not in _tty_row(obs, 0)))
+
+
+def _popup(obs):
+    """The prompt/menu the engine is showing, scraped off the tty, or None when
+    nothing is pending.
+
+    A menu is drawn as an overlay ON TOP of whatever the terminal already held,
+    so simply taking the non-blank rows also drags in the background underneath
+    (e.g. the startup splash to the left of a right-hand menu). Diff against the
+    last settled frame instead: the cells that changed are the popup."""
+    now = [_tty_row(obs, y) for y in range(24)]
+    if not _prompting(obs):
+        STATE["quiet_tty"] = now
+        return None
+    prev = STATE.get("quiet_tty") or [""] * 24
+
+    def diff(y, x):
+        base = prev[y] if y < len(prev) else ""
+        return now[y][x] != (base[x] if x < len(base) else " ")
+
+    # Two passes. Columns come from rows 1..23 only, because tty row 0 is
+    # NetHack's message line: it changes on every command and would stretch the
+    # box to full width, dragging the background back in. Rows are then taken
+    # over the whole screen but restricted to those columns, so a menu that
+    # overlays row 0 (its first group header often does) is still included.
+    c0, c1 = 80, -1
+    for y in range(1, 24):
+        for x in range(len(now[y])):
+            if diff(y, x):
+                c0, c1 = min(c0, x), max(c1, x)
+    if c1 < 0:  # nothing changed below the message line -- no popup
+        return None
+    r0, r1 = 24, -1
+    for y in range(24):
+        for x in range(c0, min(c1 + 1, len(now[y]))):
+            if diff(y, x):
+                r0, r1 = min(r0, y), max(r1, y)
+                break
+    if r1 < 0:
+        return None
+    box = [now[y][c0:c1 + 1].rstrip() for y in range(r0, r1 + 1)]
+    while box and not box[0]:
+        box.pop(0)
+    while box and not box[-1]:
+        box.pop()
+    return box or None
+
+
+# NetHack object classes (objclass.h), in the engine's own ordering.
+_OCLASS_NAMES = {2: "Weapons", 3: "Armor", 4: "Rings", 5: "Amulets", 6: "Tools",
+                 7: "Food", 8: "Potions", 9: "Scrolls", 10: "Spellbooks",
+                 11: "Wands", 12: "Coins", 13: "Gems", 14: "Rocks", 15: "Balls",
+                 16: "Chains", 17: "Venom"}
+
+
+def _inventory(obs):
+    """Carried inventory grouped by object class. The rl window port refreshes
+    inv_* every turn by walking ``invent`` directly -- deliberately, so the
+    inventory never has to be popped up as a menu to be read -- so this is a
+    passive read with nothing to open or dismiss."""
+    strs = getattr(obs, "inv_strs", None)
+    lets = getattr(obs, "inv_letters", None)
+    clss = getattr(obs, "inv_oclasses", None)
+    if strs is None or lets is None:
+        return []
+    groups, by_cls = [], {}
+    for i, raw_let in enumerate(lets):
+        letter = int(raw_let)
+        if not letter:  # slots are packed; a 0 letter ends the list
+            break
+        text = bytes(int(c) for c in strs[i]).split(b"\x00")[0].decode("latin1", "replace")
+        cls = int(clss[i]) if clss is not None else 0
+        name = _OCLASS_NAMES.get(cls, "Other")
+        if name not in by_cls:
+            by_cls[name] = {"name": name, "cls": cls, "items": []}
+            groups.append(by_cls[name])
+        by_cls[name]["items"].append({"letter": chr(letter), "text": text})
+    groups.sort(key=lambda g: g["cls"])
+    return groups
 
 
 @app.route("/curriculum/goto", methods=["POST"])

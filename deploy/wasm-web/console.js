@@ -109,6 +109,35 @@ function syncControl(name,val){const m=META[name]; if(!m)return;
   if(m.kind==='bool'){const c=document.getElementById('k_'+name); if(c)c.checked=val>=0.5;}
   else {const r=document.getElementById('k_'+name), n=document.getElementById('n_'+name);
         if(r)r.value=val; if(n)n.value=(+val).toFixed(m.kind==='int'?0:2);}}
+/* The popup box: NetHack draws menus and prompts (inventory pick-lists, drop
+   selection, the # command list, yn questions, the death screen) on the tty
+   surface, not on the 21x79 dungeon map — so without this they were invisible,
+   and the page looked frozen while the engine waited for an answer. The backend
+   sends `popup` as an array of terminal lines while something is pending, and
+   null otherwise. Keyboard focus stays on the game screen, so the keys that
+   answer the menu go straight to the engine. */
+function renderPopup(lines){
+  const box=document.getElementById('popup'); if(!box)return;
+  if(!lines||!lines.length){ box.hidden=true; box.textContent=''; return; }
+  box.hidden=false;
+  box.textContent=lines.join('\n');
+}
+/* The inventory box: always visible, refreshed every turn. This never presses
+   `i` — the engine keeps the carried inventory up to date on its own, so this
+   is a passive read with no menu to open or dismiss. Grouped by object class
+   in NetHack's own class order. */
+function renderInventory(groups){
+  const box=document.getElementById('inv'); if(!box)return;
+  if(!groups||!groups.length){ box.innerHTML='<div class="invempty">carrying nothing</div>'; return; }
+  let h='';
+  groups.forEach(g=>{
+    h+='<div class="invgrp">'+escHtml(g.name)+'</div>';
+    g.items.forEach(it=>{
+      h+='<div class="invitem"><span class="invlet">'+escHtml(it.letter)+'</span> '+escHtml(it.text)+'</div>';
+    });
+  });
+  box.innerHTML=h;
+}
 function apply(d){
   if(!d||d.error||!d.map){const m=document.getElementById('message');
     if(m)m.textContent=(d&&d.error)?('⚠ '+d.error):'⚠ no response from engine';
@@ -134,6 +163,8 @@ function apply(d){
   syncRec(!!d.recording);
   syncUndo(d.undos);
   syncMark(d.marked);
+  renderPopup(d.popup);
+  renderInventory(d.inventory);
   if(d.mode){ curMode=d.mode; syncModeUI(); }
   const cf=document.getElementById('currfloor');
   if(cf){
