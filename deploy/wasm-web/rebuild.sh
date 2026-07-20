@@ -25,9 +25,20 @@ emcc -O2 -sASYNCIFY -sASYNCIFY_STACK_SIZE=8388608 \
   -sEXPORTED_FUNCTIONS="$EXP" \
   --preload-file dat@/nethackdir obj/*.o -o "$HERE/nethack.js"
 
-# Static page + client-side backend shim (from the fork) ...
-cp "$SRC/web/index.html" "$SRC/web/console_backend.js" "$HERE/"
-# ... and the UNCHANGED local-app UI assets (from the harness webconsole).
+# Map Viewer page + client-side backend shim (from the fork) ...
+cp "$SRC/web/play.html" "$SRC/web/console_backend.js" "$HERE/"
+# ... and the UNCHANGED local-app UI assets (from the harness webconsole). The
+# three static pages add only NEW selectors, kept in console.extra.css, so these
+# two files stay byte-identical to the Flask console's and this cp is safe.
 cp "$REPO/tools/webconsole/static/console.js" "$REPO/tools/webconsole/static/console.css" "$HERE/"
+
+# Recorded agent trials -> static JSON for the Replays page. TRIALS_ROOT holds one
+# directory per trial (<agent>_seed<N>_<OK|FAIL>_dlvl<D>/*.ndjson).
+if [ -n "${TRIALS_ROOT:-}" ]; then
+  (cd "$REPO" && python3 tools/export_trials.py --root "$TRIALS_ROOT" --out "$HERE/trials")
+else
+  echo "note: TRIALS_ROOT unset — keeping the committed $HERE/trials as-is"
+fi
+
 echo "release bundle refreshed in $HERE"
-ls -la "$HERE"/*.wasm "$HERE"/*.data "$HERE"/*.js "$HERE"/*.css
+ls -la "$HERE"/*.wasm "$HERE"/*.data "$HERE"/*.js "$HERE"/*.css "$HERE"/*.html
