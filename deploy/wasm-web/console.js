@@ -98,6 +98,21 @@ function initGifToggle(){
 
 /* ---------- knob + play machinery (map page) ---------- */
 const KEYMAP={'ArrowUp':'k','ArrowDown':'j','ArrowLeft':'h','ArrowRight':'l','Enter':'\r','Escape':'\x1b'};
+/* Ctrl chords NetHack binds that are safe for a web page to claim:
+   ^A again, ^D kick, ^H erase-char (text prompts), ^O overview, ^P prevmsg,
+   ^T teleport, ^U kill-line (text prompts), ^X attributes.
+   Deliberately NOT claimed: ^C ^V ^R ^L ^F ^Z (copy/paste/reload/find/undo) and
+   ^W (closes the tab). */
+const CTRLKEYS='adhoptux';
+/* `i` is intercepted rather than sent — point the user at the always-on panel. */
+function flashInventory(){
+  const box=document.getElementById('invbox'); if(!box)return;
+  box.open=true;
+  box.scrollIntoView({block:'nearest'});
+  box.classList.remove('flash');
+  void box.offsetWidth;            // restart the animation if it is still running
+  box.classList.add('flash');
+}
 let curTune={}, META={};
 let curMode='standard';  // 'standard' | 'curriculum' (map page env mode)
 
@@ -337,15 +352,31 @@ function initMap(){
   // types on the screen while the page is still loading.
   let _ready=false;
   document.getElementById('screen').addEventListener('keydown',e=>{
-    // Let browser/OS shortcuts through (Ctrl/Cmd+C copy, Ctrl/Cmd+R reload,
-    // paste, devtools, ...). The single-char path would otherwise swallow the
-    // bare letter and preventDefault the shortcut — and it never produced a real
-    // NetHack control code anyway.
-    if(e.ctrlKey||e.metaKey||e.altKey) return;
+    // Alt/Cmd chords stay with the browser/OS.
+    if(e.metaKey||e.altKey) return;
+    // Ctrl chords: forward only the ones NetHack actually binds, as the real
+    // control byte. Everything else (Ctrl+C/V/R/L/F copy, paste, reload, find)
+    // must keep working, so it is left to the browser. Previously ALL Ctrl
+    // chords returned early, which made every control command — Ctrl-D kick
+    // included — unreachable.
+    if(e.ctrlKey){
+      const k=e.key.length===1?e.key.toLowerCase():'';
+      if(!k||CTRLKEYS.indexOf(k)<0) return;   // not ours — browser shortcut
+      e.preventDefault();
+      if(!_ready) return;
+      const cc=String.fromCharCode(k.charCodeAt(0)-96);
+      engineCall(()=>post('/step',{keys:cc}).then(apply));
+      return;}
     // Backspace = undo the last step (also prevents the browser's "back" nav).
     if(e.key==='Backspace'){ e.preventDefault(); if(_ready) doUndo(); return; }
     let ch=KEYMAP[e.key]; if(!ch&&e.key.length===1)ch=e.key; if(!ch)return; e.preventDefault();
     if(!_ready) return;  // game not started yet — ignore the keystroke
+    // `i` is swallowed: the inventory is permanently on screen and refreshed
+    // every turn, so opening NetHack's inventory MENU would only duplicate it —
+    // and that menu is an overlay whose captured box shifts as it is reopened.
+    // Draw attention to the panel instead. (`I` still works; it is a different
+    // command that asks which subset to list.)
+    if(ch==='i'){ flashInventory(); return; }
     engineCall(()=>post('/step',{keys:ch}).then(apply));});
   // Enter to apply, matching type-then-Enter expectations: in the seed box it
   // regenerates; in a modify-panel number field it triggers that row's button.

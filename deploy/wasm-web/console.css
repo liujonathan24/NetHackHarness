@@ -350,3 +350,19 @@ main[tabindex="-1"]:focus{outline:none}
 #inv .invitem{color:var(--ink);white-space:normal;overflow-wrap:anywhere}
 #inv .invlet{color:var(--stairs);display:inline-block;min-width:1.2em}
 #inv .invempty{color:var(--ink-faint)}
+
+/* key reference under the inventory + the `i` attention flash */
+#hint .keys{border-collapse:collapse;margin:6px 0 4px}
+#hint .keys td{padding:1px 10px 1px 0;vertical-align:top;color:var(--ink-dim)}
+#hint .keys td:first-child{white-space:nowrap;color:var(--ink)}
+#hint kbd{
+  font:inherit;font-size:11px;background:#10111a;color:var(--stairs);
+  border:1px solid var(--ctl-border);border-radius:3px;padding:0 4px;margin-right:2px;
+}
+#hint .khint{display:block;margin-top:4px;color:var(--ink-faint)}
+#invbox.flash{animation:invflash 1s ease-out}
+@keyframes invflash{
+  0%{border-color:var(--hero);box-shadow:0 0 0 2px rgba(255,224,138,.35)}
+  100%{border-color:var(--line);box-shadow:none}
+}
+@media (prefers-reduced-motion: reduce){ #invbox.flash{animation:none} }
