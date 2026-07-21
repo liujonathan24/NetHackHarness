@@ -31,7 +31,7 @@ import numpy as np
 
 from nethack_core import actions as nethack
 
-from nethack_core.env import CoreObservation
+from nethack_core import CoreObservation
 
 
 # ---------- walkability ----------

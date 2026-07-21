@@ -1,5 +1,5 @@
 from nethack_core import _engine
-from nethack_core.env import CoreObservation
+from nethack_core import CoreObservation
 
 
 def test_binding_builds_core_observation():

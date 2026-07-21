@@ -15,7 +15,7 @@ class Observation:
 
     @classmethod
     def from_raw(cls, raw_obs, *, status, inventory, character):
-        from nethack_core.map_model import build_map_model
+        from nethack_core import build_map_model
         m = build_map_model(raw_obs)
         return cls(player=m.player, entities=m.entities, grid=m.grid,
                    status=dict(status or {}), inventory=list(inventory or []),

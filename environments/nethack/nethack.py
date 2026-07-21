@@ -17,9 +17,9 @@ from typing import Any, Optional
 import verifiers as vf
 from datasets import Dataset
 
-from nethack_core.env import NetHackCoreEnv
+from nethack_core import NetHackCoreEnv
 from nethack_harness.memory.journal import Journal
-from nethack_core.observations import shape as shape_observation
+from nethack_core import shape as shape_observation
 from nethack_harness.tools.skills import registry as skill_registry, list_skills
 from nethack_harness.curriculum.curriculum import get_tier, list_tiers, TierName
 
@@ -347,7 +347,7 @@ class NetHackVerifiersEnv(vf.StatefulToolEnv):
             # full vision, and the 1-3 <-> 48-50 <-> planes jump ordering. Owns
             # its own character/vision defaults; the descend/ascend skills drive
             # the cross-branch jumps.
-            from nethack_core.curriculum_env import CurriculumEnv
+            from nethack_core import CurriculumEnv
             env = CurriculumEnv(max_episode_steps=spec.max_episode_steps)
         else:
             env = NetHackCoreEnv(

@@ -34,7 +34,7 @@ from dataclasses import dataclass, field
 _ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "environments" / "nethack"))
 
-from nethack_core.curriculum_engine_env import CurriculumEngineEnv  # noqa: E402
+from nethack_core import CurriculumEngineEnv  # noqa: E402
 
 # Real game primitives only. Compass single-steps, a "run" in each compass
 # direction (repeat the real move until blocked — what a human does holding the

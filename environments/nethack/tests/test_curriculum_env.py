@@ -11,10 +11,10 @@ sys.path.insert(
 import numpy as np
 import pytest
 
-from nethack_core.actions import MiscDirection
-from nethack_core.curriculum_env import CurriculumEnv
-from nethack_core.curriculum_upgrade import ValkyrieUpgradeModel
-from nethack_core.observations import BLSTATS_IDX
+from nethack_core import MiscDirection
+from nethack_core import CurriculumEnv
+from nethack_core import ValkyrieUpgradeModel
+from nethack_core import BLSTATS_IDX
 
 DOWN = int(MiscDirection.DOWN)
 UP = int(MiscDirection.UP)
@@ -95,7 +95,7 @@ def test_deepest_descent_is_noop():
 def test_skill_registry_drives_curriculum():
     """The existing descend/ascend skills (what Go-Explore/Voyager call) drive
     the curriculum jumps — no stair navigation required in the curriculum env."""
-    from nethack_core.observations import shape as shape_observation
+    from nethack_core import shape as shape_observation
     from nethack_harness.tools.skills import registry
 
     env = CurriculumEnv()

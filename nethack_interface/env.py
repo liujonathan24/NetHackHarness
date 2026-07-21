@@ -14,7 +14,7 @@ class NetHackInterface:
         self._structured = None
 
     def _shape(self) -> Observation:
-        from nethack_core.observations import shape as shape_observation
+        from nethack_core import shape as shape_observation
 
         self._structured = shape_observation(self._raw, self._character)
         return Observation.from_raw(

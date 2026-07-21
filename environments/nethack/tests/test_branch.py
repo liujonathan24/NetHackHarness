@@ -12,7 +12,7 @@ diverge, restore-without-reseed replays identically.
 import pathlib, sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "environments" / "nethack"))
-from nethack_core.engine_env import EngineEnv
+from nethack_core import EngineEnv
 
 
 def test_branch_diverges_with_reseed():

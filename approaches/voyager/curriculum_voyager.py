@@ -36,8 +36,8 @@ import numpy as np
 _ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "environments" / "nethack"))
 
-from nethack_core.curriculum_engine_env import CurriculumEngineEnv  # noqa: E402
-from nethack_core.glyphs import (  # noqa: E402
+from nethack_core import CurriculumEngineEnv  # noqa: E402
+from nethack_core import (  # noqa: E402
     CMAP_CLOSED_DOOR_INDICES, GLYPH_CMAP_OFF, cmap_clean_char_lut, glyph_is_cmap,
     glyph_is_monster, glyph_is_object,
 )

@@ -30,7 +30,7 @@ from pathlib import Path
 # usable from a fresh clone.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from nethack_core.env import NetHackCoreEnv
+from nethack_core import NetHackCoreEnv
 from nethack_harness.memory.journal import Journal
 from legacy.replay import TrajectoryRecorder
 from nethack_harness.tools.skills import autoexplore, bootstrap_character

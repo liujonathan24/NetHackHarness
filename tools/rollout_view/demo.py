@@ -30,7 +30,7 @@ def _scripted_actions(n: int):
 
 def generate_demo_run(variant: str, *, steps: int = 8, seed: int = 7,
                       out_root="environments/nethack/outputs/evals") -> Path:
-    from nethack_core.env import NetHackCoreEnv
+    from nethack_core import NetHackCoreEnv
     from nethack_interface import NetHackInterface
     from nethack_harness.helpers import _capture_user_content
     from tools.rollout_view.live_server import LiveStepper

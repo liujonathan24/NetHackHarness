@@ -4,9 +4,9 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "environmen
 
 import numpy as np
 
-from nethack_core.observations import BLSTATS_IDX
-from nethack_core.rewards import ScoreDepthXPReward, DeltaReward
-from nethack_core.env import NetHackCoreEnv
+from nethack_core import BLSTATS_IDX
+from nethack_core import ScoreDepthXPReward, DeltaReward
+from nethack_core import NetHackCoreEnv
 
 
 class _FakeObs:

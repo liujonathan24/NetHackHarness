@@ -177,7 +177,7 @@ def _structured_map_template(fmt):
     """
 
     def _render(structured, journal, state, *, compact, journal_max_chars):
-        from nethack_core.map_model import build_map_model
+        from nethack_core import build_map_model
         from nethack_harness.prompt.map_encoders import json_encode, toon_encode
 
         detail = state.get("map_detail", "full")

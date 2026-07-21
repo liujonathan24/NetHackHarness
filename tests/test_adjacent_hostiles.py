@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from nethack_core.observations import (
+from nethack_core import (
     extract_adjacent,
     extract_hostiles_in_sight,
     extract_under_player,

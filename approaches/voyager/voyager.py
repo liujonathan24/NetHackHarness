@@ -53,8 +53,8 @@ from typing import Any, Optional, Protocol
 
 # These imports require PYTHONPATH to include the repo root and the nethack env:
 #   PYTHONPATH="$PWD:$PWD/environments/nethack"
-from nethack_core.env import NetHackCoreEnv
-from nethack_core.observations import shape as shape_observation
+from nethack_core import NetHackCoreEnv
+from nethack_core import shape as shape_observation
 from nethack_harness.refiner import MacroStep
 from nethack_harness.tools.skills import (
     bootstrap_character,
