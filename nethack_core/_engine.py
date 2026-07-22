@@ -372,6 +372,19 @@ class RawEngine:
         lib.nle_goto_abs.restype = ctypes.c_int
         lib.nle_hero_on_stair.argtypes = [ctypes.c_void_p]
         lib.nle_hero_on_stair.restype = ctypes.c_int
+        # Curriculum invocation ritual: grant the pre-primed artifact kit into the
+        # hero's pack, and read the vibrating-square coords. Neither is two-phase
+        # (grant mutates invent in place; pos is a pure read) — see wrappers below.
+        lib.nle_grant_invocation_kit.argtypes = [ctypes.c_void_p]
+        lib.nle_grant_invocation_kit.restype = ctypes.c_int
+        lib.nle_invocation_pos.argtypes = [
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_int),
+            ctypes.POINTER(ctypes.c_int),
+        ]
+        lib.nle_invocation_pos.restype = ctypes.c_int
+        lib.nle_seat_on_invocation_square.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        lib.nle_seat_on_invocation_square.restype = ctypes.c_int
         lib.nle_num_dungeons.argtypes = [ctypes.c_void_p]
         lib.nle_num_dungeons.restype = ctypes.c_int
         lib.nle_dungeon_info.argtypes = [
@@ -839,6 +852,54 @@ class RawEngine:
         if self._ctx is None:
             raise RuntimeError("hero_on_stair() requires an active game; call start() first")
         return int(self._lib.nle_hero_on_stair(self._ctx))
+
+    def grant_invocation_kit(self) -> "RawEngine":
+        """Drop the pre-primed invocation kit (lit 7-candle Candelabrum, charged
+        Bell of Opening, Book of the Dead — all uncursed) into the hero's pack.
+
+        Used by the primitives curriculum at the DoD3->Gehennom jump so the agent
+        can perform the invocation ritual (the only descent from the Invocation
+        level to Moloch's Sanctum). Unlike the goto_* hooks this is NOT two-phase
+        — it mutates ``invent`` in place — but we send one ctrl-R (redraw, no game
+        turn) so the inventory/blstats re-render for the caller.
+        """
+        if self._ctx is None:
+            raise RuntimeError("grant_invocation_kit() requires an active game; call start() first")
+        self._lib.nle_grant_invocation_kit(self._ctx)
+        self.step(18)  # ctrl-R: redraw only, consumes no game turn
+        return self
+
+    def invocation_pos(self):
+        """(x, y) of the vibrating square on the Invocation level, else None.
+
+        x is the column, y the row (same convention as glyphs/chars indexing and
+        the move_to target), so callers can navigate the hero straight onto it.
+        """
+        if self._ctx is None:
+            raise RuntimeError("invocation_pos() requires an active game; call start() first")
+        x = ctypes.c_int(0)
+        y = ctypes.c_int(0)
+        rc = self._lib.nle_invocation_pos(self._ctx, ctypes.byref(x), ctypes.byref(y))
+        if rc != 0:
+            return None
+        # The C side returns NetHack game coords (u.ux system, 1-based columns).
+        # The observation arrays (chars/glyphs) and blstats drop game column 0, so
+        # array_x == game_x - 1 (array_y == game_y). Return in the array/move_to
+        # convention the rest of the harness uses. Verified: seating the hero on
+        # game (7,16) reports blstats (6,16).
+        return (int(x.value) - 1, int(y.value))
+
+    def seat_on_invocation_square(self, adjacent: bool = True) -> "RawEngine":
+        """Stage the hero at the vibrating (invocation) square. adjacent=True (the
+        default) lands the hero on an accessible tile NEXT to the square so the
+        agent steps onto it honestly; adjacent=False lands on the square. Two-phase
+        like the other seat/goto hooks: we step one ctrl-R redraw so the new hero
+        position renders. No-op-safe off the Invocation level."""
+        if self._ctx is None:
+            raise RuntimeError("seat_on_invocation_square() requires an active game; call start() first")
+        self._lib.nle_seat_on_invocation_square(self._ctx, 1 if adjacent else 0)
+        self.step(18)  # ctrl-R redraw
+        return self
 
     def dungeon_table(self) -> list:
         """Return the dungeon-branch layout as a list of dicts.
