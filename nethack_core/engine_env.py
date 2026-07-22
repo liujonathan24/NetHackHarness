@@ -86,6 +86,13 @@ class EngineEnv:
         "int": (3, 25),
         "wis": (3, 25),
         "cha": (3, 25),
+        # Luck: intrinsic u.uluck. Vanilla intrinsic luck is bounded -10..10
+        # (LUCKMIN..LUCKMAX); the max *effective* luck (Luck = u.uluck +
+        # moreluck) with a luck stone is +13, so we allow -13..13 here to let
+        # the "better items / luck" ablation reach full effective range without
+        # a luck stone. Routed to the C nle_set_state("luck", n) case, which
+        # applies the same clamp. Luck feeds to-hit, prayer, theft, drop rolls.
+        "luck": (-13, 13),
     }
 
     def __init__(self, modify: Optional[dict] = None) -> None:
