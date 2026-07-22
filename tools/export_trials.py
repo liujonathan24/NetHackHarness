@@ -88,13 +88,33 @@ def _max_dlvl(turns: list, recs: list) -> int:
     return max(vals) if vals else 1
 
 
-def export(root: Path, out: Path) -> list:
+def _parse_only(spec):
+    """--only value -> a set of run-dir names to keep, or None for "all"."""
+    if not spec:
+        return None
+    if spec.startswith("@"):
+        text = Path(spec[1:]).read_text()
+        names = [ln.split("#", 1)[0].strip() for ln in text.splitlines()]
+    else:
+        names = spec.split(",")
+    keep = {n.strip() for n in names if n.strip()}
+    return keep or None
+
+
+def export(root: Path, out: Path, keep=None) -> list:
     run_dirs = discover_runs(root)
     if not run_dirs:
         raise SystemExit(f"no *.ndjson run directories under {root}")
     if out.exists():
         shutil.rmtree(out)
     out.mkdir(parents=True)
+
+    if keep is not None:
+        names = {d.name for d in run_dirs}
+        missing = keep - names
+        if missing:
+            raise SystemExit(f"--only names not found under {root}: {sorted(missing)}")
+        run_dirs = [d for d in run_dirs if d.name in keep]
 
     index = []
     for d in sorted(run_dirs, key=lambda p: p.name):
@@ -138,8 +158,13 @@ def main(argv=None) -> int:
                     help="directory containing one sub-directory per trial")
     ap.add_argument("--out", type=Path, default=Path("deploy/wasm-web/trials"),
                     help="output directory (default: deploy/wasm-web/trials)")
+    ap.add_argument("--only",
+                    help="export just these trials: a comma-separated list of run-dir "
+                         "names, or @path to read one name per line (blank lines and "
+                         "# comments ignored). See the output dir's README.md.")
     a = ap.parse_args(argv)
-    index = export(a.root.resolve(), a.out.resolve())
+    keep = _parse_only(a.only)
+    index = export(a.root.resolve(), a.out.resolve(), keep)
     total = sum((a.out / f"{m['id']}.json").stat().st_size for m in index)
     print(f"wrote {len(index)} trials + index.json to {a.out} ({total / 1024:.0f} KB)")
     return 0
