@@ -30,7 +30,7 @@ _ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "environments" / "nethack"))
 sys.path.insert(0, str(_ROOT / "approaches" / "voyager"))
 
-from nethack_core.curriculum_engine_env import CurriculumEngineEnv  # noqa: E402
+from nethack_core import CurriculumEngineEnv  # noqa: E402
 # Reuse the faithful LLM action helpers (move_to via A*, real stairs, render).
 import curriculum_voyager as V  # noqa: E402
 

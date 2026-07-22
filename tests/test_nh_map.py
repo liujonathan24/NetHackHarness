@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from nethack_core.map_model import MapModel, Entity
+from nethack_core import MapModel, Entity
 from nethack_harness.tools.code_mode import MapView
 
 

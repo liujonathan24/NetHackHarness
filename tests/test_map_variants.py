@@ -20,7 +20,7 @@ class _Obs:
 def _structured():
     # Minimal StructuredObservation-like object the template's status/inventory
     # rendering tolerates; reuse the tests/conftest make_structured_obs if present.
-    from nethack_core.observations import StructuredObservation
+    from nethack_core import StructuredObservation
     return StructuredObservation(map_view="", messages=[], inventory=[],
                                  status={"hitpoints": 10, "depth": 1}, character={})
 

@@ -16,9 +16,9 @@ sys.path.insert(
 import numpy as np
 import pytest
 
-from nethack_core.engine_env import EngineEnv
-from nethack_core.env import NetHackCoreEnv
-from nethack_core.observations import BLSTATS_IDX
+from nethack_core import EngineEnv
+from nethack_core import NetHackCoreEnv
+from nethack_core import BLSTATS_IDX
 
 CURRICULUM_SEED = 19  # Gehennom reaches absolute depth 50 at this seed.
 

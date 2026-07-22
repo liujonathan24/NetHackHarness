@@ -1,9 +1,17 @@
-"""Thin typed wrapper over NetHackCoreEnv. Typed actions execute via the existing
-skill dispatch (behavioral parity with the harness); RawAction via env.step(int)."""
+"""Thin typed wrapper over NetHackCoreEnv (raw substrate).
+
+``reset()`` yields a typed :class:`Observation`; ``step()`` takes a
+:class:`RawAction` (or a bare int) and steps the engine directly. This class has
+**no** dependency on the Hub.
+
+The typed ``Action``/skill-dispatch path lives in the Hub
+(``nethack_harness.interface.TypedNetHackInterface`` subclasses this and adds an
+``Action`` branch to ``step``), because it needs the Hub's skill registry.
+"""
 from __future__ import annotations
 
 from nethack_interface.observation import Observation
-from nethack_interface.actions import Action, RawAction
+from nethack_interface.actions import RawAction
 
 
 class NetHackInterface:
@@ -14,7 +22,7 @@ class NetHackInterface:
         self._structured = None
 
     def _shape(self) -> Observation:
-        from nethack_core.observations import shape as shape_observation
+        from nethack_core import shape as shape_observation
 
         self._structured = shape_observation(self._raw, self._character)
         return Observation.from_raw(
@@ -30,24 +38,8 @@ class NetHackInterface:
         return self._shape()
 
     def step(self, action):
-        if isinstance(action, RawAction):
-            self._raw, reward, term, trunc, info = self._env.step(action.index)
-            return self._shape(), float(reward), bool(term or trunc), info
-        if isinstance(action, Action):
-            from nethack_harness.tools.skills import registry
-            from nethack_harness.helpers import _to_action_indices
-
-            res = registry.call(action.name, self._env, self._structured, **action.args)
-            total = 0.0
-            term = trunc = False
-            info = {"feedback": res.feedback}
-            # Skills return NLE enum/keypress values; normalize them to indices
-            # into the task's action set (behavioral parity with the harness's
-            # env_response, which calls _to_action_indices before stepping).
-            for idx in _to_action_indices(self._env, res.actions):
-                self._raw, r, term, trunc, info2 = self._env.step(idx)
-                total += float(r)
-                if term or trunc:
-                    break
-            return self._shape(), total, bool(term or trunc), info
-        raise TypeError(f"unknown action: {action!r}")
+        """Step a RawAction (or a bare int NLE index). Returns
+        ``(Observation, reward, done, info)``."""
+        idx = action.index if isinstance(action, RawAction) else action
+        self._raw, reward, term, trunc, info = self._env.step(int(idx))
+        return self._shape(), float(reward), bool(term or trunc), info

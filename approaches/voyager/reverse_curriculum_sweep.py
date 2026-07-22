@@ -57,7 +57,7 @@ sys.path.insert(0, str(_ROOT / "environments" / "nethack"))
 sys.path.insert(0, str(_ROOT / "approaches" / "voyager"))
 
 import curriculum_voyager as cv  # noqa: E402  (agent loop, tools, prompt, _glm)
-from nethack_core.curriculum_engine_env import CurriculumEngineEnv  # noqa: E402
+from nethack_core import CurriculumEngineEnv  # noqa: E402
 
 MODEL_DEFAULT = "z-ai/glm-5.2"
 
@@ -202,7 +202,7 @@ def construct_start(env: CurriculumEngineEnv, obs, start_floor: int):
 
 
 import numpy as _np
-from nethack_core.glyphs import (  # noqa: E402
+from nethack_core import (  # noqa: E402
     CMAP_CLOSED_DOOR_INDICES, GLYPH_CMAP_OFF, glyph_is_cmap,
 )
 

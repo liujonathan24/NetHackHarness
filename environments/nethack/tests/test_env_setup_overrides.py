@@ -5,7 +5,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "environments" / "nethack"))
 
-from nethack_core.env import NetHackCoreEnv
+from nethack_core import NetHackCoreEnv
 
 
 def _visible(obs):
@@ -54,7 +54,7 @@ def test_tune_override_changes_generation():
 
 def test_modify_override_pokes_state():
     """A modify field passed to the env is applied on reset."""
-    from nethack_core.observations import BLSTATS_IDX
+    from nethack_core import BLSTATS_IDX
     env = NetHackCoreEnv(task_name="NetHackScore-v0", modify={"gold": 777}); env.seed(42, 42)
     obs, _ = env.reset()
     assert int(obs.blstats[BLSTATS_IDX["gold"]]) == 777

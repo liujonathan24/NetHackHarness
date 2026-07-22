@@ -23,9 +23,9 @@ _ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT / "environments" / "nethack"))
 sys.path.insert(0, str(_ROOT / "tools"))
 
-from nethack_core.actions import MiscDirection  # noqa: E402
-from nethack_core.curriculum_env import CurriculumEnv  # noqa: E402
-from nethack_core.observations import BLSTATS_IDX  # noqa: E402
+from nethack_core import MiscDirection  # noqa: E402
+from nethack_core import CurriculumEnv  # noqa: E402
+from nethack_core import BLSTATS_IDX  # noqa: E402
 from knob_gifs import _obs_rows, frame, save_gif  # noqa: E402
 
 DOWN = int(MiscDirection.DOWN)

@@ -1,14 +1,15 @@
 """Static HTML replay export over the encoding-eval REPLAY_LOG_KEYS seam."""
 from __future__ import annotations
-import json
 from pathlib import Path
+
+from nethack_core import trace_schema
 from tools.rollout_view.html import render_run
 
 
 def _load_turns(run_dir: Path) -> list:
     turns = []
     for f in sorted(Path(run_dir).glob("*.ndjson")):
-        turns += [json.loads(l) for l in f.read_text().splitlines() if l.strip()]
+        turns += trace_schema.read_trace(f)
     return turns
 
 

@@ -171,7 +171,7 @@ class _NhNamespace:
         Returns None when no raw obs is available."""
         if self._raw_obs is None:
             return None
-        from nethack_core.map_model import build_map_model
+        from nethack_core import build_map_model
         return MapView(build_map_model(self._raw_obs))
 
     @property

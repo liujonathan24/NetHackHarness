@@ -19,7 +19,7 @@ game time, so it applies the current knob value to the existing frame.
 
 from __future__ import annotations
 
-from nethack_core.engine_env import EngineEnv
+from nethack_core import EngineEnv
 
 
 def _visible(env) -> int:

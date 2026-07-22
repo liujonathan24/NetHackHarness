@@ -40,8 +40,8 @@ _ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT / "environments" / "nethack"))
 sys.path.insert(0, str(_ROOT / "third_party" / "NetHack" / "src"))
 
-from nethack_core.curriculum_upgrade import STAT_FIELDS  # noqa: E402
-from nethack_core.nld_parse import is_valkyrie, parse_status  # noqa: E402
+from nethack_core import STAT_FIELDS  # noqa: E402
+from nethack_core import is_valkyrie, nld_parse  # noqa: E402
 
 
 def _frame_text(chars) -> str:
@@ -92,7 +92,7 @@ def fit(altorg: str, depths: list[int], dbname: str = "nld_valkyrie.db",
                     valk = is_valkyrie(text)
                 if not valk:
                     break
-                st = parse_status(text)
+                st = nld_parse.parse_status(text)
                 if not st or st["depth"] not in depths:
                     continue
                 if gid not in seen_games:

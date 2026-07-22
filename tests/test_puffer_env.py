@@ -11,7 +11,7 @@ import gymnasium
 import numpy as np
 import pytest
 
-from nethack_core.env import NetHackCoreEnv
+from nethack_core import NetHackCoreEnv
 from legacy.puffer_env import make_for_puffer, to_gym_dict_env
 
 

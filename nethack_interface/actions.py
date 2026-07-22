@@ -1,21 +1,14 @@
-"""Typed action set derived from the SkillRegistry (single source of truth)
-plus a raw NLE action-index escape hatch."""
+"""Raw NLE action-index escape hatch.
+
+The *typed* Action set (``Action`` + ``action_spec()``) is derived from the skill
+registry, which lives in the Hub — so it lives in the Hub too, at
+``nethack_harness.interface``. The engine stays a pure substrate: only the raw
+index escape hatch is defined here.
+"""
 from __future__ import annotations
-from dataclasses import dataclass, field
-
-
-@dataclass
-class Action:
-    name: str
-    args: dict = field(default_factory=dict)
+from dataclasses import dataclass
 
 
 @dataclass
 class RawAction:
     index: int
-
-
-def action_spec() -> dict:
-    """name -> arg schema, sourced from the live skill registry (no drift)."""
-    from nethack_harness.tools.skills import registry
-    return dict(registry._schemas)

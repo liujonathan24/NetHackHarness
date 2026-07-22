@@ -24,7 +24,7 @@ import random
 
 import pytest
 
-from nethack_core.engine_env import EngineEnv
+from nethack_core import EngineEnv
 
 _ACT = [ord(c) for c in "hjklyubn"] * 3 + [
     ord("s"), ord(","), ord("."), ord("F"), ord(">"),

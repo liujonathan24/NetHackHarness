@@ -130,12 +130,13 @@ class LiveStepper:
 
 
 def _load_turns(run_dir) -> list:
-    import json
     from pathlib import Path
+
+    from nethack_core import trace_schema
 
     turns: list = []
     for f in sorted(Path(run_dir).glob("*.ndjson")):
-        turns += [json.loads(line) for line in f.read_text().splitlines() if line.strip()]
+        turns += trace_schema.read_trace(f)
     return turns
 
 
@@ -249,7 +250,7 @@ def _make_handler(server: RolloutViewServer):
 
 
 def _build_default_interface():
-    from nethack_core.env import NetHackCoreEnv
+    from nethack_core import NetHackCoreEnv
     from nethack_interface import NetHackInterface
 
     env = NetHackCoreEnv(task_name="NetHackScore-v0")

@@ -19,7 +19,7 @@ sys.path.insert(0, str(_ROOT / "environments" / "nethack"))
 
 from PIL import Image, ImageDraw, ImageFont  # noqa: E402
 
-from nethack_core.engine_env import EngineEnv  # noqa: E402
+from nethack_core import EngineEnv  # noqa: E402
 
 _COLORS = {
     "@": (255, 220, 0), ">": (0, 220, 220), "<": (0, 220, 220),

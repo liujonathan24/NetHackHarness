@@ -12,9 +12,9 @@ from typing import Any, Optional
 
 import verifiers as vf
 
-from nethack_core.env import NetHackCoreEnv
+from nethack_core import NetHackCoreEnv, trace_schema
 from nethack_harness.memory.journal import Journal
-from nethack_core.observations import shape as shape_observation
+from nethack_core import shape as shape_observation
 from nethack_harness.tools.skills import registry as skill_registry, list_skills
 
 def _continual_reset(state: dict, env, env_self) -> None:
@@ -106,7 +106,6 @@ def _write_trace_entry(env_self, state: dict, assistant_msg, tool_calls,
     if not env_self.trace_dir:
         return
     try:
-        import json as _json
         import os as _os
         import time as _time
         out_dir = Path(env_self.trace_dir)
@@ -178,7 +177,9 @@ def _write_trace_entry(env_self, state: dict, assistant_msg, tool_calls,
         if state.get("_ch_last_edits"):
             entry["ch_edits"] = state["_ch_last_edits"]
         with path.open("a") as f:
-            f.write(_json.dumps(entry) + "\n")
+            # Route through the versioned trace schema: stamps schema_version and
+            # serializes the (frozen) on-disk field set. See nethack_core.trace_schema.
+            trace_schema.write_record(f, entry)
     except Exception:
         # Tracing must never break a rollout.
         pass

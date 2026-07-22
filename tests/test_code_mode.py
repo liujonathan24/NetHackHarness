@@ -122,8 +122,8 @@ def test_run_user_code_journal_writes():
 
 def test_nh_move_appends_to_action_log():
     """Wired now: nh.move dispatches the skill and queues the resulting actions."""
-    from nethack_core.env import NetHackCoreEnv
-    from nethack_core.observations import shape as shape_observation
+    from nethack_core import NetHackCoreEnv
+    from nethack_core import shape as shape_observation
 
     core = NetHackCoreEnv()
     core.seed(7, 7)
@@ -138,8 +138,8 @@ def test_nh_move_appends_to_action_log():
 
 def test_nh_autoexplore_queues_many_actions_in_one_call():
     """Headline of code mode: many env actions per LM round-trip."""
-    from nethack_core.env import NetHackCoreEnv
-    from nethack_core.observations import shape as shape_observation
+    from nethack_core import NetHackCoreEnv
+    from nethack_core import shape as shape_observation
 
     core = NetHackCoreEnv()
     core.seed(7, 7)

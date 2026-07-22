@@ -24,7 +24,7 @@ sys.path.insert(0, str(_ROOT / "approaches" / "voyager"))
 
 import curriculum_voyager as cv  # noqa: E402
 import reverse_curriculum_sweep as rc  # noqa: E402
-from nethack_core.curriculum_engine_env import CurriculumEngineEnv  # noqa: E402
+from nethack_core import CurriculumEngineEnv  # noqa: E402
 
 FLOOR_NAME = {1: "DoD 1", 2: "DoD 2", 3: "DoD 3",
               4: "Gehennom 48", 5: "Gehennom 49", 6: "Gehennom 50"}

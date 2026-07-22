@@ -22,9 +22,9 @@ from typing import Any, Callable, Iterable, Literal, Optional
 
 from nethack_core import actions as nethack
 
-from nethack_core.env import NetHackCoreEnv
+from nethack_core import NetHackCoreEnv
 from nethack_harness.memory.journal import Journal
-from nethack_core.observations import StructuredObservation, InventoryItem
+from nethack_core import StructuredObservation, InventoryItem
 from nethack_harness.navigation.pathfinding import (
     a_star,
     is_walkable,
@@ -1122,7 +1122,7 @@ def autoexplore(env: NetHackCoreEnv, obs: StructuredObservation, max_steps: int 
             # haven't been through, prefer pathing to it over the tiny
             # frontier. Picks the closest such door by A* path length.
             from nethack_harness.navigation.pathfinding import a_star as _astar2
-            from nethack_core.observations import extract_visible_features
+            from nethack_core import extract_visible_features
             try:
                 keys = env.observation_keys
                 last_obs_buf = env.last_observation
@@ -1208,7 +1208,7 @@ def find_and_descend(env: NetHackCoreEnv, obs: StructuredObservation, max_action
                 feedback=f"`>` visible at {stair}; pathing {len(p)} steps and descending.",
             )
     # 2) Pick a reachable door (open/gap or closed) and path there.
-    from nethack_core.observations import extract_visible_features
+    from nethack_core import extract_visible_features
     try:
         keys = env.observation_keys
         tty = env.last_observation[keys.index("tty_chars")] if "tty_chars" in keys else None
