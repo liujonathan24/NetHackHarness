@@ -1,6 +1,6 @@
 # NetHack as a Mature RL Training Environment
 
-**Author:** Jonathan Lin
+**Author:** Jonathan Liu
 **Reviewers:** Alex Zhang
 **Status:** Reconciled with the shipped architecture (originally a first draft for Monday discussion)
 **Last updated:** July 2026
