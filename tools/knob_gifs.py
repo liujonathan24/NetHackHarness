@@ -20,7 +20,7 @@ sys.path.insert(0, str(_ROOT / "environments" / "nethack"))
 
 from PIL import Image, ImageDraw, ImageFont  # noqa: E402
 
-from nethack_core.engine_env import EngineEnv  # noqa: E402
+from nethack_core import EngineEnv  # noqa: E402
 
 OUT = _ROOT / "videos"
 _PALETTE = ["#1a1a1a", "#c44", "#4b4", "#b83", "#46c", "#b5b", "#5bb", "#bbb",

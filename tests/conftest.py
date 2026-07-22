@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from nethack_core.observations import InventoryItem, StructuredObservation
+from nethack_core import InventoryItem, StructuredObservation
 
 
 @pytest.fixture
@@ -19,7 +19,7 @@ def make_core_env():
     reset without explicit seeds (reproducibility by construction), so the
     factory seeds it before handing it back. Returns a callable so each test
     gets a fresh, seeded env instance."""
-    from nethack_core.env import NetHackCoreEnv
+    from nethack_core import NetHackCoreEnv
 
     def _make():
         env = NetHackCoreEnv(task_name="NetHackScore-v0")

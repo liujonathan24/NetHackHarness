@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from nethack_core.env import NetHackCoreEnv
+from nethack_core import NetHackCoreEnv
 from nethack_harness.tools.skills import (
     SkillResult,
     bootstrap_character,
@@ -114,7 +114,7 @@ def test_registry_call_survives_name_env_obs_collision_in_kwargs():
     tool args, which collided with `SkillRegistry.call(self, name, ...)` and
     raised `TypeError: got multiple values for argument 'name'`. The dispatcher
     must drop these stray keys instead of crashing."""
-    from nethack_core.observations import StructuredObservation
+    from nethack_core import StructuredObservation
     obs = StructuredObservation(status={}, inventory=[], map_view="", character={},
                                  messages=[], menu=None, inventory_prompt=None)
     # Should not raise; instead returns a SkillResult.
@@ -126,7 +126,7 @@ def test_registry_call_survives_name_env_obs_collision_in_kwargs():
 # ---------- eat/quaff/read item-arg API (v0.0.35 — menus offloaded to harness) ----------
 
 def _mk_obs(inventory):
-    from nethack_core.observations import StructuredObservation
+    from nethack_core import StructuredObservation
     return StructuredObservation(
         status={}, inventory=inventory, map_view="", character={},
         messages=[], menu=None, inventory_prompt=None,
@@ -134,7 +134,7 @@ def _mk_obs(inventory):
 
 
 def test_eat_without_item_arg_lists_candidates_and_consumes_no_turn():
-    from nethack_core.observations import InventoryItem
+    from nethack_core import InventoryItem
     obs = _mk_obs([InventoryItem(letter="a", description="2 food rations", glyph=0)])
     result = registry.call("eat", None, obs)
     assert result.interrupted is True
@@ -143,7 +143,7 @@ def test_eat_without_item_arg_lists_candidates_and_consumes_no_turn():
 
 
 def test_eat_with_no_food_in_inventory_consumes_no_turn():
-    from nethack_core.observations import InventoryItem
+    from nethack_core import InventoryItem
     obs = _mk_obs([InventoryItem(letter="a", description="rusty dagger (wielded)", glyph=0)])
     result = registry.call("eat", None, obs, item="anything")
     assert result.interrupted is True
@@ -151,7 +151,7 @@ def test_eat_with_no_food_in_inventory_consumes_no_turn():
 
 
 def test_eat_with_matching_substring_resolves_to_letter_e_then_food_letter():
-    from nethack_core.observations import InventoryItem
+    from nethack_core import InventoryItem
     obs = _mk_obs([
         InventoryItem(letter="a", description="rusty dagger", glyph=0),
         InventoryItem(letter="b", description="2 food rations", glyph=0),
@@ -164,7 +164,7 @@ def test_eat_with_matching_substring_resolves_to_letter_e_then_food_letter():
 
 
 def test_quaff_requires_potion():
-    from nethack_core.observations import InventoryItem
+    from nethack_core import InventoryItem
     obs = _mk_obs([InventoryItem(letter="a", description="rusty dagger", glyph=0)])
     result = registry.call("quaff", None, obs, item="dagger")
     assert result.interrupted is True
@@ -186,7 +186,7 @@ def test_bootstrap_character_is_deterministic_under_same_seed():
 
 def test_registry_call_coerces_string_index_to_int():
     """Small models send `{"index": "5"}` (string for int). Dispatcher coerces."""
-    from nethack_core.observations import StructuredObservation, MenuOption
+    from nethack_core import StructuredObservation, MenuOption
     obs = StructuredObservation(
         status={}, inventory=[], map_view="", character={},
         messages=[], menu=[MenuOption(letter="a", description="opt-a"),
@@ -202,7 +202,7 @@ def test_registry_call_coerces_float_xy_to_int_for_move_to():
     """`{"x": 12.0, "y": 5.0}` should coerce to ints."""
     # We can't run move_to fully here (needs a real env), but we can verify
     # the dispatcher coerces and reports a useful error rather than a TypeError.
-    from nethack_core.observations import StructuredObservation
+    from nethack_core import StructuredObservation
     obs = StructuredObservation(status={}, inventory=[], map_view="", character={},
                                  messages=[], menu=None, inventory_prompt=None)
     result = registry.call("move_to", None, obs, x=12.0, y=5.0)
@@ -213,7 +213,7 @@ def test_registry_call_coerces_float_xy_to_int_for_move_to():
 
 def test_move_accepts_full_name_direction():
     """Small models often emit 'north' instead of 'N'. Skill should normalize."""
-    from nethack_core.observations import StructuredObservation
+    from nethack_core import StructuredObservation
     obs = StructuredObservation(status={}, inventory=[], map_view="", character={},
                                  messages=[], menu=None, inventory_prompt=None)
     result = registry.call("move", None, obs, direction="north")
@@ -222,7 +222,7 @@ def test_move_accepts_full_name_direction():
 
 
 def test_move_accepts_lowercase_compass():
-    from nethack_core.observations import StructuredObservation
+    from nethack_core import StructuredObservation
     obs = StructuredObservation(status={}, inventory=[], map_view="", character={},
                                  messages=[], menu=None, inventory_prompt=None)
     result = registry.call("move", None, obs, direction="se")
@@ -231,7 +231,7 @@ def test_move_accepts_lowercase_compass():
 
 
 def test_move_accepts_up_down_aliases():
-    from nethack_core.observations import StructuredObservation
+    from nethack_core import StructuredObservation
     obs = StructuredObservation(status={}, inventory=[], map_view="", character={},
                                  messages=[], menu=None, inventory_prompt=None)
     assert registry.call("move", None, obs, direction="up").interrupted is False
@@ -241,7 +241,7 @@ def test_move_accepts_up_down_aliases():
 def test_kick_bundles_direction_key():
     """v0.0.50: kick presses Ctrl-D AND the vi-style direction key in one
     skill call so the harness doesn't ESC-cancel the prompt."""
-    from nethack_core.observations import StructuredObservation
+    from nethack_core import StructuredObservation
     obs = StructuredObservation(status={}, inventory=[], map_view="", character={},
                                  messages=[], menu=None, inventory_prompt=None)
     result = registry.call("kick", None, obs, direction="N")
@@ -251,7 +251,7 @@ def test_kick_bundles_direction_key():
 
 
 def test_kick_rejects_invalid_direction():
-    from nethack_core.observations import StructuredObservation
+    from nethack_core import StructuredObservation
     obs = StructuredObservation(status={}, inventory=[], map_view="", character={},
                                  messages=[], menu=None, inventory_prompt=None)
     result = registry.call("kick", None, obs, direction="badword")
@@ -259,7 +259,7 @@ def test_kick_rejects_invalid_direction():
 
 
 def test_throw_needs_item_and_direction():
-    from nethack_core.observations import StructuredObservation, InventoryItem
+    from nethack_core import StructuredObservation, InventoryItem
     obs = StructuredObservation(
         status={}, inventory=[InventoryItem(letter="a", description="dart", glyph=0)],
         map_view="", character={}, messages=[], menu=None, inventory_prompt=None,
@@ -272,7 +272,7 @@ def test_throw_needs_item_and_direction():
 
 def test_descend_short_circuits_when_not_on_stairs():
     """v0.0.30 short-circuit: if UNDER PLAYER says floor, don't waste a turn."""
-    from nethack_core.observations import StructuredObservation
+    from nethack_core import StructuredObservation
     obs = StructuredObservation(
         status={}, inventory=[], map_view="", character={},
         messages=[], menu=None, inventory_prompt=None,
@@ -285,7 +285,7 @@ def test_descend_short_circuits_when_not_on_stairs():
 
 
 def test_descend_proceeds_when_on_stairs_down():
-    from nethack_core.observations import StructuredObservation
+    from nethack_core import StructuredObservation
     obs = StructuredObservation(
         status={}, inventory=[], map_view="", character={},
         messages=[], menu=None, inventory_prompt=None,
@@ -300,7 +300,7 @@ def test_descend_proceeds_when_on_stairs_down():
 def test_search_times_param_repeats_action():
     """search(times=10) should expand to 10 's' keystrokes — hidden passages
     typically take 5-10 searches to reveal."""
-    from nethack_core.observations import StructuredObservation
+    from nethack_core import StructuredObservation
     obs = StructuredObservation(status={}, inventory=[], map_view="", character={},
                                  messages=[], menu=None, inventory_prompt=None)
     result = registry.call("search", None, obs, times=10)
@@ -311,7 +311,7 @@ def test_search_times_param_repeats_action():
 
 
 def test_search_times_default_is_one():
-    from nethack_core.observations import StructuredObservation
+    from nethack_core import StructuredObservation
     obs = StructuredObservation(status={}, inventory=[], map_view="", character={},
                                  messages=[], menu=None, inventory_prompt=None)
     result = registry.call("search", None, obs)
@@ -321,7 +321,7 @@ def test_search_times_default_is_one():
 def test_attack_warns_when_no_target_in_direction():
     """Calling attack on an empty tile should still execute (NetHack walks)
     but the feedback should include a hint that there's no monster there."""
-    from nethack_core.observations import StructuredObservation
+    from nethack_core import StructuredObservation
     obs = StructuredObservation(
         status={}, inventory=[], map_view="", character={},
         messages=[], menu=None, inventory_prompt=None,
@@ -333,7 +333,7 @@ def test_attack_warns_when_no_target_in_direction():
 
 def test_attack_silent_when_target_present():
     """When the direction has a letter glyph, no warning."""
-    from nethack_core.observations import StructuredObservation
+    from nethack_core import StructuredObservation
     obs = StructuredObservation(
         status={}, inventory=[], map_view="", character={},
         messages=[], menu=None, inventory_prompt=None,

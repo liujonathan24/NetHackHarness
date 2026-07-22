@@ -1,7 +1,7 @@
 import json, sys, re
 from pathlib import Path
-from nethack_core.env import NetHackCoreEnv
-from nethack_core.observations import shape as shape_observation
+from nethack_core import NetHackCoreEnv
+from nethack_core import shape as shape_observation
 from nethack_interface import NetHackInterface
 from nethack_harness.tools.skills import registry
 from nethack_harness.helpers import _capture_user_content

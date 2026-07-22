@@ -9,12 +9,12 @@ sys.path.insert(
 
 import pytest
 
-from nethack_core.nld_parse import (
+from nethack_core import (
     detect_role,
     is_valkyrie,
-    parse_status,
     strength_to_internal,
 )
+from nethack_core import nld_parse
 
 # A realistic NetHack 3.6 two-line bottom status (a deep Valkyrie).
 DEEP_VALK = (
@@ -39,7 +39,7 @@ def test_strength_to_internal(disp, internal):
 
 
 def test_parse_deep_valkyrie_status():
-    st = parse_status(DEEP_VALK)
+    st = nld_parse.parse_status(DEEP_VALK)
     assert st["depth"] == 48
     assert st["hp"] == 175 and st["max_hp"] == 175
     assert st["xp_level"] == 18
@@ -49,15 +49,15 @@ def test_parse_deep_valkyrie_status():
 
 
 def test_parse_shallow_status():
-    st = parse_status(SHALLOW)
+    st = nld_parse.parse_status(SHALLOW)
     assert st["depth"] == 3
     assert st["xp_level"] == 5
     assert st["str"] == 21  # 18/03
 
 
 def test_parse_non_status_returns_none():
-    assert parse_status("--More--") is None
-    assert parse_status("Really attack the dog? [yn]") is None
+    assert nld_parse.parse_status("--More--") is None
+    assert nld_parse.parse_status("Really attack the dog? [yn]") is None
 
 
 def test_role_detection():

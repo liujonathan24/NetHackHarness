@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from nethack_core.env import NetHackCoreEnv
+from nethack_core import NetHackCoreEnv
 from legacy.replay import (
     Trajectory,
     TrajectoryFrame,

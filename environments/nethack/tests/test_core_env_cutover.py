@@ -13,7 +13,7 @@ import sys
 sys.path.insert(
     0, str(pathlib.Path(__file__).resolve().parents[2] / "environments" / "nethack")
 )
-from nethack_core.env import NetHackCoreEnv  # noqa: E402
+from nethack_core import NetHackCoreEnv  # noqa: E402
 
 
 def test_native_env_runs_on_engine():

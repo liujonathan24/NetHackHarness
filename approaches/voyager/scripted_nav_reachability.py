@@ -29,7 +29,7 @@ sys.path.insert(0, str(_ROOT / "approaches" / "voyager"))
 
 import curriculum_voyager as cv  # noqa: E402
 import reverse_curriculum_sweep as rc  # noqa: E402
-from nethack_core.curriculum_engine_env import CurriculumEngineEnv  # noqa: E402
+from nethack_core import CurriculumEngineEnv  # noqa: E402
 
 
 def _nearest(pts, hero):

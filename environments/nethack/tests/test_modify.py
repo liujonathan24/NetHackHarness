@@ -8,8 +8,8 @@ sys.path.insert(
 
 import pytest
 
-from nethack_core.engine_env import EngineEnv
-from nethack_core.observations import BLSTATS_IDX
+from nethack_core import EngineEnv
+from nethack_core import BLSTATS_IDX
 
 
 def _bl(obs, name):

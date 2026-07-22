@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from nethack_core.env import NetHackCoreEnv
+from nethack_core import NetHackCoreEnv
 
 
 def test_seed_before_reset_enforced():

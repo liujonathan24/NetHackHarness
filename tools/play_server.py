@@ -31,7 +31,6 @@ import ast
 import atexit
 import concurrent.futures
 import functools
-import json
 import math
 import pathlib
 import sys
@@ -45,8 +44,9 @@ sys.path.insert(0, str(_ROOT))  # so `tools.rollout_view` imports when run as a 
 from flask import (Flask, copy_current_request_context, jsonify,  # noqa: E402
                    render_template, request, send_from_directory)
 
-from nethack_core.engine_env import EngineEnv  # noqa: E402
-from nethack_core.curriculum_engine_env import CurriculumEngineEnv  # noqa: E402
+from nethack_core import EngineEnv  # noqa: E402
+from nethack_core import CurriculumEngineEnv  # noqa: E402
+from nethack_core import trace_schema  # noqa: E402
 
 from tools.rollout_view import dashboard, stats  # noqa: E402
 
@@ -309,7 +309,7 @@ def _record(obs, action_key=None):
         "rendered_user_message": "", "assistant_message": "", "tool_calls": [],
         "checkpoint": STATE["ckpt_path"],
     }
-    rec["fh"].write(json.dumps(turn) + "\n")
+    trace_schema.write_record(rec["fh"], turn)
     rec["fh"].flush()
     STATE["turn"] += 1
 
@@ -890,14 +890,8 @@ def trace():
     turns = []
     with open(rp) as fh:  # context-managed so the fd is closed deterministically
         for line in fh:   # streamed line-by-line (don't slurp a huge trace into memory)
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                o = json.loads(line)
-            except ValueError:
-                continue
-            if not isinstance(o, dict):  # valid-JSON but non-object line (bad export) -> skip, don't 500
+            o = trace_schema.parse_line(line)  # skips blank/invalid/non-object lines
+            if o is None:
                 continue
             # Coerce field types: the Tracer loads ANY .ndjson under the trace
             # dirs (not just web-recorded ones), so a foreign trace might carry

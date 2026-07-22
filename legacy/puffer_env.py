@@ -43,7 +43,7 @@ import gymnasium as gym
 import numpy as np
 
 from nethack_harness.curriculum.curriculum import TierName, get_tier
-from nethack_core.env import CoreObservation, NetHackCoreEnv
+from nethack_core import CoreObservation, NetHackCoreEnv
 
 
 class _GymDictWrapper(gym.Env):

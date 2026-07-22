@@ -11,8 +11,8 @@ Real-env, no LLM — the closed-loop skill steps the env itself. Fast seeds only
 """
 import re
 
-from nethack_core.env import NetHackCoreEnv
-from nethack_core.observations import shape as shape_observation
+from nethack_core import NetHackCoreEnv
+from nethack_core import shape as shape_observation
 from nethack_harness.tools.skills import registry
 
 

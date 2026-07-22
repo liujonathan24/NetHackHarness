@@ -1,6 +1,6 @@
 from nethack_core import glyphs as N
-from nethack_core.env import NetHackCoreEnv
-from nethack_core.observations import shape as shape_observation
+from nethack_core import NetHackCoreEnv
+from nethack_core import shape as shape_observation
 from nethack_harness.tools.skills import registry
 
 

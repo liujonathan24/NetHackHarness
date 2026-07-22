@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 
-from nethack_core.map_model import MapModel, Entity
+from nethack_core import MapModel, Entity
 from nethack_harness.prompt.map_encoders import json_encode, toon_encode
 
 

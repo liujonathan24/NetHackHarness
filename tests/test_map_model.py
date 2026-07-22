@@ -4,7 +4,7 @@ from __future__ import annotations
 import numpy as np
 from nethack_core import glyphs as N
 
-from nethack_core.map_model import build_map_model, MapModel, Entity
+from nethack_core import build_map_model, MapModel, Entity
 
 
 def _obs_with(glyphs, tty_chars=None, x=40, y=10):

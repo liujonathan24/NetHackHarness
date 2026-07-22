@@ -13,9 +13,9 @@ import sys
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT / "environments" / "nethack"))
 
-from nethack_core.curriculum_env import CurriculumEnv  # noqa: E402
-from nethack_core.observations import BLSTATS_IDX  # noqa: E402
-from nethack_core.observations import shape as shape_observation  # noqa: E402
+from nethack_core import CurriculumEnv  # noqa: E402
+from nethack_core import BLSTATS_IDX  # noqa: E402
+from nethack_core import shape as shape_observation  # noqa: E402
 from nethack_harness.tools.skills import registry  # noqa: E402
 
 

@@ -2,8 +2,8 @@ import pathlib
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "environments" / "nethack"))
-from nethack_core.engine_env import EngineEnv
-from nethack_core.observations import BLSTATS_IDX
+from nethack_core import EngineEnv
+from nethack_core import BLSTATS_IDX
 
 
 def bl(o, n):

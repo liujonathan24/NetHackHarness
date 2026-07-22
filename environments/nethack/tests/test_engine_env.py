@@ -7,8 +7,8 @@ tune, all driven through the high-level env API rather than RawEngine directly.
 import numpy as np
 import pytest
 
-from nethack_core.engine_env import EngineEnv
-from nethack_core.env import CoreObservation
+from nethack_core import EngineEnv
+from nethack_core import CoreObservation
 
 _LINE = [104, 108, 106, 107, 121, 117, 98, 110]
 

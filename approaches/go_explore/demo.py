@@ -13,7 +13,7 @@ live engine state.
 
 from __future__ import annotations
 
-from nethack_core.engine_env import EngineEnv
+from nethack_core import EngineEnv
 
 from .core import mc_lookahead
 

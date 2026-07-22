@@ -21,8 +21,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import numpy as np
 
-from nethack_core.env import NetHackCoreEnv
-from nethack_core.observations import shape
+from nethack_core import NetHackCoreEnv
+from nethack_core import shape
 from nethack_harness.navigation.pathfinding import a_star, nearest_frontier
 
 

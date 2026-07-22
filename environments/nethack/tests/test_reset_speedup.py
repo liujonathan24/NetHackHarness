@@ -22,7 +22,7 @@ import os
 import random
 import time
 
-from nethack_core._engine import RawEngine
+from nethack_core import _engine
 
 # Movement (8-dir) + search/pickup/descend — enough to create dynamic game-state
 # files (level files when descending, score/log appends) so the reset's cleanup
@@ -48,14 +48,14 @@ def test_reset_reuse_is_behavior_identical_to_fresh_engine():
     """Resetting one engine in place == a brand-new engine per seed, byte-exact."""
     seeds = list(range(20, 36))
 
-    reuse = RawEngine()
+    reuse = _engine.RawEngine()
     try:
         reuse_traces = [_trace(reuse, s) for s in seeds]
     finally:
         reuse.end()
 
     for s, expected in zip(seeds, reuse_traces):
-        fresh = RawEngine()  # first start() => the one-time full-copytree path
+        fresh = _engine.RawEngine()  # first start() => the one-time full-copytree path
         try:
             assert _trace(fresh, s) == expected, f"trace diverged for seed {s}"
         finally:
@@ -65,7 +65,7 @@ def test_reset_reuse_is_behavior_identical_to_fresh_engine():
 def test_hackdir_is_tiny_and_data_comes_from_shared_datadir():
     """The writable hackdir holds only game-state files; the bulk read-only data
     is read from the shared source dat (no per-reset copy)."""
-    eng = RawEngine()
+    eng = _engine.RawEngine()
     try:
         eng.start(7, 7)
         # Fresh game: only the seeded writable templates exist (no 3.7MB copy).
@@ -96,7 +96,7 @@ def test_hackdir_is_tiny_and_data_comes_from_shared_datadir():
 
 def test_reset_is_fast():
     """Reset stays far below the old per-reset copytree cost (~29ms)."""
-    eng = RawEngine()
+    eng = _engine.RawEngine()
     try:
         eng.start(1, 1)
         for i in range(3):  # warm up (first start pays the one-time copytree)

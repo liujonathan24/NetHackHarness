@@ -39,7 +39,7 @@ import random
 from dataclasses import dataclass, field
 from typing import Optional
 
-from nethack_core.engine_env import EngineEnv
+from nethack_core import EngineEnv
 
 # blstats indices (see module docstring / core.py).
 _BL_X = 0

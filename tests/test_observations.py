@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from nethack_core.observations import (
+from nethack_core import (
     InventoryItem,
     MenuOption,
     extract_menu,
@@ -18,9 +18,10 @@ from nethack_core.observations import (
     extract_visible_features,
     parse_inventory,
     render_map_view,
-    _strip_right_menu,
-    _infer_menu_left_col,
 )
+# Private helpers are not part of the public surface; a white-box test reaches
+# into the submodule for them.
+from nethack_core.observations import _infer_menu_left_col, _strip_right_menu
 
 
 def test_extract_visible_features_finds_stairs_and_distinguishes_up_down():
@@ -224,7 +225,7 @@ def test_infer_menu_left_col_fallback():
 def test_yn_prompt_really_attack_answers_no():
     """v0.0.49 peaceful-safety: "Really attack?" only fires on peacefuls.
     Auto-answer NO preserves pets and avoids alignment penalties."""
-    from nethack_core.observations import extract_yn_prompt
+    from nethack_core import extract_yn_prompt
     yn = extract_yn_prompt("Really attack the little dog? [yn] (n)")
     assert yn is not None
     assert yn["answer"] == "n"
@@ -232,48 +233,48 @@ def test_yn_prompt_really_attack_answers_no():
 
 
 def test_yn_prompt_really_quit_answers_no():
-    from nethack_core.observations import extract_yn_prompt
+    from nethack_core import extract_yn_prompt
     yn = extract_yn_prompt("Really quit? [yn] (n)")
     assert yn is not None
     assert yn["answer"] == "n"
 
 
 def test_yn_prompt_unknown_falls_back_to_parenthesized_default():
-    from nethack_core.observations import extract_yn_prompt
+    from nethack_core import extract_yn_prompt
     yn = extract_yn_prompt("Some unknown prompt? [yn] (y)")
     assert yn is not None
     assert yn["answer"] == "y"
 
 
 def test_yn_prompt_no_default_falls_back_to_ESC():
-    from nethack_core.observations import extract_yn_prompt
+    from nethack_core import extract_yn_prompt
     yn = extract_yn_prompt("Strange prompt? [yn]")
     assert yn is not None
     assert yn["answer"] == "ESC"
 
 
 def test_yn_prompt_returns_none_when_no_yn_brackets():
-    from nethack_core.observations import extract_yn_prompt
+    from nethack_core import extract_yn_prompt
     assert extract_yn_prompt("You hit the kobold.") is None
     assert extract_yn_prompt("") is None
 
 
 def test_yn_prompt_pick_up_answers_yes():
-    from nethack_core.observations import extract_yn_prompt
+    from nethack_core import extract_yn_prompt
     yn = extract_yn_prompt("Pick up the gold? [yn] (y)")
     assert yn is not None
     assert yn["answer"] == "y"
 
 
 def test_yn_prompt_throw_away_answers_no():
-    from nethack_core.observations import extract_yn_prompt
+    from nethack_core import extract_yn_prompt
     yn = extract_yn_prompt("Throw away the food ration? [yn] (n)")
     assert yn is not None
     assert yn["answer"] == "n"
 
 
 def test_yn_prompt_swap_places_answers_yes():
-    from nethack_core.observations import extract_yn_prompt
+    from nethack_core import extract_yn_prompt
     yn = extract_yn_prompt("Do you want to swap places with the dog? [yn] (y)")
     assert yn is not None
     assert yn["answer"] == "y"
@@ -282,7 +283,7 @@ def test_yn_prompt_swap_places_answers_yes():
 def test_extract_adjacent_labels_monster_letters_with_class_hint():
     """`f` adjacent should render as `f(cat/small feline)` so the model
     doesn't hallucinate it into 'fireplace' (trace 9071d001)."""
-    from nethack_core.observations import extract_adjacent
+    from nethack_core import extract_adjacent
     tty = np.full((24, 80), ord('.'), dtype=np.uint8)
     # Player @ at (10, 10); cat `f` adjacent west.
     tty[10, 10] = ord('@')
@@ -297,7 +298,8 @@ def test_extract_adjacent_labels_monster_letters_with_class_hint():
 def test_extract_adjacent_marks_pet_when_glyphs_provided():
     """When a glyph ID lands in the pet range, the adjacent annotation
     must say PET so the agent doesn't attack its own kitten."""
-    from nethack_core.observations import extract_adjacent, _GLYPH_PET_OFF, _GLYPH_MON_OFF
+    from nethack_core import extract_adjacent
+    from nethack_core.observations import _GLYPH_PET_OFF, _GLYPH_MON_OFF
     tty = np.full((24, 80), ord('.'), dtype=np.uint8)
     tty[10, 10] = ord('@')
     tty[10, 9] = ord('f')   # pet kitten west
@@ -313,7 +315,7 @@ def test_extract_adjacent_marks_pet_when_glyphs_provided():
 
 def test_extract_adjacent_no_glyphs_falls_back_to_class_only():
     """Backward-compatible: no glyphs arg means no pet/hostile annotation."""
-    from nethack_core.observations import extract_adjacent
+    from nethack_core import extract_adjacent
     tty = np.full((24, 80), ord('.'), dtype=np.uint8)
     tty[10, 10] = ord('@')
     tty[10, 9] = ord('f')

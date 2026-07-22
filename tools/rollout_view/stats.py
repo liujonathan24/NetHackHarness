@@ -18,6 +18,8 @@ import re
 from pathlib import Path
 from typing import Callable, Optional
 
+from nethack_core import trace_schema
+
 # --- parse the harness STATUS block out of a turn's rendered observation text ---
 # e.g. "=== STATUS ===\nHP: 14/14  AC: 4  Dlvl: 1  Turn: 1  XP: 1  $: 0  Pos: (26,5)  Hunger: Fainting"
 _PATS = {
@@ -68,16 +70,7 @@ def _turn_text(rec: dict) -> str:
 def load_trace(path) -> list[dict]:
     """Load one NDJSON trace into a list of turn records (sorted by turn)."""
     recs: list[dict] = []
-    for line in Path(path).read_text().splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            raw = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(raw, dict):  # valid-JSON but non-object line -> skip (raw.get below would crash)
-            continue
+    for raw in trace_schema.iter_records(path):  # skips blank/invalid/non-object lines
         text = _turn_text(raw)
         status = dict(raw.get("status") or {})
         # prefer explicit fields, else parse from the rendered text

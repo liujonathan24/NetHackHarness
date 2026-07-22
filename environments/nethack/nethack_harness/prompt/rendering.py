@@ -218,7 +218,7 @@ def _format_obs_balrog(structured, journal, state, journal_max_chars: int) -> st
     # without forcing the model to read ASCII.
     if state is not None and "raw_obs" in state:
         try:
-            from nethack_core.observations import (
+            from nethack_core import (
                 extract_visible_features, extract_hostiles_in_sight,
             )
             features = extract_visible_features(state["raw_obs"].tty_chars)
@@ -297,7 +297,7 @@ def _descent_status_block(structured, state) -> list[str]:
     out: list[str] = []
     stairs_xy = None
     try:
-        from nethack_core.observations import extract_visible_features
+        from nethack_core import extract_visible_features
         feats = extract_visible_features(state["raw_obs"].tty_chars)
         for f in feats:
             if f.startswith("stairs DOWN at "):
@@ -824,7 +824,7 @@ def format_observation_as_chat(
                 # agent navigating to them — it kept autoexploring.
                 if hint is None and state is not None and "raw_obs" in state:
                     try:
-                        from nethack_core.observations import extract_visible_features
+                        from nethack_core import extract_visible_features
                         feats = extract_visible_features(state["raw_obs"].tty_chars)
                         for f in feats:
                             if f.startswith("stairs DOWN at "):
@@ -887,7 +887,7 @@ def format_observation_as_chat(
         # the room because the BFS frontier resolves to `<` (stairs up).
         if hint is None and not _on_stairs_override and state is not None and "raw_obs" in state:
             try:
-                from nethack_core.observations import extract_visible_features
+                from nethack_core import extract_visible_features
                 feats = extract_visible_features(state["raw_obs"].tty_chars)
                 has_down = any(f.startswith("stairs DOWN") for f in feats)
                 doors = [f for f in feats if f.startswith("door ")]
@@ -924,7 +924,7 @@ def format_observation_as_chat(
     # the agent NEVER calling `descend` because the pre-parsed feature block
     # was gated to compact mode only. Non-compact agents have to scan the
     # ASCII grid themselves and routinely confuse `<` for `>` on dense maps.
-    from nethack_core.observations import extract_hostiles_in_sight, extract_visible_features
+    from nethack_core import extract_hostiles_in_sight, extract_visible_features
     if state is not None and "raw_obs" in state:
         try:
             features = extract_visible_features(state["raw_obs"].tty_chars)
