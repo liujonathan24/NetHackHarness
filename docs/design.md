@@ -1,9 +1,9 @@
 # NetHack as a Mature RL Training Environment
 
-**Author:** Jonathan Lin
+**Author:** Jonathan Liu
 **Reviewers:** Alex Zhang
-**Status:** First draft, for Monday discussion
-**Last updated:** May 2026
+**Status:** Reconciled with the shipped architecture (originally a first draft for Monday discussion)
+**Last updated:** July 2026
 
 ---
 
@@ -12,8 +12,8 @@
 ### Goals
 
 1. Build a mature, well-engineered training environment around NetHack that is genuinely useful for *training* LM agents (not just evaluating them).
-2. Land it on the Prime Intellect Environments Hub as `primeintellect/nethack`, train-ready with `prime-rl`.
-3. Make the underlying gymnasium env useful to the non-LM RL community as well — PufferLib, Sample Factory, anyone running PPO on NLE — by keeping the harness layer interface-agnostic and PR'ing improvements upstream to `heiner/nle` and `facebookresearch/minihack` where appropriate.
+2. Land it on the Prime Intellect Environments Hub as `jonathanliu/nethack`, train-ready with `prime-rl`.
+3. Make the underlying gymnasium env useful to the non-LM RL community as well — anyone running PPO/GRPO on NetHack — by keeping the layer-1 core interface-agnostic (a plain `gym.Env` over the fork) so an RL algorithm can consume the bare environment while the LLM harness sits above it. (A PufferLib adapter lives in `legacy/`, parked rather than deleted.)
 4. Ship a curriculum: a smooth difficulty ramp from a single room with one monster to the full game, controllable from a single config dict.
 5. Get to a first RL training run (Qwen3-4B-Instruct, single-dungeon curriculum, scout reward) within ~4 weeks.
 
@@ -21,18 +21,18 @@
 
 - A new LLM-NetHack benchmark. BALROG and BRAID already serve that role; we contribute a training env, not a leaderboard.
 - Beating BALROG progression with a frontier model. That's a downstream experiment; the deliverable here is the substrate.
-- A from-scratch reimplementation of NetHack. We extend `heiner/nle`, which already ships the NetHack 3.6.7 C source as a submodule. Surgical C patches only, behind compile-time flags.
-- Replacing MiniHack. We use it as the curriculum backend.
+- A from-scratch reimplementation of NetHack. We maintain a *custom fork* of the NetHack C source (the `third_party/NetHack` submodule) and drive it directly through our own ctypes binding (`nethack_core/_engine.py`, `RawEngine`) — not `nle`'s Python gym wrapper. The fork adds engine entry points (`nle_start/step/end`, snapshot/restore, `save_level`/`load_level`, `modify`, `tune`); it is not a rewrite of the game.
+- Sitting on the `nle` / `minihack` PyPI stack. We started there but abandoned it: there is no `import nle` in the runtime path and MiniHack is not the curriculum backend. The whole point is to control the engine directly — in-memory snapshot/restore, portable level blobs, secure state edits, and live difficulty knobs — none of which the gym wrapper can expose. `numpy` and `gymnasium` are direct dependencies (they used to arrive transitively via `nle`).
 
 ---
 
 ## 2. Prior art
 
-**The simulator stack:**
+**The standard simulator stack (our starting point — since abandoned):**
 
-- **NLE** (`github.com/heiner/nle`, `nle==1.2.0`, NetHack 3.6.7). Active maintenance line; the `facebookresearch/nle` repo redirects here. Gymnasium API.
-- **MiniHack** (`facebookresearch/minihack`). Probabilistic des-file DSL exposed as a `LevelGenerator` Python wrapper. The curriculum lever.
-- **PufferLib** (Suarez et al., RLJ 2025). Reports ~10× synchronous speedup on NetHack via shared-memory vectorization.
+- **NLE** (`github.com/heiner/nle`, NetHack 3.6.7, gymnasium API). The usual substrate for NetHack RL. We began here but hit its ceiling: the gym wrapper exposes a step/observation loop and nothing underneath it — no state capture, no generator control. We now fork the NetHack source directly and bind it with ctypes instead.
+- **MiniHack** (`facebookresearch/minihack`). Probabilistic des-file DSL exposed as a `LevelGenerator` wrapper — the standard curriculum lever. We do not use it as the curriculum backend: difficulty is instead a continuous dial on the *real* dungeon generator (17 knobs) rather than a fixed des-file per variant. (MiniHack's tile assets are still borrowed, optionally, for the tile-image encodings.)
+- **PufferLib** (Suarez et al., RLJ 2025). Reports ~10× synchronous speedup on NetHack via shared-memory vectorization. Our divergent-rollout story is instead O(1) in-memory snapshot/restore/branch on the fork; the PufferLib gym adapter is parked in `legacy/`.
 
 **Harness research (what to learn from / build on):**
 
@@ -52,88 +52,96 @@
 
 ## 3. Architecture
 
-### 3.1 Two layers
+### 3.1 The layers
+
+The project is a `uv` workspace deliberately split so an RL algorithm can consume the bare environment while a chat-based LLM agent uses the full harness — both over the *same* deterministic fork engine.
 
 ```
                   ┌──────────────────────────────────────┐
-                  │ Layer 2: verifiers wrapper           │
+                  │ Layer 3: verifiers wrapper           │
                   │ environments/nethack/nethack.py      │
-                  │ - vf.StatefulToolEnv subclass        │
+                  │ - verifiers env + tool dispatch      │
                   │ - chat-shaped, OpenAI tool calling   │
                   │ - rubric: scout, descent, ascension  │
                   └────────────────┬─────────────────────┘
                                    │ consumes
                                    ▼
                   ┌──────────────────────────────────────┐
-                  │ Layer 1: interface-agnostic core     │
-                  │ nethack_core/                        │
-                  │ - NetHackCoreEnv (gym.Env)           │
-                  │ - skill API / code API               │
-                  │ - menu, inventory, attributes        │
-                  │ - curriculum, wiki, replay           │
+                  │ Layer 2: harness (nethack_harness/)  │
+                  │ - prompt / encoding registry         │
+                  │ - skills, curriculum, navigation     │
+                  │ - memory, refiner                    │
                   └────────────────┬─────────────────────┘
-                                   │ wraps
+                                   │ over
                                    ▼
                   ┌──────────────────────────────────────┐
-                  │ heiner/nle + MiniHack                │
-                  │ + light C patches (rnd.c tracing)    │
+                  │ Layer 1: interface-agnostic core     │
+                  │ nethack_interface/ (typed specs)     │
+                  │ nethack_core/                        │
+                  │ - NetHackCoreEnv (gym.Env)           │
+                  │ - EngineEnv: snapshot/restore/branch,│
+                  │   level blobs, modify(), 17 knobs    │
+                  │ - canonical typed map model          │
+                  └────────────────┬─────────────────────┘
+                                   │ ctypes
+                                   ▼
+                  ┌──────────────────────────────────────┐
+                  │ Layer 0: custom NetHack fork (C)     │
+                  │ third_party/NetHack + libnethack.so  │
+                  │ nle_start/step/end, snapshot/restore,│
+                  │ save/load_level, modify, tune        │
                   └──────────────────────────────────────┘
 ```
 
-The contract between layers is gymnasium-shaped. Anyone training a CNN-LSTM policy with PPO consumes layer 1 directly; the verifiers wrapper exists purely to bolt on chat-shaped tool calling and an LLM-compatible rubric.
+The key inversion versus standard NetHack RL: we do **not** sit on the `nle` / `minihack` gym wrapper. `nethack_core` drives the fork directly through the `RawEngine` ctypes binding, which is what makes in-memory snapshot/restore/branch, portable level blobs, secure state edits, and live difficulty knobs possible at all. The contract between the RL-facing layer and everything above it is still gymnasium-shaped: anyone training a CNN-LSTM policy with PPO consumes layer 1 directly; the verifiers wrapper exists purely to bolt on chat-shaped tool calling and an LLM-compatible rubric.
 
-### 3.2 Three action-interface modes
+### 3.2 Action interfaces
 
-Selected via `load_environment(interface=...)`:
+Selected via `load_environment(interface=...)`. Two interfaces shipped, sharing one skill registry (`nethack_harness/tools/skills.py`) so the advertised action set cannot drift from the implemented one:
 
-- `"raw"` — Discrete NLE action IDs. For tabula-rasa RL baselines and reproducibility with prior work.
-- `"skill"` — NetPlay-style skills: `move(dir)`, `attack(dir)`, `pickup`, `descend`, `look`, `inventory`, `search`, `drink(item)`, `throw(item, dir)`, `wear(item)`, `cast(spell)`. Each compiles to a primitive action sequence. Default for LM agents.
-- `"code"` — glyphbox-style. Expose a Python API `nh.*` and let the model write loops in a sandboxed REPL. Single `execute_code` tool. Most token-efficient; arguably the most interesting research direction.
+- `"skill"` (default) — one OpenAI function-calling tool per skill: NetPlay-style `move`/`attack`/`descend`/`search`/`pickup`/`move_to` plus higher-level skills and a closed-loop `explore_and_descend` mega-skill. `skill_set` selects a profile (`full`, `move`, `dir8`, `netplay`, or an allowlist).
+- `"code"` — glyphbox-style: a single `code(source=...)` tool running sandboxed Python against an `nh` namespace (all skills, a queryable read-only `nh.map`, and sub-LM tools `nh.summarize`/`nh.plan`/`nh.recall_lm`). Most token-efficient.
 
-All three share the same underlying state. A single training run can swap interfaces via config; ablations across modes are first-class.
+A **raw action-index escape hatch** (stepping the engine with primitive keystroke bytes) is always available underneath both interfaces, rather than being a separate top-level mode. Both interfaces share the same underlying state, so ablations across them are first-class.
 
-### 3.3 Observation extraction (the ICLR 2026 fixes)
+### 3.3 Observation extraction and encoding
 
-Default observations exposed to the agent:
+The fork fills ctypes buffers each step (`glyphs`, `chars`, `colors`, `blstats`, inventory, `tty_chars`). `NetHackCoreEnv` shapes those into a `CoreObservation`, and `StructuredObservation` extracts the structured pieces:
 
-- `map` — full `tty_chars` grid, *with menu region masked out* (menus extracted separately).
-- `menu` — when a menu is open: list of `(letter, description, key)` tuples. Detected by anchoring on `"(end)"` in `tty_chars`.
-- `inventory` — `inv_strs` decoded into a list of `{letter, description, category, count, blessed}`. Always present, no need to press `i`.
-- `inventory_prompt` — when the game asks "What do you want to throw? [abh]", parse the bracket set, cross-reference with inventory, expose as `{action: "throw", choices: [<inv items>]}`. The agent picks by item, not letter.
-- `status` — HP, AC, hunger, level, gold, turn count, dungeon level, alignment status.
-- `character` — role, race, alignment, gender. Set on reset by auto-invoking `#attributes`, then frozen for the episode.
-- `messages` — list of game messages since last action.
-- `adjacent` — 8-direction adjacency description (corridor, wall, monster, door, etc.).
+- `map` — the glyph/char grid.
+- `menu` — when a menu is open, the `(letter, description)` options.
+- `inventory` — `inv_strs` decoded into typed items (letter, description, category, count, BUC), always present.
+- `status` — HP, AC, hunger, level, gold, turn count, dungeon level, alignment.
+- `character` — role, race, alignment, gender.
+- `messages` — game messages since the last action.
+- `adjacent` — 8-direction adjacency (corridor, wall, monster, door, …).
 
-The augmented action space exposes `menu_option_k` and `inventory_item_k` so the model picks semantically rather than by letter — same pattern the ICLR blog validated.
+The load-bearing piece is the **canonical typed map model** (`map_model.py`, `build_map_model`): one typed structure — player position, typed entities (monster species + pet flag, item object class, stair direction, door state, trap type), and a compact walkable/visible grid. *Every* observation encoding reads from this single model, so encodings cannot drift. A registry then renders it in 12+ variants — `B0`/`B1` (uncompressed / compacted ASCII), `B` (BALROG natural-language), `G` (glyph-box, for code mode), `JSON`/`TOON` (structured text), `IMG` (rendered tiles), `IMG_TTY` (tty raster), `ND`/`FD` (descent-salience), `E1`/`E2` (frontier-surface), `R` (summarize-and-reset), `P`/`CH` (continual harness). This encoding matrix — comparing what the model "sees" on matched seeds — is the project's active research axis.
 
 ### 3.4 Reward design
 
-Composable rubric, default weights configurable per training run:
+A composable `vf.Rubric`. The shipped default sums four functions:
 
-- `scout` — +1 per newly observed tile this turn. Dense, well-correlated with progress.
-- `descend` — +10 on each new max-dungeon-level reached.
-- `ascend` — +1000 on successful ascension.
-- `survive` — small per-turn bonus (controversial, off by default).
-- `death` — 0 or negative; arguably 0 is right since premature death already costs the rest of the episode.
+- `scout_reward` — per newly observed tile. Dense, well-correlated with progress.
+- `descent_reward` — on each new max-dungeon-level reached.
+- `success_reward` — on hitting the active curriculum tier's success milestone.
+- `ascension_reward` — on a successful ascension.
 
-We expose `score` and `balrog_progression` as available reward functions but do not use them as training signal by default, for reasons documented in §2.
+Score and BALROG progression are computed for *evaluation* (the encoding-eval harness reports BALROG progression), but are deliberately not the training signal — score is gameable, per §2.
 
-### 3.5 Curriculum
+### 3.5 Curriculum and difficulty knobs
 
-Wrap `minihack.LevelGenerator` and expose a `curriculum.py` with named tiers:
+The env defaults to the standard NetHack ascension game (`full_nle`); the curriculum is opt-in and is built *in-repo* on the fork engine — not on MiniHack des-files. `curriculum.py` defines **13 named tiers**, each with a step budget, a description, and a success milestone checked every step to drive goal-conditioned early termination:
 
-| Tier | Name                | Layout                       | Monsters       | Items  | Goal                |
-|------|---------------------|------------------------------|----------------|--------|---------------------|
-| 0    | `empty_room`        | 5×5 room                     | none           | stairs | descend             |
-| 1    | `solo_combat`       | 8×8 room                     | one weak (newt)| sword  | kill + descend      |
-| 2    | `multi_combat`      | 10×10 room                   | three weak     | sword  | kill all + descend  |
-| 3    | `corridor_explore`  | 3-room maze                  | one weak       | items  | explore + descend   |
-| 4    | `mini_dungeon`      | 3 floors                     | mixed          | mixed  | reach dlvl 3        |
-| 5    | `full_dungeon_easy` | 5 floors, no Mines branch    | mixed          | mixed  | reach dlvl 5        |
-| 6    | `full_nle`          | unmodified `NetHackChallenge`| —              | —      | full game           |
+`empty_room`, `solo_combat`, `multi_combat`, `corridor_explore`, `mini_dungeon`, `mines_to_minetown`, `sokoban_complete`, `oracle_consult`, `full_dungeon_easy`, `full_nle` (default), `dynamic_subgoal` (mid-episode subgoal assignment), `quest_complete`, `castle_reached`. Milestones are composable; pass `tier=None` to sample uniformly across tiers.
 
-A single training run can either pin a tier or schedule across them (e.g., uniform sampling weighted by historical success rate, à la PLR).
+The smooth difficulty ramp comes from the fork's **17 parametric knobs** (`EngineEnv.tune`), a continuous dial on the *real* dungeon generator rather than a fixed level per variant:
+
+- **Vision (live):** `vision_radius`, `reveal_map`.
+- **Stat/combat scales (live):** `dmg_to_player_scale`, `dmg_by_player_scale`, `player_hp_scale`, `hp_regen_scale`, `hunger_rate_scale`, `ongoing_spawn_scale`, `monster_difficulty_scale`, `monster_speed_scale`, `xp_gain_scale`.
+- **Generation (reset-only):** `room_density`, `room_size`, `mob_spawn`, `trap_density`, `locked_door`, `corridor_connectivity`.
+
+These are opt-in `load_environment` overrides (`tune={...}`), alongside `modify={...}` (whitelisted, bounds-checked starting-state pokes — `hp`/`max_hp`/`gold`/`xp_level`/`hunger`/`goto_depth`/`level_up`) and `level_blob=<path>` (start on a custom saved level). All default to vanilla.
 
 ### 3.6 Wiki tool
 
@@ -144,13 +152,12 @@ Two-flavor:
 
 We snapshot the wiki to avoid live HTTP during rollouts. License is CC-BY-SA; we redistribute the snapshot with attribution.
 
-### 3.7 Reproducibility and replay
+### 3.7 Reproducibility, snapshot/restore, and replay
 
-- `reseed=False` by default in NLE seeding, removing the anti-TAS periodic reseeding that breaks determinism. (Users opting into TAS-style protection can flip it back.)
-- `seed()` always called before `reset()`. Both `core` and `disp` RNGs seeded; `(core, disp)` hash logged on every rollout for audit.
-- **Trajectory replay** (cheap path, ships first): record `(seeds, action_sequence)` as the canonical "save". Replay = `env.reset(seeds=...); for a in actions: env.step(a)`. Sufficient for episodes up to ~10⁴ steps at NLE's 14k sps.
-- **Save-state** (Tier 3 stretch): expose NetHack's existing C-side `dosave()` / `dorecover()` through the NLE binding. Real C work; pays off for very long episodes and for any planned MCTS work.
-- Optional C patch in `nle_patches/rnd_trace.patch`: instrument `rn2`/`rn1`/`Rand` to log subsystem tags behind a `NLE_RNG_TRACE` compile flag. Audit trail when reproducibility breaks.
+- `seed()` is always called before `reset()`; both the `core` and `disp` RNGs are seeded and the seed hash is logged on every rollout for audit.
+- **In-memory snapshot / restore / branch** (the shipped headline, on the fork). `snapshot() -> handle` captures the complete game state — engine context, coroutine stack, arena, and display mirror — in constant time; `restore(handle)` brings it back byte-for-byte across glyphs/chars/colors/blstats. Snapshots are bound to their creating engine, span multiple dungeon levels in memory (no disk swapping), and are build-version tagged so a stale snapshot can't corrupt a newer engine. `branch(n, reseed=True|False)` snapshots once and restores `n` times — with `reseed=True` each branch reseeds after restore so chance events diverge — giving O(1) Monte-Carlo lookahead with *no action replay*. This is what replaced the originally-planned `dosave`/`dorecover` save-file path.
+- **Trajectory replay** (still available, parked in `legacy/replay.py`): record `(seeds, action_sequence)` and replay `reset(seeds=...)` then the actions. Sufficient for shorter episodes; snapshot/restore covers the cases where replay would be too slow.
+- **Portable level blobs.** `save_level(path)` / `load_level(path)` serialize a level in NetHack's own `savelev`/`getlev` format (portable across same-build games, not version-portable) — a concrete level, not a scripted description.
 
 ---
 
@@ -162,14 +169,14 @@ We snapshot the wiki to avoid live HTTP during rollouts. License is CC-BY-SA; we
 2. Inventory item resolution + augmented `inventory_item_k` action.
 3. Always-on inventory in observation (via `inv_strs`).
 4. Auto-`#attributes` on reset, role/race/alignment in observation.
-5. `reseed=False` + seed-before-reset enforcement.
+5. Seed-before-reset enforcement + deterministic RNG capture in snapshots.
 6. Trajectory replay.
 
 **Tier 2 — Action API design.**
 
 7. Skill-mode API (NetPlay-derived).
 8. Code-mode API (glyphbox-derived) with sandboxed REPL.
-9. Autoexplore — Python implementation on top of NLE (glyphbox approach) OR port NetHack4's autoexplore as a C patch (cleaner but harder).
+9. Autoexplore — A* pathfinding + frontier-based exploration in `nethack_harness/navigation/`, wrapped by the closed-loop `explore_and_descend` skill.
 10. Persistent memory tools (`add_note`, `add_reminder`) from glyphbox.
 
 **Tier 3 — Curriculum, wiki, speed.**
@@ -177,9 +184,9 @@ We snapshot the wiki to avoid live HTTP during rollouts. License is CC-BY-SA; we
 11. `curriculum.py` with the seven named tiers.
 12. Wiki tool (search + lookup), ChromaDB index of NetHackWiki.
 13. Scout / BALROG / score rewards as a composable rubric.
-14. PufferLib `PufferEnv` API for layer 1 (optional, behind extras).
-15. Optional `rn2` tracing C patch.
-16. Save-state via `dosave`/`dorecover` binding (stretch).
+14. PufferLib adapter for layer 1 — implemented but parked in `legacy/puffer_env.py` (divergent-rollout throughput is instead served by in-memory snapshot/branch).
+15. RNG determinism via seed-before-reset + snapshot capture of RNG state (a standalone `rn2` tracing patch proved unnecessary once snapshot/restore landed).
+16. Save-state — shipped as **in-memory** snapshot/restore/branch on the fork (plus portable `save_level`/`load_level` blobs), instead of the originally-planned C-side `dosave`/`dorecover` save files.
 
 **Tier 4 — Research bets (not in scope for v1 but worth flagging).**
 
@@ -204,8 +211,8 @@ We snapshot the wiki to avoid live HTTP during rollouts. License is CC-BY-SA; we
 
 ## 6. Open questions for Alex
 
-1. **Default action interface for the published env: skill or code?** Code is more token-efficient and your group's RLM work makes it a natural fit; skill is more like existing NetHack-LM literature and easier to compare against. Suggest skill as default, code as a flag — but happy to flip.
-2. **NLE fork strategy.** Maintain a public `princeton-pli/nle` fork with the C patches, or upstream everything to `heiner/nle`? Maintainer (Heinrich Küttler) is generally responsive but slow-moving.
+1. **Default action interface for the published env: skill or code?** *(Resolved: `skill` shipped as the default, `code` as a flag.)* Code is more token-efficient and your group's RLM work makes it a natural fit; skill is closer to existing NetHack-LM literature and easier to compare against.
+2. **Engine strategy.** *(Resolved: we abandoned `nle`/`minihack` entirely and now maintain our own NetHack fork — the `third_party/NetHack` submodule — driven through the `RawEngine` ctypes binding, rather than layering C patches on `heiner/nle`. This is what unlocked snapshot/restore, level blobs, state edits, and the knob catalog.)*
 3. **Compute envelope for the first training run.** 2 GPUs (Wordle-scale) or 8 GPUs (wiki-search-scale)?
 4. **Eval protocol.** Match BALROG's exactly so numbers are comparable, or define our own that incorporates token efficiency (glyphbox proposed this and it's reasonable)?
 5. **Project framing for write-up.** "A training-grade NetHack env" is the engineering story; "what changes when LM agents have a real training environment for hard games" could be the research story. Which to lean into?
@@ -215,10 +222,10 @@ We snapshot the wiki to avoid live HTTP during rollouts. License is CC-BY-SA; we
 
 ## 7. Risks
 
-- **NLE build complexity.** `cmake>=3.18`, system libs, no pre-built wheels for some platforms. May need a Docker image for Hosted Training. Mitigation: ship a Prime Sandbox spec early.
+- **Fork build complexity.** The engine builds from source (`cmake`, `bison`, `flex`, `libbz2`) into `libnethack.so`; there are no pre-built wheels, and it does not build natively on macOS (AppleClang/Mach-O vs. the fork's GNU-toolchain arena interposition). Mitigation: `Dockerfile.prime` for hosted training and `Dockerfile.console` for macOS; the Hub wheel bundles a prebuilt `.so` via `tools/bundle_for_hub.py`.
 - **Reward hacking on scout.** Scout maximizers might pace back and forth at level boundaries to inflate tile counts. Mitigation: log per-floor unique tiles, not cumulative tiles per step.
-- **MiniHack drift.** MiniHack hasn't been actively maintained since ~2023. We may need to vendor the bits we need rather than pip-install. Mitigation: fork it under `princeton-pli/`.
-- **Determinism debt.** Even with `reseed=False`, some subsystems (e.g., monster AI in certain edge cases) may not be fully deterministic. Mitigation: the RNG tracing patch in Tier 3 is the diagnostic tool for this.
+- **Fork maintenance burden.** Owning a NetHack fork means carrying our own engine entry points and rebasing on upstream NetHack ourselves — no `nle`/`minihack` maintainers to lean on. Mitigation: keep the C surface small (a handful of `nle_*` entry points) and pin the submodule.
+- **Determinism debt.** Some subsystems (e.g., monster AI in certain edge cases) may not be fully deterministic. Mitigation: snapshots capture RNG state, so snapshot/restore gives an exact-reproduction diagnostic when a divergence is suspected.
 - **Context bloat in code mode.** The full game state is ~50 lines per turn; a 500-turn episode is 25k tokens of observations alone. Mitigation: observation masking + sliding window à la glyphbox, sliding-window length is a tunable.
 
 ---
